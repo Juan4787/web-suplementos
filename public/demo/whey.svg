@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 720" role="img" aria-labelledby="t d">
+  <title id="t">Whey Protein</title>
+  <desc id="d">Ilustración de un pote zafiro de proteína whey sabor vainilla.</desc>
+  <defs>
+    <linearGradient id="bgWhey" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#eff6ff"/>
+      <stop offset="100%" stop-color="#f8fafc"/>
+    </linearGradient>
+    <linearGradient id="potWhey" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#1e3a8a"/>
+      <stop offset="35%" stop-color="#1d4ed8"/>
+      <stop offset="70%" stop-color="#2563eb"/>
+      <stop offset="100%" stop-color="#0f172a"/>
+    </linearGradient>
+    <linearGradient id="capWhey" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#0b1324"/>
+      <stop offset="45%" stop-color="#1e293b"/>
+      <stop offset="100%" stop-color="#061226"/>
+    </linearGradient>
+    <filter id="shadowWhey" x="-10%" y="-10%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="18" stdDeviation="22" flood-color="#0b1324" flood-opacity="0.16"/>
+    </filter>
+  </defs>
+  <rect width="720" height="720" rx="80" fill="url(#bgWhey)"/>
+  <circle cx="135" cy="160" r="84" fill="#60a5fa" opacity=".3"/>
+  <path d="M0 510c146-82 246-72 365 2s237 76 355-10v218H0Z" fill="#dbeafe" opacity=".6"/>
+  
+  <g filter="url(#shadowWhey)">
+    <!-- Tub Body -->
+    <path d="M201 196h328l-31 365c-3 40-36 70-76 70H308c-40 0-73-30-76-70Z" fill="url(#potWhey)"/>
+    <!-- Tub Cap -->
+    <ellipse cx="365" cy="192" rx="173" ry="38" fill="url(#capWhey)"/>
+    <ellipse cx="365" cy="186" rx="167" ry="33" fill="#334155" opacity=".3"/>
+    <!-- Label -->
+    <rect x="226" y="312" width="278" height="186" rx="18" fill="#ffffff"/>
+    <rect x="226" y="312" width="278" height="186" rx="18" fill="none" stroke="#e2e8f0" stroke-width="2"/>
+    <text x="365" y="344" text-anchor="middle" font-family="'Arial Rounded MT Bold', -apple-system, sans-serif" font-size="22" font-weight="900" letter-spacing="4" fill="#2563eb">IMPULSO</text>
+    <text x="365" y="406" text-anchor="middle" font-family="'Arial Rounded MT Bold', -apple-system, sans-serif" font-size="46" font-weight="900" letter-spacing="2" fill="#0b1324">WHEY</text>
+    <text x="365" y="446" text-anchor="middle" font-family="-apple-system, sans-serif" font-size="16" font-weight="800" letter-spacing="3" fill="#64748b">VAINILLA SUAVE</text>
+    <rect x="300" y="464" width="130" height="22" rx="11" fill="#eff6ff"/>
+    <text x="365" y="479" text-anchor="middle" font-family="-apple-system, sans-serif" font-size="12" font-weight="800" fill="#2563eb">908 G · 100% SUERO</text>
+  </g>
+</svg>

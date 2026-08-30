@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 720" role="img" aria-labelledby="t d">
+  <title id="t">Pre entreno Focus</title>
+  <desc id="d">Ilustración de un pote premium de pre entreno Focus.</desc>
+  <defs>
+    <linearGradient id="bgPre" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f8fafc"/>
+      <stop offset="100%" stop-color="#f1f5f9"/>
+    </linearGradient>
+    <linearGradient id="potPre" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#0f172a"/>
+      <stop offset="40%" stop-color="#1e293b"/>
+      <stop offset="70%" stop-color="#334155"/>
+      <stop offset="100%" stop-color="#0f172a"/>
+    </linearGradient>
+    <linearGradient id="capPre" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#020617"/>
+      <stop offset="45%" stop-color="#0f172a"/>
+      <stop offset="100%" stop-color="#020617"/>
+    </linearGradient>
+    <filter id="shadowPre" x="-10%" y="-10%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="18" stdDeviation="22" flood-color="#0b1324" flood-opacity="0.16"/>
+    </filter>
+  </defs>
+  <rect width="720" height="720" rx="80" fill="url(#bgPre)"/>
+  <circle cx="570" cy="155" r="104" fill="#3b82f6" opacity=".25"/>
+  <path d="M0 530c151-83 257-63 376 4s231 70 344-5v191H0Z" fill="#e2e8f0" opacity=".7"/>
+  
+  <g filter="url(#shadowPre)">
+    <!-- Tub Body -->
+    <path d="M204 198h312l-27 360c-4 43-39 76-82 76h-94c-43 0-79-33-82-76Z" fill="url(#potPre)"/>
+    <!-- Tub Cap -->
+    <ellipse cx="360" cy="194" rx="164" ry="37" fill="url(#capPre)"/>
+    <ellipse cx="360" cy="188" rx="158" ry="32" fill="#334155" opacity=".3"/>
+    <!-- Label -->
+    <rect x="229" y="318" width="262" height="184" rx="18" fill="#ffffff"/>
+    <rect x="229" y="318" width="262" height="184" rx="18" fill="none" stroke="#e2e8f0" stroke-width="2"/>
+    <text x="360" y="348" text-anchor="middle" font-family="'Arial Rounded MT Bold', -apple-system, sans-serif" font-size="22" font-weight="900" letter-spacing="4" fill="#2563eb">IMPULSO</text>
+    <text x="360" y="408" text-anchor="middle" font-family="'Arial Rounded MT Bold', -apple-system, sans-serif" font-size="44" font-weight="900" letter-spacing="2" fill="#0b1324">FOCUS</text>
+    <text x="360" y="448" text-anchor="middle" font-family="-apple-system, sans-serif" font-size="16" font-weight="800" letter-spacing="3" fill="#64748b">PRE ENTRENO</text>
+    <rect x="295" y="466" width="130" height="22" rx="11" fill="#eff6ff"/>
+    <text x="360" y="481" text-anchor="middle" font-family="-apple-system, sans-serif" font-size="12" font-weight="800" fill="#2563eb">300 G · ENERGÍA &amp; FOCO</text>
+  </g>
+</svg>

@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 720" role="img" aria-labelledby="t d">
+  <title id="t">Creatina Monohidratada</title>
+  <desc id="d">Ilustración de un pote zafiro de creatina monohidratada.</desc>
+  <defs>
+    <linearGradient id="bgCrea" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#eff6ff"/>
+      <stop offset="100%" stop-color="#dbeafe"/>
+    </linearGradient>
+    <linearGradient id="potCrea" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#1e3a8a"/>
+      <stop offset="35%" stop-color="#2563eb"/>
+      <stop offset="70%" stop-color="#1d4ed8"/>
+      <stop offset="100%" stop-color="#172554"/>
+    </linearGradient>
+    <linearGradient id="capCrea" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#0b1324"/>
+      <stop offset="40%" stop-color="#1e293b"/>
+      <stop offset="100%" stop-color="#061226"/>
+    </linearGradient>
+    <filter id="shadowCrea" x="-10%" y="-10%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="18" stdDeviation="22" flood-color="#0b1324" flood-opacity="0.16"/>
+    </filter>
+  </defs>
+  <rect width="720" height="720" rx="80" fill="url(#bgCrea)"/>
+  <circle cx="575" cy="142" r="102" fill="#60a5fa" opacity=".35"/>
+  <path d="M78 558c126-110 230-92 344-30s175 51 245 4v188H78Z" fill="#bfdbfe" opacity=".6"/>
+  
+  <g filter="url(#shadowCrea)">
+    <!-- Jar Body -->
+    <path d="M202 205h304l-26 342c-3 46-42 82-88 82h-76c-47 0-85-36-89-82Z" fill="url(#potCrea)"/>
+    <!-- Lid / Cap -->
+    <ellipse cx="354" cy="201" rx="160" ry="35" fill="url(#capCrea)"/>
+    <ellipse cx="354" cy="195" rx="156" ry="30" fill="#334155" opacity=".4"/>
+    <!-- Label -->
+    <rect x="226" y="315" width="256" height="182" rx="20" fill="#ffffff"/>
+    <rect x="226" y="315" width="256" height="182" rx="20" fill="none" stroke="#e2e8f0" stroke-width="2"/>
+    <line x1="250" y1="350" x2="458" y2="350" stroke="#bfdbfe" stroke-width="2"/>
+    <text x="354" y="342" text-anchor="middle" font-family="'Arial Rounded MT Bold', -apple-system, sans-serif" font-size="24" font-weight="900" letter-spacing="4" fill="#2563eb">IMPULSO</text>
+    <text x="354" y="405" text-anchor="middle" font-family="'Arial Rounded MT Bold', -apple-system, sans-serif" font-size="44" font-weight="900" letter-spacing="1" fill="#0b1324">CREATINA</text>
+    <text x="354" y="445" text-anchor="middle" font-family="-apple-system, sans-serif" font-size="18" font-weight="800" letter-spacing="3" fill="#64748b">MONOHIDRATADA</text>
+    <rect x="304" y="462" width="100" height="22" rx="11" fill="#eff6ff"/>
+    <text x="354" y="477" text-anchor="middle" font-family="-apple-system, sans-serif" font-size="12" font-weight="800" fill="#2563eb">300 G · MICRONIZADA</text>
+  </g>
+</svg>

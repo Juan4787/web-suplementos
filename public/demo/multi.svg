@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 720" role="img" aria-labelledby="t d">
+  <title id="t">Multivitamínico Daily</title>
+  <desc id="d">Ilustración de un frasco de multivitamínico diario.</desc>
+  <defs>
+    <linearGradient id="bgMul" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fffbeb"/>
+      <stop offset="100%" stop-color="#fef3c7"/>
+    </linearGradient>
+    <linearGradient id="botMul" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#9a3412"/>
+      <stop offset="40%" stop-color="#ea580c"/>
+      <stop offset="70%" stop-color="#f97316"/>
+      <stop offset="100%" stop-color="#9a3412"/>
+    </linearGradient>
+    <linearGradient id="capMul" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#0b1324"/>
+      <stop offset="45%" stop-color="#1e293b"/>
+      <stop offset="100%" stop-color="#061226"/>
+    </linearGradient>
+    <filter id="shadowMul" x="-10%" y="-10%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="18" stdDeviation="22" flood-color="#0b1324" flood-opacity="0.14"/>
+    </filter>
+  </defs>
+  <rect width="720" height="720" rx="80" fill="url(#bgMul)"/>
+  <circle cx="148" cy="156" r="98" fill="#3b82f6" opacity=".2"/>
+  <path d="M0 538c151-72 257-68 373 1s231 64 347-8v189H0Z" fill="#fde68a" opacity=".5"/>
+  
+  <g filter="url(#shadowMul)">
+    <!-- Bottle Cap -->
+    <path d="M281 142h158v84H281z" fill="url(#capMul)" rx="12"/>
+    <!-- Bottle Body -->
+    <rect x="214" y="207" width="292" height="422" rx="72" fill="url(#botMul)"/>
+    <!-- Label -->
+    <rect x="236" y="322" width="248" height="194" rx="18" fill="#ffffff"/>
+    <rect x="236" y="322" width="248" height="194" rx="18" fill="none" stroke="#e2e8f0" stroke-width="2"/>
+    <text x="360" y="354" text-anchor="middle" font-family="'Arial Rounded MT Bold', -apple-system, sans-serif" font-size="22" font-weight="900" letter-spacing="4" fill="#2563eb">IMPULSO</text>
+    <text x="360" y="412" text-anchor="middle" font-family="'Arial Rounded MT Bold', -apple-system, sans-serif" font-size="40" font-weight="900" letter-spacing="1" fill="#0b1324">DAILY</text>
+    <text x="360" y="452" text-anchor="middle" font-family="-apple-system, sans-serif" font-size="16" font-weight="800" letter-spacing="3" fill="#64748b">MULTIVITAMÍNICO</text>
+    <rect x="295" y="470" width="130" height="22" rx="11" fill="#eff6ff"/>
+    <text x="360" y="485" text-anchor="middle" font-family="-apple-system, sans-serif" font-size="12" font-weight="800" fill="#2563eb">60 COMPRIMIDOS</text>
+  </g>
+</svg>

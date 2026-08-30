@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+.DS_Store
+coverage/
+playwright-report/
+test-results/
+.playwright-cli/
+scratch/
+supabase/.branches/
+supabase/.temp/

@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 720" role="img" aria-labelledby="t d">
+  <title id="t">Magnesio Bisglicinato</title>
+  <desc id="d">Ilustración de un frasco premium de magnesio bisglicinato.</desc>
+  <defs>
+    <linearGradient id="bgMag" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f8fafc"/>
+      <stop offset="100%" stop-color="#f1f5f9"/>
+    </linearGradient>
+    <linearGradient id="botMag" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#1e1b4b"/>
+      <stop offset="40%" stop-color="#312e81"/>
+      <stop offset="70%" stop-color="#4338ca"/>
+      <stop offset="100%" stop-color="#1e1b4b"/>
+    </linearGradient>
+    <linearGradient id="capMag" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#0b1324"/>
+      <stop offset="45%" stop-color="#1e293b"/>
+      <stop offset="100%" stop-color="#061226"/>
+    </linearGradient>
+    <filter id="shadowMag" x="-10%" y="-10%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="18" stdDeviation="22" flood-color="#0b1324" flood-opacity="0.15"/>
+    </filter>
+  </defs>
+  <rect width="720" height="720" rx="80" fill="url(#bgMag)"/>
+  <circle cx="140" cy="154" r="94" fill="#818cf8" opacity=".25"/>
+  <path d="M0 540c140-69 247-80 374-7s226 61 346-9v196H0Z" fill="#e2e8f0" opacity=".6"/>
+  
+  <g filter="url(#shadowMag)">
+    <!-- Bottle Cap -->
+    <path d="M280 145h160v82H280z" fill="url(#capMag)" rx="12"/>
+    <!-- Bottle Body -->
+    <rect x="214" y="207" width="292" height="420" rx="72" fill="url(#botMag)"/>
+    <!-- Label -->
+    <rect x="236" y="320" width="248" height="196" rx="18" fill="#ffffff"/>
+    <rect x="236" y="320" width="248" height="196" rx="18" fill="none" stroke="#e2e8f0" stroke-width="2"/>
+    <text x="360" y="352" text-anchor="middle" font-family="'Arial Rounded MT Bold', -apple-system, sans-serif" font-size="22" font-weight="900" letter-spacing="4" fill="#2563eb">IMPULSO</text>
+    <text x="360" y="410" text-anchor="middle" font-family="'Arial Rounded MT Bold', -apple-system, sans-serif" font-size="38" font-weight="900" letter-spacing="1" fill="#0b1324">MAGNESIO</text>
+    <text x="360" y="450" text-anchor="middle" font-family="-apple-system, sans-serif" font-size="16" font-weight="800" letter-spacing="3" fill="#64748b">BISGLICINATO</text>
+    <rect x="295" y="468" width="130" height="22" rx="11" fill="#eff6ff"/>
+    <text x="360" y="483" text-anchor="middle" font-family="-apple-system, sans-serif" font-size="12" font-weight="800" fill="#2563eb">120 CÁPSULAS</text>
+  </g>
+</svg>

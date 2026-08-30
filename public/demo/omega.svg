@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 720" role="img" aria-labelledby="t d">
+  <title id="t">Omega 3</title>
+  <desc id="d">Ilustración de un frasco zafiro de omega 3.</desc>
+  <defs>
+    <linearGradient id="bgOme" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#eff6ff"/>
+      <stop offset="100%" stop-color="#dbeafe"/>
+    </linearGradient>
+    <linearGradient id="botOme" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#0369a1"/>
+      <stop offset="40%" stop-color="#0284c7"/>
+      <stop offset="70%" stop-color="#2563eb"/>
+      <stop offset="100%" stop-color="#1e3a8a"/>
+    </linearGradient>
+    <linearGradient id="capOme" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#0b1324"/>
+      <stop offset="45%" stop-color="#1e293b"/>
+      <stop offset="100%" stop-color="#061226"/>
+    </linearGradient>
+    <filter id="shadowOme" x="-10%" y="-10%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="18" stdDeviation="22" flood-color="#0b1324" flood-opacity="0.15"/>
+    </filter>
+  </defs>
+  <rect width="720" height="720" rx="80" fill="url(#bgOme)"/>
+  <circle cx="573" cy="152" r="100" fill="#38bdf8" opacity=".35"/>
+  <path d="M0 542c128-87 236-76 360-10s241 65 360-5v193H0Z" fill="#bfdbfe" opacity=".6"/>
+  
+  <g filter="url(#shadowOme)">
+    <!-- Bottle Cap -->
+    <path d="M285 140h150v82H285z" fill="url(#capOme)" rx="12"/>
+    <!-- Bottle Body -->
+    <rect x="220" y="203" width="280" height="420" rx="70" fill="url(#botOme)"/>
+    <!-- Label -->
+    <rect x="239" y="320" width="242" height="194" rx="18" fill="#ffffff"/>
+    <rect x="239" y="320" width="242" height="194" rx="18" fill="none" stroke="#e2e8f0" stroke-width="2"/>
+    <text x="360" y="352" text-anchor="middle" font-family="'Arial Rounded MT Bold', -apple-system, sans-serif" font-size="22" font-weight="900" letter-spacing="4" fill="#2563eb">IMPULSO</text>
+    <text x="360" y="415" text-anchor="middle" font-family="'Arial Rounded MT Bold', -apple-system, sans-serif" font-size="44" font-weight="900" letter-spacing="1" fill="#0b1324">OMEGA 3</text>
+    <text x="360" y="452" text-anchor="middle" font-family="-apple-system, sans-serif" font-size="16" font-weight="800" letter-spacing="3" fill="#64748b">EPA &amp; DHA PURO</text>
+    <rect x="300" y="470" width="120" height="22" rx="11" fill="#eff6ff"/>
+    <text x="360" y="485" text-anchor="middle" font-family="-apple-system, sans-serif" font-size="12" font-weight="800" fill="#2563eb">90 CÁPSULAS</text>
+  </g>
+</svg>
