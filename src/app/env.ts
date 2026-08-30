@@ -1,7 +1,8 @@
 export type RuntimeMode = 'demo' | 'supabase' | 'unconfigured';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL?.trim() ?? '';
-const supabasePublishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY?.trim() ?? '';
+const supabasePublishableKey =
+  (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? import.meta.env.VITE_SUPABASE_ANON_KEY)?.trim() ?? '';
 const requestedMode = import.meta.env.VITE_APP_MODE;
 const hasSupabaseConfiguration = Boolean(supabaseUrl && supabasePublishableKey);
 const aiEnabled = import.meta.env.VITE_AI_ENABLED === 'true';
