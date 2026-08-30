@@ -1,9 +1,9 @@
 -- EJECUCIÓN MANUAL, UNA SOLA VEZ, DESPUÉS DE CREAR EL USUARIO EN AUTH.
--- Este archivo no es una migración y nunca debe ejecutarse sin reemplazar el correo.
+-- Este archivo habilita el rol de dueña inicial (owner) para la cuenta principal.
 
 do $bootstrap_first_owner$
 declare
-  v_owner_email text := lower(btrim('REEMPLAZAR_POR_CORREO_REAL'));
+  v_owner_email text := lower(btrim('juanpabloaltamira@protonmail.com'));
   v_matches integer;
   v_existing_owners integer;
 begin
@@ -52,4 +52,4 @@ select
   role as rol,
   active as habilitada
 from public.store_users
-where lower(email_snapshot) = lower(btrim('REEMPLAZAR_POR_CORREO_REAL'));
+where lower(email_snapshot) = lower(btrim('juanpabloaltamira@protonmail.com'));
