@@ -5,7 +5,6 @@ import {
   useMemo,
   useRef,
   useState,
-  type ReactElement,
   type ReactNode
 } from 'react';
 import { Check, ChevronDown, Search } from 'lucide-react';
@@ -33,6 +32,35 @@ export type SelectProps = {
   searchable?: boolean | undefined;
   size?: 'sm' | 'md' | undefined;
 };
+
+/**
+ * Recursively extracts plain text from any ReactNode (strings, numbers, arrays, elements)
+ */
+function getNodeText(node: ReactNode): string {
+  if (node === null || node === undefined) return '';
+  if (typeof node === 'string' || typeof node === 'number') {
+    return String(node);
+  }
+  if (Array.isArray(node)) {
+    return node.map(getNodeText).join('');
+  }
+  if (isValidElement(node)) {
+    const props = node.props as { children?: ReactNode };
+    return getNodeText(props.children);
+  }
+  return '';
+}
+
+/**
+ * Normalizes text for robust accent-insensitive and case-insensitive search
+ */
+function normalizeText(text: string): string {
+  return text
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+}
 
 export function Select({
   value: controlledValue,
@@ -86,13 +114,19 @@ export function Select({
   // Auto-enable search if there are more than 7 items and not explicitly disabled
   const showSearch = searchable ?? options.length > 7;
 
-  // Filtered options
+  // Filtered options with accent-insensitive and node-text extraction
   const filteredOptions = useMemo(() => {
-    if (!searchTerm.trim()) return options;
-    const term = searchTerm.toLowerCase().trim();
+    const term = normalizeText(searchTerm);
+    if (!term) return options;
+
     return options.filter((opt) => {
-      const text = typeof opt.label === 'string' ? opt.label : String(opt.value);
-      return text.toLowerCase().includes(term);
+      // If user is searching, hide empty placeholder options (e.g. value === "")
+      if (opt.value === '' && term) return false;
+
+      const labelText = normalizeText(getNodeText(opt.label));
+      const valText = normalizeText(String(opt.value ?? ''));
+
+      return labelText.includes(term) || valText.includes(term);
     });
   }, [options, searchTerm]);
 
@@ -106,33 +140,47 @@ export function Select({
     setSearchTerm('');
   };
 
-  // Close when clicking outside
+  // Close when clicking outside with composedPath support
   useEffect(() => {
     if (!isOpen) return;
-    const handleClickOutside = (event: MouseEvent) => {
+
+    const handleClickOutside = (event: MouseEvent | TouchEvent) => {
+      if (
+        event.composedPath &&
+        containerRef.current &&
+        event.composedPath().includes(containerRef.current)
+      ) {
+        return;
+      }
       if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
         setIsOpen(false);
         setSearchTerm('');
       }
     };
+
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setIsOpen(false);
         setSearchTerm('');
       }
     };
+
     document.addEventListener('mousedown', handleClickOutside);
-    document.addEventListener('keydown', handleKeyDown);
+    document.addEventListener('touchstart', handleClickOutside);
+    window.addEventListener('keydown', handleKeyDown);
+
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
-      document.removeEventListener('keydown', handleKeyDown);
+      document.removeEventListener('touchstart', handleClickOutside);
+      window.removeEventListener('keydown', handleKeyDown);
     };
   }, [isOpen]);
 
   // Focus search input when dropdown opens
   useEffect(() => {
     if (isOpen && showSearch) {
-      setTimeout(() => searchInputRef.current?.focus(), 50);
+      const timer = setTimeout(() => searchInputRef.current?.focus(), 60);
+      return () => clearTimeout(timer);
     }
   }, [isOpen, showSearch]);
 

@@ -51,20 +51,20 @@ export function DatePicker({
   const selectedDate = parsedValue && isValid(parsedValue) ? parsedValue : null;
 
   // View state for month navigation
-  const [viewDate, setViewDate] = useState<Date>(selectedDate || new Date());
+  const [viewDate, setViewDate] = useState<Date>(() => selectedDate || new Date());
 
-  // Sync viewDate when selectedDate changes and dropdown opens
-  useEffect(() => {
-    if (selectedDate && isOpen) {
-      setViewDate(selectedDate);
-    }
-  }, [isOpen, selectedDate]);
-
-  // Close when clicking outside
+  // Close when clicking outside with composedPath check to prevent closing when child nodes are re-rendered
   useEffect(() => {
     if (!isOpen) return;
 
     const handleClickOutside = (event: MouseEvent | TouchEvent) => {
+      if (
+        event.composedPath &&
+        containerRef.current &&
+        event.composedPath().includes(containerRef.current)
+      ) {
+        return;
+      }
       if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
         setIsOpen(false);
       }
@@ -90,12 +90,25 @@ export function DatePicker({
   const handleSelectDate = (date: Date) => {
     const formatted = format(date, 'yyyy-MM-dd');
     onChange?.(formatted);
+    setViewDate(date);
     setIsOpen(false);
   };
 
   const handleClear = (e: React.MouseEvent) => {
     e.stopPropagation();
     onChange?.('');
+  };
+
+  const handlePrevMonth = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    setViewDate((curr) => subMonths(curr, 1));
+  };
+
+  const handleNextMonth = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    setViewDate((curr) => addMonths(curr, 1));
   };
 
   // Calendar matrix computation
@@ -119,7 +132,14 @@ export function DatePicker({
         data-testid="datepicker-trigger"
         type="button"
         disabled={disabled}
-        onClick={() => !disabled && setIsOpen((prev) => !prev)}
+        onClick={() => {
+          if (!disabled) {
+            if (!isOpen) {
+              setViewDate(selectedDate || new Date());
+            }
+            setIsOpen((prev) => !prev);
+          }
+        }}
         className={`group flex min-h-12 w-full items-center justify-between rounded-2xl border bg-white px-4 py-3 text-left shadow-sm transition ${
           isOpen
             ? 'border-brand-600 ring-4 ring-brand-500/10'
@@ -161,7 +181,7 @@ export function DatePicker({
       {/* Floating Calendar Popover */}
       {isOpen && (
         <div
-          className="absolute left-0 top-full z-50 mt-2 w-full max-w-[340px] rounded-[1.75rem] border border-ink-950/10 bg-white p-4 shadow-[0_20px_50px_rgba(15,23,42,0.18)] transition-all animate-in fade-in zoom-in-95 duration-150"
+          className="absolute left-0 top-full z-50 mt-2 w-full max-w-[340px] rounded-[1.75rem] border border-ink-950/10 bg-white p-4 shadow-[0_20px_50px_rgba(15,23,42,0.18)] transition-all animate-in fade-in zoom-in-95 duration-150 select-none"
           style={{ isolation: 'isolate' }}
         >
           {/* Quick Shortcuts */}
@@ -169,29 +189,41 @@ export function DatePicker({
             <div className="mb-3.5 flex flex-wrap gap-1.5 border-b border-ink-950/6 pb-3">
               <button
                 type="button"
-                onClick={() => handleSelectDate(new Date())}
-                className="rounded-xl bg-cream-100 px-3 py-1.5 text-[12px] font-black text-ink-700 hover:bg-brand-50 hover:text-brand-700 transition"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleSelectDate(new Date());
+                }}
+                className="rounded-xl bg-cream-100 px-3 py-1.5 text-[12px] font-black text-ink-700 hover:bg-brand-50 hover:text-brand-700 transition active:scale-95"
               >
                 Hoy
               </button>
               <button
                 type="button"
-                onClick={() => handleSelectDate(addDays(new Date(), 1))}
-                className="rounded-xl bg-cream-100 px-3 py-1.5 text-[12px] font-black text-ink-700 hover:bg-brand-50 hover:text-brand-700 transition"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleSelectDate(addDays(new Date(), 1));
+                }}
+                className="rounded-xl bg-cream-100 px-3 py-1.5 text-[12px] font-black text-ink-700 hover:bg-brand-50 hover:text-brand-700 transition active:scale-95"
               >
                 Mañana
               </button>
               <button
                 type="button"
-                onClick={() => handleSelectDate(addDays(new Date(), 3))}
-                className="rounded-xl bg-cream-100 px-3 py-1.5 text-[12px] font-black text-ink-700 hover:bg-brand-50 hover:text-brand-700 transition"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleSelectDate(addDays(new Date(), 3));
+                }}
+                className="rounded-xl bg-cream-100 px-3 py-1.5 text-[12px] font-black text-ink-700 hover:bg-brand-50 hover:text-brand-700 transition active:scale-95"
               >
                 En 3 días
               </button>
               <button
                 type="button"
-                onClick={() => handleSelectDate(addDays(new Date(), 7))}
-                className="rounded-xl bg-cream-100 px-3 py-1.5 text-[12px] font-black text-ink-700 hover:bg-brand-50 hover:text-brand-700 transition"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleSelectDate(addDays(new Date(), 7));
+                }}
+                className="rounded-xl bg-cream-100 px-3 py-1.5 text-[12px] font-black text-ink-700 hover:bg-brand-50 hover:text-brand-700 transition active:scale-95"
               >
                 En 1 sem.
               </button>
@@ -206,16 +238,16 @@ export function DatePicker({
             <div className="flex items-center gap-1">
               <button
                 type="button"
-                onClick={() => setViewDate((curr) => subMonths(curr, 1))}
-                className="grid size-8 place-items-center rounded-xl text-ink-600 hover:bg-cream-100 hover:text-ink-950 transition"
+                onClick={handlePrevMonth}
+                className="grid size-8 place-items-center rounded-xl text-ink-600 hover:bg-cream-100 hover:text-ink-950 transition active:scale-90"
                 aria-label="Mes anterior"
               >
                 <ChevronLeft className="size-4.5" />
               </button>
               <button
                 type="button"
-                onClick={() => setViewDate((curr) => addMonths(curr, 1))}
-                className="grid size-8 place-items-center rounded-xl text-ink-600 hover:bg-cream-100 hover:text-ink-950 transition"
+                onClick={handleNextMonth}
+                className="grid size-8 place-items-center rounded-xl text-ink-600 hover:bg-cream-100 hover:text-ink-950 transition active:scale-90"
                 aria-label="Mes siguiente"
               >
                 <ChevronRight className="size-4.5" />
@@ -243,14 +275,17 @@ export function DatePicker({
                 <button
                   key={idx}
                   type="button"
-                  onClick={() => handleSelectDate(day)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleSelectDate(day);
+                  }}
                   className={`relative grid size-9.5 place-items-center rounded-xl text-[13.5px] font-bold transition ${
                     isSelected
                       ? 'bg-ink-950 text-white font-black shadow-sm scale-105 z-10'
                       : isCurrentDay
                         ? 'border border-brand-500 font-black text-brand-600 hover:bg-brand-50'
                         : isCurrentMonth
-                          ? 'text-ink-900 hover:bg-cream-100 hover:text-ink-950'
+                          ? 'text-ink-900 hover:bg-cream-100 hover:text-ink-950 active:scale-95'
                           : 'text-ink-300 hover:bg-cream-50 hover:text-ink-500'
                   }`}
                 >

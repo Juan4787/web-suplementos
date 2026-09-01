@@ -10,6 +10,7 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
   History,
   Info,
   PackagePlus,
@@ -21,7 +22,9 @@ import {
   Truck,
   X
 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { format, isBefore, isValid, parseISO, startOfDay } from 'date-fns';
+import { es } from 'date-fns/locale';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { queryKeys } from '@/app/query-keys';
 import { useBusinessQuery } from '@/app/use-business-query';
 import { PageHeader } from '@/components/layout/AdminShell';
@@ -54,12 +57,12 @@ const statusTones = {
 } as const;
 
 const movementKindLabels = {
-  sale: 'Venta entregada',
+  sale: 'Venta',
   purchase_received: 'Compra recibida',
   return: 'Devolución',
   adjustment: 'Stock corregido',
-  reservation: 'Reserva de pedido',
-  reservation_release: 'Liberación de reserva'
+  reservation: 'Reserva de venta',
+  reservation_release: 'Reserva cancelada'
 } as const;
 
 type DraftLine = { productId: string; quantity: number; unitCostPesos: number };
@@ -73,7 +76,7 @@ function PurchaseFormModal({ onClose }: { onClose: () => void }) {
   const productsQuery = useBusinessQuery({ queryKey: queryKeys.products, queryFn: (api) => api.listAdminProducts() });
   const create = useMutation({
     mutationFn: async () => (await getBusinessApi()).createPurchase({
-      supplierName: supplier.trim() || 'Proveedor no informado',
+      supplierName: supplier.trim() || 'Sin proveedor',
       expectedAt: expectedAt ? new Date(`${expectedAt}T12:00:00-03:00`).toISOString() : null,
       notes: notes.trim() || null,
       items: lines.map((line) => ({ productId: line.productId, quantity: line.quantity, unitCostCents: pesosToCents(line.unitCostPesos) }))
@@ -894,14 +897,27 @@ export default function InventoryPage() {
 
   const [purchaseFilter, setPurchaseFilter] = useState<'pending' | 'received' | 'all'>('pending');
 
+  const allPurchases = useMemo(() => purchasesQuery.data?.items ?? [], [purchasesQuery.data?.items]);
+
+  const pendingPurchasesCount = useMemo(
+    () => allPurchases.filter((purchase) => purchase.state === 'ordered').length,
+    [allPurchases]
+  );
+
+  const receivedPurchasesCount = useMemo(
+    () => allPurchases.filter((purchase) => purchase.state === 'received').length,
+    [allPurchases]
+  );
+
+  const totalPurchasesCount = allPurchases.length;
+
   const filteredPurchases = useMemo(() => {
-    const raw = purchasesQuery.data?.items ?? [];
-    return raw.filter((purchase) => {
+    return allPurchases.filter((purchase) => {
       if (purchaseFilter === 'pending') return purchase.state === 'ordered';
       if (purchaseFilter === 'received') return purchase.state === 'received';
       return true;
     });
-  }, [purchasesQuery.data?.items, purchaseFilter]);
+  }, [allPurchases, purchaseFilter]);
 
   const attentionCount = useMemo(
     () => (inventoryQuery.data ?? []).filter((i) => i.status !== 'ok').length,
@@ -1111,54 +1127,56 @@ export default function InventoryPage() {
       {/* TAB 2: COMPRAS */}
       {activeTab === 'compras' && can(user, 'manage_purchases') ? (
         <section aria-labelledby="purchases-section-title">
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <h2 id="purchases-section-title" className="font-display text-xl font-black text-ink-950">Órdenes de compra</h2>
-              <div className="flex gap-1.5">
+          <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-3">
+              <h2 id="purchases-section-title" className="font-display text-xl font-black text-ink-950">
+                Pedidos al proveedor
+              </h2>
+              <div className="flex flex-wrap items-center gap-1.5">
                 <button
                   type="button"
                   className={cn(
-                    'min-h-8 rounded-full px-3 text-xs font-black transition',
+                    'min-h-9 rounded-full px-3.5 text-xs font-black transition select-none',
                     purchaseFilter === 'pending'
                       ? 'bg-brand-600 text-white shadow-sm'
                       : 'border border-ink-950/12 bg-white text-ink-700 hover:border-ink-950/25'
                   )}
                   onClick={() => setPurchaseFilter('pending')}
                 >
-                  Pendientes
+                  Pendientes ({pendingPurchasesCount})
                 </button>
                 <button
                   type="button"
                   className={cn(
-                    'min-h-8 rounded-full px-3 text-xs font-black transition',
+                    'min-h-9 rounded-full px-3.5 text-xs font-black transition select-none',
                     purchaseFilter === 'received'
                       ? 'bg-brand-600 text-white shadow-sm'
                       : 'border border-ink-950/12 bg-white text-ink-700 hover:border-ink-950/25'
                   )}
                   onClick={() => setPurchaseFilter('received')}
                 >
-                  Recibidas
+                  Recibidos ({receivedPurchasesCount})
                 </button>
                 <button
                   type="button"
                   className={cn(
-                    'min-h-8 rounded-full px-3 text-xs font-black transition',
+                    'min-h-9 rounded-full px-3.5 text-xs font-black transition select-none',
                     purchaseFilter === 'all'
                       ? 'bg-brand-600 text-white shadow-sm'
                       : 'border border-ink-950/12 bg-white text-ink-700 hover:border-ink-950/25'
                   )}
                   onClick={() => setPurchaseFilter('all')}
                 >
-                  Todas
+                  Todos ({totalPurchasesCount})
                 </button>
               </div>
             </div>
 
             <Button onClick={() => setShowPurchaseForm(true)} size="sm">
-              <Plus className="size-4" /> Nueva compra
+              <Plus className="size-4" /> Nuevo pedido
             </Button>
           </div>
-          {purchasesQuery.isPending ? <LoadingState label="Cargando órdenes de compra…" /> : null}
+          {purchasesQuery.isPending ? <LoadingState label="Cargando pedidos al proveedor…" /> : null}
           {purchasesQuery.isError ? <ErrorState error={purchasesQuery.error} onRetry={() => void purchasesQuery.refetch()} /> : null}
 
           {purchasesQuery.data ? (
@@ -1169,73 +1187,122 @@ export default function InventoryPage() {
                     const totalUnits = purchase.items.reduce((sum, line) => sum + line.quantity, 0);
                     const isOpen = expandedPurchases[purchase.id] ?? false;
 
-                    return (
-                      <article key={purchase.id} className="p-5 transition hover:bg-cream-50/50">
-                        <div className="grid gap-4 sm:grid-cols-[1fr_auto_auto_auto] sm:items-center">
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <h3 className="font-black text-ink-950">{purchase.supplierName}</h3>
-                              <span className="text-xs font-semibold text-ink-600">#{purchase.number}</span>
-                            </div>
-                            <p className="mt-1 text-xs text-ink-600">
-                              {formatUnits(totalUnits)} · {formatProducts(purchase.items.length)}
-                              {purchase.expectedAt ? ` · Llegada: ${new Intl.DateTimeFormat('es-AR', { dateStyle: 'medium' }).format(new Date(purchase.expectedAt))}` : ''}
-                            </p>
-                          </div>
+                    let deliveryLabel: ReactNode = <span className="text-ink-500 font-medium">Sin fecha estimada</span>;
+                    if (purchase.expectedAt) {
+                      try {
+                        const parsedDate = typeof purchase.expectedAt === 'string' ? parseISO(purchase.expectedAt) : new Date(purchase.expectedAt);
+                        if (isValid(parsedDate)) {
+                          const today = startOfDay(new Date());
+                          const isLate = purchase.state === 'ordered' && isBefore(startOfDay(parsedDate), today);
+                          const dateStr = format(parsedDate, 'd MMM', { locale: es });
 
+                          if (isLate) {
+                            deliveryLabel = (
+                              <span className="font-bold text-amber-800 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
+                                Llegaba el {dateStr} · Atrasado
+                              </span>
+                            );
+                          } else {
+                            deliveryLabel = (
+                              <span className="font-semibold text-ink-700">
+                                Llega {dateStr}
+                              </span>
+                            );
+                          }
+                        }
+                      } catch {
+                        // fallback to default
+                      }
+                    }
+
+                    return (
+                      <article key={purchase.id} className="p-5 sm:p-6 transition hover:bg-cream-50/40">
+                        {/* Fila 1: Pedido #N + Estado */}
+                        <div className="flex items-center justify-between gap-3">
+                          <h3 className="font-display text-lg sm:text-xl font-black text-ink-950">
+                            Pedido #{purchase.number}
+                          </h3>
                           <div>
                             {purchase.state === 'received' ? (
-                              <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700">
-                                <Check className="size-3.5" /> Recibido
-                              </span>
+                              <StatusChip label="Recibido" tone="success" />
                             ) : (
                               <StatusChip label="En camino" tone="warning" />
                             )}
                           </div>
+                        </div>
 
-                          {can(user, 'view_financials') ? (
-                            <div className="text-right">
-                              <span className="block text-[10px] font-bold uppercase tracking-wider text-ink-600">Total</span>
-                              <span className="font-black text-ink-950">{formatMoney(purchase.totalCostCents)}</span>
-                            </div>
-                          ) : null}
+                        {/* Fila 2: Proveedor */}
+                        <p className="mt-1 text-[14px] font-bold text-ink-600">
+                          {purchase.supplierName || 'Sin proveedor'}
+                        </p>
 
-                          <div className="flex items-center gap-2">
+                        {/* Fila 3: 15 unidades · $1.125.000 · Llega 8 sep | Marcar como recibido */}
+                        <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-ink-950/6 pb-4">
+                          <div className="flex flex-wrap items-center gap-2 text-[14px]">
+                            <span className="font-bold text-ink-950">
+                              {totalUnits} {totalUnits === 1 ? 'unidad' : 'unidades'}
+                            </span>
+                            {can(user, 'view_financials') && (
+                              <>
+                                <span className="text-ink-400">·</span>
+                                <span className="font-black text-ink-950">
+                                  {formatMoney(purchase.totalCostCents)}
+                                </span>
+                              </>
+                            )}
+                            <span className="text-ink-400">·</span>
+                            {deliveryLabel}
+                          </div>
+
+                          <div className="flex items-center gap-2 shrink-0">
                             {purchase.state === 'ordered' ? (
                               <Button
                                 variant="secondary"
                                 size="sm"
-                                loading={receivePurchase.isPending}
+                                loading={receivePurchase.isPending && receivePurchase.variables === purchase.id}
                                 onClick={() => receivePurchase.mutate(purchase.id)}
+                                className="font-bold text-xs rounded-xl min-h-9 px-4"
                               >
-                                <CheckCircle2 className="size-4" /> Marcar recibida
+                                <CheckCircle2 className="size-4 text-emerald-600" /> Marcar como recibido
                               </Button>
-                            ) : null}
+                            ) : (
+                              <span className="inline-flex items-center gap-1.5 text-xs font-black text-emerald-700 bg-emerald-50 border border-emerald-200/60 px-3 py-1.5 rounded-xl">
+                                <Check className="size-3.5" /> Stock actualizado
+                              </span>
+                            )}
                           </div>
                         </div>
 
-                        {/* Botón desplegable para ver productos */}
-                        <div className="mt-3">
+                        {/* Fila 4: Productos ({count}) ˄ / ˅ (toda la fila clickeable) */}
+                        <div className="pt-2">
                           <button
                             type="button"
                             onClick={() => setExpandedPurchases((prev) => ({ ...prev, [purchase.id]: !isOpen }))}
-                            className="inline-flex items-center gap-1 text-xs font-bold text-brand-600 hover:text-brand-700"
+                            className="w-full flex items-center justify-between py-1.5 text-[13.5px] font-bold text-ink-700 hover:text-brand-600 transition"
                           >
-                            <span>{isOpen ? 'Ocultar productos ▴' : `Ver ${purchase.items.length} productos ▾`}</span>
+                            <span>Productos ({purchase.items.length})</span>
+                            {isOpen ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
                           </button>
 
-                          {isOpen ? (
-                            <div className="mt-2.5 rounded-xl bg-cream-50 p-3 space-y-1.5 border border-ink-950/6">
+                          {isOpen && (
+                            <div className="mt-2.5 rounded-2xl bg-cream-50/70 p-4 space-y-2.5 border border-ink-950/6">
                               {purchase.items.map((item, idx) => (
-                                <div key={idx} className="flex items-center justify-between text-xs font-bold text-ink-950">
-                                  <span>{item.productName} ×{item.quantity}</span>
-                                  {can(user, 'view_financials') ? (
-                                    <span className="text-ink-600 font-semibold">{formatMoney(item.unitCostCents * item.quantity)}</span>
-                                  ) : null}
+                                <div key={idx} className="flex items-center justify-between gap-4 text-[13.5px]">
+                                  <div>
+                                    <p className="font-bold text-ink-950">{item.productName}</p>
+                                    <p className="text-xs font-semibold text-ink-600">
+                                      {item.quantity} {item.quantity === 1 ? 'unidad' : 'unidades'}
+                                    </p>
+                                  </div>
+                                  {can(user, 'view_financials') && (
+                                    <span className="text-sm font-semibold text-ink-700 shrink-0">
+                                      {formatMoney(item.unitCostCents * item.quantity)}
+                                    </span>
+                                  )}
                                 </div>
                               ))}
                             </div>
-                          ) : null}
+                          )}
                         </div>
                       </article>
                     );
@@ -1245,7 +1312,7 @@ export default function InventoryPage() {
 
               {filteredPurchases.length === 0 ? (
                 <div className="rounded-2xl border border-ink-950/8 bg-white p-8 text-center text-sm font-semibold text-ink-600">
-                  No hay órdenes de compra para este filtro.
+                  No hay pedidos al proveedor para este filtro.
                 </div>
               ) : null}
 
@@ -1327,7 +1394,7 @@ export default function InventoryPage() {
               <Search className="absolute left-3 top-2.5 size-4 text-ink-600" />
               <input
                 type="search"
-                placeholder="Buscar por producto, motivo…"
+                placeholder="Buscar movimientos…"
                 value={movementSearch}
                 onChange={(e) => setMovementSearch(e.target.value)}
                 className="h-8 w-full rounded-full border border-ink-950/12 bg-white pl-9 pr-4 text-xs font-bold text-ink-950 placeholder:text-ink-600/70 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
@@ -1343,40 +1410,58 @@ export default function InventoryPage() {
               <div className="overflow-hidden rounded-2xl border border-ink-950/8 bg-white shadow-sm">
                 <div className="divide-y divide-ink-950/6">
                   {filteredMovements.map((movement) => {
-                    const isNegative = movement.physicalDelta < 0 || movement.reservedDelta < 0;
-                    const deltaParts = [];
-                    if (movement.physicalDelta !== 0) {
-                      deltaParts.push(`${movement.physicalDelta > 0 ? '+' : ''}${movement.physicalDelta} stock real`);
-                    }
-                    if (movement.reservedDelta !== 0) {
-                      deltaParts.push(`${movement.reservedDelta > 0 ? '+' : ''}${movement.reservedDelta} reservado`);
+                    const isNegative = movement.physicalDelta < 0 || (movement.physicalDelta === 0 && movement.reservedDelta < 0);
+                    const deltaCount = movement.physicalDelta !== 0 ? movement.physicalDelta : movement.reservedDelta;
+                    const absCount = Math.abs(deltaCount);
+                    const sign = deltaCount > 0 ? '+' : deltaCount < 0 ? '-' : '';
+                    const unitText = absCount === 1 ? 'unidad' : 'unidades';
+                    const formattedDelta = deltaCount !== 0 ? `${sign}${absCount} ${unitText}` : '0 unidades';
+
+                    let formattedDate = '';
+                    try {
+                      formattedDate = format(new Date(movement.createdAt), 'd MMM, HH:mm', { locale: es });
+                    } catch {
+                      formattedDate = new Intl.DateTimeFormat('es-AR', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(movement.createdAt));
                     }
 
+                    const kindLabel = movementKindLabels[movement.kind] ?? 'Movimiento de stock';
+                    const isGenericReason =
+                      !movement.reason ||
+                      movement.reason.toLowerCase() === movement.kind.toLowerCase() ||
+                      movement.reason.toLowerCase().includes('recepción de compra') ||
+                      movement.reason.toLowerCase().includes('compra recibida') ||
+                      movement.reason.toLowerCase().includes('venta entregada');
+
+                    const subtitle = isGenericReason ? kindLabel : movement.reason;
+
                     return (
-                      <article key={movement.id} className="grid min-h-[4rem] gap-3 p-4 sm:grid-cols-[auto_1fr_auto] sm:items-center sm:px-6 sm:py-3.5">
-                        <span className={cn('grid size-10 place-items-center rounded-xl', isNegative ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700')}>
-                          {isNegative ? <ArrowDown className="size-4" /> : <ArrowUp className="size-4" />}
+                      <article
+                        key={movement.id}
+                        className="grid min-h-[4.25rem] gap-3 p-4 sm:grid-cols-[auto_1fr_auto] sm:items-center sm:px-6 sm:py-3.5 transition hover:bg-cream-50/40"
+                      >
+                        <span
+                          className={cn(
+                            'grid size-10 place-items-center rounded-2xl shrink-0',
+                            isNegative ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700'
+                          )}
+                        >
+                          {isNegative ? <ArrowDown className="size-4.5" /> : <ArrowUp className="size-4.5" />}
                         </span>
-                        <div>
-                          <div className="flex flex-wrap items-center gap-2">
-                            <h3 className="text-[16px] font-black text-ink-950">{movement.productName}</h3>
-                            <span className="rounded-md bg-cream-100 px-2 py-0.5 text-[12px] font-bold uppercase text-ink-700">
-                              {movementKindLabels[movement.kind]}
-                            </span>
-                          </div>
-                          <p className="mt-0.5 text-[14px] text-ink-700 font-medium">{movement.reason}</p>
-                          <p className="mt-1 text-[13px] font-semibold text-ink-600">
-                            {new Intl.DateTimeFormat('es-AR', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(movement.createdAt))} · {movement.createdByName}
+                        <div className="min-w-0">
+                          <h3 className="text-[15.5px] font-black text-ink-950 truncate">
+                            {movement.productName}
+                          </h3>
+                          <p className="mt-0.5 text-[13.5px] font-bold text-ink-700">
+                            {subtitle}
+                          </p>
+                          <p className="mt-0.5 text-[12.5px] font-semibold text-ink-500">
+                            {formattedDate} · {movement.createdByName || 'Sistema'}
                           </p>
                         </div>
-                        <div className="text-right text-[14.5px] font-black text-ink-950">
-                          {deltaParts.length > 0 ? (
-                            <p className={isNegative ? 'text-red-700' : 'text-emerald-700'}>
-                              {deltaParts.join(' · ')}
-                            </p>
-                          ) : (
-                            <p className="text-ink-600">—</p>
-                          )}
+                        <div className="text-right text-[15px] font-black shrink-0">
+                          <p className={isNegative ? 'text-red-700' : 'text-emerald-700'}>
+                            {formattedDelta}
+                          </p>
                         </div>
                       </article>
                     );

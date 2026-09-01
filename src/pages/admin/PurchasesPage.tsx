@@ -1,6 +1,19 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle2, ChevronLeft, ChevronRight, PackagePlus, Plus, Truck, X } from 'lucide-react';
-import { useState } from 'react';
+import {
+  Check,
+  CheckCircle2,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  ChevronUp,
+  PackagePlus,
+  Plus,
+  Truck,
+  X
+} from 'lucide-react';
+import { format, isBefore, isValid, parseISO, startOfDay } from 'date-fns';
+import { es } from 'date-fns/locale';
+import { useState, type ReactNode } from 'react';
 import { queryKeys } from '@/app/query-keys';
 import { useBusinessQuery } from '@/app/use-business-query';
 import { PageHeader } from '@/components/layout/AdminShell';
@@ -26,7 +39,7 @@ function PurchaseForm({ onClose }: { onClose: () => void }) {
   const productsQuery = useBusinessQuery({ queryKey: queryKeys.products, queryFn: (api) => api.listAdminProducts() });
   const create = useMutation({
     mutationFn: async () => (await getBusinessApi()).createPurchase({
-      supplierName: supplier.trim() || 'Proveedor no informado',
+      supplierName: supplier.trim() || 'Sin proveedor',
       expectedAt: expectedAt ? new Date(`${expectedAt}T12:00:00-03:00`).toISOString() : null,
       notes: notes.trim() || null,
       items: lines.map((line) => ({ productId: line.productId, quantity: line.quantity, unitCostCents: pesosToCents(line.unitCostPesos) }))
@@ -245,8 +258,12 @@ function PurchaseForm({ onClose }: { onClose: () => void }) {
 export default function PurchasesPage() {
   const [formOpen, setFormOpen] = useState(false);
   const [page, setPage] = useState(1);
+  const [expandedPurchases, setExpandedPurchases] = useState<Record<string, boolean>>({});
   const queryClient = useQueryClient();
-  const purchasesQuery = useBusinessQuery({ queryKey: queryKeys.purchases(page), queryFn: (api) => api.listPurchases(page, 20) });
+  const purchasesQuery = useBusinessQuery({
+    queryKey: queryKeys.purchases(page),
+    queryFn: (api) => api.listPurchases(page, 20)
+  });
   const receive = useMutation({
     mutationFn: async (id: string) => (await getBusinessApi()).receivePurchase(id),
     onSuccess: async () => {
@@ -258,20 +275,162 @@ export default function PurchasesPage() {
       ]);
     }
   });
+
   return (
     <RoleGate capability="manage_purchases">
       <div className="page-enter">
-        <PageHeader title="Compras" description="Lo pedido suma al stock proyectado. Recién al recibirlo aumenta el stock físico." action={<Button onClick={() => setFormOpen(true)}><PackagePlus className="size-4" /> Nueva compra</Button>} />
-        {purchasesQuery.isPending ? <LoadingState label="Cargando compras…" /> : null}
-        {purchasesQuery.isError ? <ErrorState error={purchasesQuery.error} onRetry={() => void purchasesQuery.refetch()} /> : null}
-        {receive.error ? <div className="mb-5"><ErrorState error={receive.error} /></div> : null}
-        <div className="space-y-4">{purchasesQuery.data?.items.map((purchase) => (
-          <article key={purchase.id} className="rounded-[1.75rem] border border-ink-950/7 bg-white p-5 shadow-card sm:p-6">
-            <div className="grid gap-4 sm:grid-cols-[5rem_1fr_auto] sm:items-center"><span className="font-display text-xl font-black">#{purchase.number}</span><div><div className="flex flex-wrap items-center gap-2"><h2 className="font-black">{purchase.supplierName}</h2><StatusChip label={purchase.state === 'ordered' ? 'En camino' : purchase.state === 'received' ? 'Recibida' : purchase.state === 'draft' ? 'Borrador' : 'Cancelada'} tone={purchase.state === 'ordered' ? 'info' : purchase.state === 'received' ? 'success' : 'neutral'} /></div><p className="mt-1 text-xs font-semibold text-ink-600">{formatUnits(purchase.items.reduce((sum, item) => sum + item.quantity, 0))} · {formatProducts(purchase.items.length)}</p></div><strong className="font-display text-xl">{formatMoney(purchase.totalCostCents)}</strong></div>
-            <div className="mt-5 grid gap-3 border-t border-ink-950/8 pt-5 sm:grid-cols-[1fr_auto] sm:items-end"><div className="space-y-2">{purchase.items.map((item) => <div key={item.id} className="flex justify-between gap-4 text-sm"><span>{item.productName} × {item.quantity}</span><span className="font-bold text-ink-600">{formatMoney(item.unitCostCents)} c/u</span></div>)}</div>{purchase.state === 'ordered' ? <Button variant="dark" loading={receive.isPending && receive.variables === purchase.id} onClick={() => receive.mutate(purchase.id)}><CheckCircle2 className="size-4" /> Marcar recibida</Button> : <span className="inline-flex items-center gap-2 text-sm font-bold text-emerald-700"><CheckCircle2 className="size-4" /> Stock actualizado</span>}</div>
-          </article>
-        ))}</div>
-        {purchasesQuery.data && purchasesQuery.data.total > purchasesQuery.data.pageSize ? <nav className="mt-5 flex items-center justify-between rounded-2xl bg-white p-4 shadow-card" aria-label="Páginas de compras"><Button variant="ghost" size="sm" disabled={page === 1} onClick={() => setPage((current) => Math.max(1, current - 1))}><ChevronLeft className="size-4" /> Anterior</Button><span className="text-sm font-bold text-ink-600">Página {page} de {Math.ceil(purchasesQuery.data.total / purchasesQuery.data.pageSize)}</span><Button variant="ghost" size="sm" disabled={page * purchasesQuery.data.pageSize >= purchasesQuery.data.total} onClick={() => setPage((current) => current + 1)}>Siguiente <ChevronRight className="size-4" /></Button></nav> : null}
+        <PageHeader
+          title="Pedidos al proveedor"
+          description="Anotá lo pedido a proveedores para proyectar el stock. Al recibirlo se suma al stock físico."
+          action={
+            <Button onClick={() => setFormOpen(true)}>
+              <PackagePlus className="size-4" /> Nuevo pedido
+            </Button>
+          }
+        />
+        {purchasesQuery.isPending ? <LoadingState label="Cargando pedidos al proveedor…" /> : null}
+        {purchasesQuery.isError ? (
+          <ErrorState error={purchasesQuery.error} onRetry={() => void purchasesQuery.refetch()} />
+        ) : null}
+        {receive.error ? (
+          <div className="mb-5">
+            <ErrorState error={receive.error} />
+          </div>
+        ) : null}
+
+        <div className="space-y-4">
+          {purchasesQuery.data?.items.map((purchase) => {
+            const totalUnits = purchase.items.reduce((sum, item) => sum + item.quantity, 0);
+            const isOpen = expandedPurchases[purchase.id] ?? false;
+
+            let deliveryLabel: ReactNode = <span className="text-ink-500 font-medium">Sin fecha estimada</span>;
+            if (purchase.expectedAt) {
+              try {
+                const parsedDate = typeof purchase.expectedAt === 'string' ? parseISO(purchase.expectedAt) : new Date(purchase.expectedAt);
+                if (isValid(parsedDate)) {
+                  const today = startOfDay(new Date());
+                  const isLate = purchase.state === 'ordered' && isBefore(startOfDay(parsedDate), today);
+                  const dateStr = format(parsedDate, 'd MMM', { locale: es });
+
+                  if (isLate) {
+                    deliveryLabel = (
+                      <span className="font-bold text-amber-800 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
+                        Llegaba el {dateStr} · Atrasado
+                      </span>
+                    );
+                  } else {
+                    deliveryLabel = (
+                      <span className="font-semibold text-ink-700">
+                        Llega {dateStr}
+                      </span>
+                    );
+                  }
+                }
+              } catch {
+                // fallback
+              }
+            }
+
+            return (
+              <article key={purchase.id} className="rounded-[1.75rem] border border-ink-950/7 bg-white p-5 shadow-card sm:p-6 transition hover:bg-cream-50/40">
+                {/* Fila 1: Pedido #N + Estado */}
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="font-display text-lg sm:text-xl font-black text-ink-950">
+                    Pedido #{purchase.number}
+                  </h3>
+                  <div>
+                    {purchase.state === 'received' ? (
+                      <StatusChip label="Recibido" tone="success" />
+                    ) : (
+                      <StatusChip label="En camino" tone="warning" />
+                    )}
+                  </div>
+                </div>
+
+                {/* Fila 2: Proveedor */}
+                <p className="mt-1 text-[14px] font-bold text-ink-600">
+                  {purchase.supplierName || 'Sin proveedor'}
+                </p>
+
+                {/* Fila 3: Unidades · Costo · Llegada | Acción */}
+                <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-ink-950/6 pb-4">
+                  <div className="flex flex-wrap items-center gap-2 text-[14px]">
+                    <span className="font-bold text-ink-950">
+                      {totalUnits} {totalUnits === 1 ? 'unidad' : 'unidades'}
+                    </span>
+                    <span className="text-ink-400">·</span>
+                    <span className="font-black text-ink-950">
+                      {formatMoney(purchase.totalCostCents)}
+                    </span>
+                    <span className="text-ink-400">·</span>
+                    {deliveryLabel}
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    {purchase.state === 'ordered' ? (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        loading={receive.isPending && receive.variables === purchase.id}
+                        onClick={() => receive.mutate(purchase.id)}
+                        className="font-bold text-xs rounded-xl min-h-9 px-4"
+                      >
+                        <CheckCircle2 className="size-4 text-emerald-600" /> Marcar como recibido
+                      </Button>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 text-xs font-black text-emerald-700 bg-emerald-50 border border-emerald-200/60 px-3 py-1.5 rounded-xl">
+                        <Check className="size-3.5" /> Stock actualizado
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Fila 4: Productos ({count}) ˄ / ˅ (toda la fila clickeable) */}
+                <div className="pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setExpandedPurchases((prev) => ({ ...prev, [purchase.id]: !isOpen }))}
+                    className="w-full flex items-center justify-between py-1.5 text-[13.5px] font-bold text-ink-700 hover:text-brand-600 transition"
+                  >
+                    <span>Productos ({purchase.items.length})</span>
+                    {isOpen ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
+                  </button>
+
+                  {isOpen && (
+                    <div className="mt-2.5 rounded-2xl bg-cream-50/70 p-4 space-y-2.5 border border-ink-950/6">
+                      {purchase.items.map((item, idx) => (
+                        <div key={idx} className="flex items-center justify-between gap-4 text-[13.5px]">
+                          <div>
+                            <p className="font-bold text-ink-950">{item.productName}</p>
+                            <p className="text-xs font-semibold text-ink-600">
+                              {item.quantity} {item.quantity === 1 ? 'unidad' : 'unidades'}
+                            </p>
+                          </div>
+                          <span className="text-sm font-semibold text-ink-700 shrink-0">
+                            {formatMoney(item.unitCostCents * item.quantity)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </article>
+            );
+          })}
+        </div>
+
+        {purchasesQuery.data && purchasesQuery.data.total > purchasesQuery.data.pageSize ? (
+          <nav className="mt-5 flex items-center justify-between rounded-2xl bg-white p-4 shadow-card" aria-label="Páginas de pedidos al proveedor">
+            <Button variant="ghost" size="sm" disabled={page === 1} onClick={() => setPage((current) => Math.max(1, current - 1))}>
+              <ChevronLeft className="size-4" /> Anterior
+            </Button>
+            <span className="text-sm font-bold text-ink-600">Página {page} de {Math.ceil(purchasesQuery.data.total / purchasesQuery.data.pageSize)}</span>
+            <Button variant="ghost" size="sm" disabled={page * purchasesQuery.data.pageSize >= purchasesQuery.data.total} onClick={() => setPage((current) => current + 1)}>
+              Siguiente <ChevronRight className="size-4" />
+            </Button>
+          </nav>
+        ) : null}
+
         {formOpen ? <PurchaseForm onClose={() => setFormOpen(false)} /> : null}
       </div>
     </RoleGate>
