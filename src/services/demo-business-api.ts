@@ -219,8 +219,8 @@ export const demoBusinessApi: BusinessApi = {
         candidate.id !== input.id && (candidate.sku === input.sku || candidate.slug === input.slug)
     );
     if (duplicate) {
-      throw new AppError('business', 'Ya existe un producto con ese SKU o enlace.', {
-        nextAction: 'Usá un SKU y un enlace diferentes.'
+      throw new AppError('business', 'Ya existe un producto con ese código o enlace.', {
+        nextAction: 'Usá un código y un enlace diferentes.'
       });
     }
     if (existing) {

@@ -75,7 +75,7 @@ export default function ImportOrderPage() {
       const lines = parsed.lines.map((line) => {
         const product = products.find((candidate) => candidate.sku === line.sku);
         if (!product || !product.active) {
-          throw new AppError('business', `El producto “${line.name}” (SKU: ${line.sku}) no está disponible en catálogo.`, {
+          throw new AppError('business', `El producto “${line.name}” (código: ${line.sku}) no está disponible en catálogo.`, {
             nextAction: 'Revisá el mensaje de WhatsApp o cargá el producto si es nuevo.'
           });
         }
@@ -102,7 +102,7 @@ export default function ImportOrderPage() {
               {
                 cause: error,
                 nextAction:
-                  'Copiá el mensaje completo desde WhatsApp, desde "*PEDIDO IMPULSO · V1*" hasta el código de control final.'
+                  'Copiá el mensaje completo desde WhatsApp, desde "*PEDIDO IMPULSO*" hasta el final.'
               }
             )
       );
@@ -234,7 +234,7 @@ export default function ImportOrderPage() {
               <Textarea
                 id="order-message"
                 className="min-h-[18rem] font-mono text-sm leading-6"
-                placeholder="*PEDIDO IMPULSO · V1*&#10;&#10;*Código de pedido*&#10;...&#10;*Nombre*&#10;Juan Pérez&#10;..."
+                placeholder="*PEDIDO IMPULSO*&#10;&#10;*Código de pedido*&#10;...&#10;*Nombre*&#10;Juan Pérez&#10;..."
                 value={message}
                 onChange={(event) => setMessage(event.target.value)}
               />

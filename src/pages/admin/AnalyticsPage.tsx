@@ -69,7 +69,7 @@ export default function AnalyticsPage() {
       <div className="page-enter">
         <PageHeader
           title="Analíticas comerciales"
-          description="Evolución en pesos, poder de compra ajustado por IPC y volumen de unidades por separado para analizar crecimiento real."
+          description="Evolución en pesos, compras ajustadas por inflación y volumen de unidades para analizar el crecimiento real de tu negocio."
           action={
             <div className="flex flex-wrap items-center gap-2 rounded-2xl bg-white p-2 shadow-card">
               <CalendarRange className="ml-2 size-4 text-ink-600" />
@@ -114,7 +114,7 @@ export default function AnalyticsPage() {
               <MetricCard
                 label="Unidades vendidas"
                 value={String(analyticsQuery.data.units)}
-                detail="Volumen físico real"
+                detail="Total de unidades vendidas"
                 icon={PackageCheck}
                 accent="coral"
               />
@@ -183,7 +183,7 @@ export default function AnalyticsPage() {
                     <p className="mt-1 text-xs text-ink-600">
                       {analyticsQuery.data.comparisonCutoffDay === null
                         ? 'Comparación directa de meses seleccionados.'
-                        : `Meses cortados homogéneamente en el día ${analyticsQuery.data.comparisonCutoffDay} para comparar con el mes corriente.`}
+                        : `Comparación al mismo día (${analyticsQuery.data.comparisonCutoffDay}) de cada mes para un análisis parejo.`}
                     </p>
                   </div>
 
@@ -207,7 +207,7 @@ export default function AnalyticsPage() {
                         )}
                         onClick={() => setChartMode('nominal')}
                       >
-                        Nominal
+                        En pesos
                       </button>
                       <button
                         type="button"
@@ -217,12 +217,12 @@ export default function AnalyticsPage() {
                         )}
                         onClick={() => setChartMode('adjusted')}
                       >
-                        Ajustada IPC
+                        Ajustada por inflación
                       </button>
                     </div>
 
                     {analyticsQuery.data.series.some((p) => !p.ipcPublished) ? (
-                      <StatusChip label="IPC pendiente de publicación" tone="warning" />
+                      <StatusChip label="Inflación oficial pendiente" tone="warning" />
                     ) : null}
                   </div>
                 </div>
@@ -251,7 +251,7 @@ export default function AnalyticsPage() {
                                 currency: 'ARS',
                                 maximumFractionDigits: 0
                               }).format(value)
-                            : 'IPC pendiente'
+                            : 'Inflación pendiente'
                         }
                         contentStyle={{
                           borderRadius: 16,
@@ -263,7 +263,7 @@ export default function AnalyticsPage() {
                       {chartMode !== 'adjusted' ? (
                         <Bar
                           dataKey="nominal"
-                          name="Facturación nominal"
+                          name="Facturación en pesos"
                           fill="#1e40af"
                           radius={[8, 8, 0, 0]}
                         />
@@ -271,7 +271,7 @@ export default function AnalyticsPage() {
                       {chartMode !== 'nominal' ? (
                         <Bar
                           dataKey="ajustada"
-                          name="Ajustada por IPC"
+                          name="Ajustada por inflación"
                           fill="#3b82f6"
                           radius={[8, 8, 0, 0]}
                         />

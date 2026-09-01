@@ -259,7 +259,7 @@ function StockDetailDrawer({
               <div>
                 <p className="font-bold text-amber-950">Alerta de stock bajo activada</p>
                 <p className="text-[12.5px] text-amber-900 mt-0.5">
-                  Hay <strong>{item.available} u.</strong> disponibles y el punto de pedido configurado es de <strong>≤ {item.reorderPoint} u.</strong>
+                  Hay <strong>{item.available} u.</strong> disponibles y el límite de stock bajo configurado es de <strong>≤ {item.reorderPoint} u.</strong>
                 </p>
               </div>
             </div>
@@ -270,7 +270,7 @@ function StockDetailDrawer({
               <div>
                 <p className="font-bold text-emerald-950">Stock en orden</p>
                 <p className="text-[12.5px] text-emerald-800 mt-0.5">
-                  El stock disponible (<strong>{item.available} u.</strong>) supera el punto de pedido de reposición (<strong>&gt; {item.reorderPoint} u.</strong>).
+                  El stock disponible (<strong>{item.available} u.</strong>) supera el límite de alerta de reposición (<strong>&gt; {item.reorderPoint} u.</strong>).
                 </p>
               </div>
             </div>
@@ -298,15 +298,15 @@ function StockDetailDrawer({
           </div>
         </div>
 
-        {/* Bloque 3 — Configuración editable de alertas y umbrales */}
+        {/* Bloque 3 — Configuración editable de alertas */}
         <div className="rounded-2xl border border-ink-950/10 bg-white p-4 shadow-sm">
           <div className="flex items-center justify-between mb-3">
             <div>
               <h4 className="text-[13px] font-black uppercase tracking-wider text-ink-900">
-                Umbrales y alertas de reposición
+                Alertas de reposición y stock
               </h4>
               <p className="text-[12px] font-medium text-ink-600">
-                Ajustá cuándo querés que el sistema catalogue el stock como bajo o crítico.
+                Ajustá cuándo querés que el sistema te avise que el stock está bajo o crítico.
               </p>
             </div>
             <SlidersHorizontal className="size-4 text-ink-500" />
@@ -336,7 +336,7 @@ function StockDetailDrawer({
 
             <div>
               <label className="block text-[12.5px] font-black text-ink-900 mb-1">
-                Stock de seguridad
+                Mínimo de emergencia
               </label>
               <div className="relative">
                 <Input
@@ -386,7 +386,7 @@ function StockDetailDrawer({
                     loading={updateThresholds.isPending}
                     onClick={() => updateThresholds.mutate()}
                   >
-                    Guardar umbrales
+                    Guardar alertas
                   </Button>
                 </div>
               </div>
@@ -396,7 +396,7 @@ function StockDetailDrawer({
           {saveSuccess && (
             <div className="mt-3 flex items-center gap-2 rounded-xl bg-emerald-50 p-2.5 text-xs font-bold text-emerald-800 border border-emerald-200">
               <Check className="size-4 text-emerald-700" />
-              <span>¡Umbrales actualizados con éxito!</span>
+              <span>¡Alertas actualizadas con éxito!</span>
             </div>
           )}
 
@@ -416,20 +416,20 @@ function StockDetailDrawer({
               <span className="text-2xl font-black text-ink-950">{item.incoming}</span>
             </div>
             <div>
-              <span className="block text-[12px] font-black uppercase text-ink-600">Stock proyectado</span>
+              <span className="block text-[12px] font-black uppercase text-ink-600">Stock estimado futuro</span>
               <span className="text-2xl font-black text-brand-700">{item.projected}</span>
             </div>
           </div>
         </div>
 
-        {/* Bloque 5 — Cálculo avanzado de reposición */}
+        {/* Bloque 5 — Cálculo de reposición */}
         <div className="overflow-hidden rounded-2xl border border-ink-950/8 bg-white p-4">
           <button
             type="button"
             onClick={() => setShowCalculation(!showCalculation)}
             className="flex w-full items-center justify-between text-[13px] font-black uppercase tracking-wider text-ink-800 hover:text-ink-950"
           >
-            <span>{showCalculation ? 'Ocultar detalles de reposición ▴' : 'Ver cálculo avanzado de reposición ▾'}</span>
+            <span>{showCalculation ? 'Ocultar detalles de reposición ▴' : 'Ver detalles de reposición y tiempos ▾'}</span>
             <ChevronDown
               className={cn('size-4 text-ink-600 transition-transform', showCalculation && 'rotate-180')}
             />
@@ -445,19 +445,19 @@ function StockDetailDrawer({
                   </dd>
                 </div>
                 <div>
-                  <dt className="font-semibold text-ink-700">Lead time</dt>
+                  <dt className="font-semibold text-ink-700">Demora del proveedor</dt>
                   <dd className="text-[15px] font-black text-ink-950">{item.leadTimeDays} días</dd>
                 </div>
                 <div>
-                  <dt className="font-semibold text-ink-700">Stock de seguridad</dt>
+                  <dt className="font-semibold text-ink-700">Mínimo de emergencia</dt>
                   <dd className="text-[15px] font-black text-ink-950">{item.safetyStock} u.</dd>
                 </div>
                 <div>
-                  <dt className="font-semibold text-ink-700">Punto de pedido</dt>
+                  <dt className="font-semibold text-ink-700">Límite de alerta</dt>
                   <dd className="text-[15px] font-black text-ink-950">{item.reorderPoint} u.</dd>
                 </div>
                 <div>
-                  <dt className="font-semibold text-ink-700">Días de cobertura</dt>
+                  <dt className="font-semibold text-ink-700">Días de stock restantes</dt>
                   <dd className="text-[15px] font-black text-ink-950">
                     {item.coverageDays ?? '—'} días
                   </dd>
@@ -1080,7 +1080,7 @@ export default function InventoryPage() {
             </div>
           </div>
 
-          {movementsQuery.isPending ? <LoadingState label="Cargando trazabilidad…" /> : null}
+          {movementsQuery.isPending ? <LoadingState label="Cargando historial de movimientos…" /> : null}
           {movementsQuery.isError ? <ErrorState error={movementsQuery.error} onRetry={() => void movementsQuery.refetch()} /> : null}
 
           {movementsQuery.data ? (

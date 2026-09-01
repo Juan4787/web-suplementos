@@ -19,7 +19,7 @@ type RpcArgs = Record<string, unknown>;
 
 const configurationError = (): AppError =>
   new AppError('configuration', 'La aplicación todavía no está conectada a la tienda.', {
-    nextAction: 'Configurá el proyecto de Supabase antes de publicar este entorno.'
+    nextAction: 'Por favor contactá al administrador de la tienda.'
   });
 
 const translateDatabaseError = (error: { message?: string; code?: string }): AppError => {
@@ -55,7 +55,7 @@ const translateDatabaseError = (error: { message?: string; code?: string }): App
     });
   }
   if (/PRODUCT_DUPLICATE/i.test(diagnostic)) {
-    return new AppError('business', 'Ya existe un producto con ese SKU o enlace.', {
+    return new AppError('business', 'Ya existe un producto con ese código o enlace.', {
       nextAction: 'Usá valores distintos o editá el producto existente.'
     });
   }
@@ -90,8 +90,8 @@ const translateDatabaseError = (error: { message?: string; code?: string }): App
     });
   }
   if (/INVALID_INFLATION_INDEX/i.test(diagnostic)) {
-    return new AppError('validation', 'El dato de IPC está incompleto o no es válido.', {
-      nextAction: 'Revisá período, nivel del índice, fecha y enlace oficial HTTPS.'
+    return new AppError('validation', 'El dato de inflación está incompleto o no es válido.', {
+      nextAction: 'Revisá período, nivel del índice, fecha y enlace oficial.'
     });
   }
   if (/INVALID_PERIOD/i.test(diagnostic)) {

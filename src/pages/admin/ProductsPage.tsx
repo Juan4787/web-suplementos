@@ -35,7 +35,7 @@ import { getBusinessApi, type ProductUpdate } from '@/services/business-api';
 import { cn } from '@/lib/cn';
 
 const formSchema = z.object({
-  sku: z.string().trim().min(2, 'Ingresá un SKU (mínimo 2 caracteres).').max(30),
+  sku: z.string().trim().min(2, 'Ingresá un código para el producto (mínimo 2 caracteres).').max(30),
   slug: z
     .string()
     .trim()
@@ -46,11 +46,11 @@ const formSchema = z.object({
   category: z.string().trim().min(2, 'Ingresá una categoría.').max(60),
   pricePesos: z.number().nonnegative('El precio de venta no puede ser negativo.'),
   costPesos: z.number().nonnegative('El costo no puede ser negativo.'),
-  reorderPoint: z.number().int().nonnegative('El punto de pedido debe ser 0 o mayor.'),
-  safetyStock: z.number().int().nonnegative('El stock de seguridad debe ser 0 o mayor.'),
-  leadTimeDays: z.number().int().min(0).max(365, 'El lead time debe estar entre 0 y 365 días.'),
+  reorderPoint: z.number().int().nonnegative('El límite de alerta debe ser 0 o mayor.'),
+  safetyStock: z.number().int().nonnegative('El mínimo de emergencia debe ser 0 o mayor.'),
+  leadTimeDays: z.number().int().min(0).max(365, 'Los días de demora deben estar entre 0 y 365 días.'),
   imageUrl: z.string().trim().min(1, 'Agregá o subí una imagen para el producto.'),
-  imageAlt: z.string().trim().min(3, 'Describí la imagen para accesibilidad.'),
+  imageAlt: z.string().trim().min(3, 'Agregá una breve descripción de la foto.'),
   published: z.boolean(),
   active: z.boolean(),
   featured: z.boolean()
@@ -339,7 +339,7 @@ function ProductForm({ product, onClose }: { product: AdminProduct | null; onClo
                     }}
                   />
                   <p className="text-[13px] font-medium text-ink-600">
-                    JPG, PNG, WebP o AVIF (hasta 12 MB). El navegador la optimiza automáticamente.
+                    Fotos en JPG o PNG (fotos de celular o catálogo). El sistema adapta el tamaño automáticamente.
                   </p>
                 </div>
               </div>
@@ -383,7 +383,7 @@ function ProductForm({ product, onClose }: { product: AdminProduct | null; onClo
             >
               <span className="flex items-center gap-2">
                 <Sliders className="size-4 text-brand-600" />
-                Configuración avanzada de reposición y SKU
+                Código de producto y alertas de reposición
               </span>
               <ChevronDown
                 className={`size-4 text-ink-600 transition-transform ${
@@ -396,16 +396,16 @@ function ProductForm({ product, onClose }: { product: AdminProduct | null; onClo
               <div className="mt-4 space-y-4 rounded-2xl bg-cream-50 p-4">
                 <div className="grid gap-4 sm:grid-cols-2">
                   <Field
-                    label="SKU / Código identificador"
+                    label="Código del producto"
                     error={errors.sku?.message}
-                    hint="Identificador único del producto."
+                    hint="Identificador único, ej: CREA300."
                   >
                     <Input className="uppercase" {...register('sku')} />
                   </Field>
                   <Field
-                    label="Enlace web (slug)"
+                    label="Enlace web del producto"
                     error={errors.slug?.message}
-                    hint="Ruta pública (ej. creatina-300g)."
+                    hint="Dirección pública (ej. creatina-300g)."
                   >
                     <Input {...register('slug')} />
                   </Field>
@@ -413,8 +413,8 @@ function ProductForm({ product, onClose }: { product: AdminProduct | null; onClo
 
                 <div className="grid gap-4 sm:grid-cols-3">
                   <Field
-                    label="Punto de pedido"
-                    hint="Alerta de stock bajo"
+                    label="Límite de alerta"
+                    hint="Avisar stock bajo"
                     error={errors.reorderPoint?.message}
                   >
                     <Input
@@ -424,8 +424,8 @@ function ProductForm({ product, onClose }: { product: AdminProduct | null; onClo
                     />
                   </Field>
                   <Field
-                    label="Stock seguridad"
-                    hint="Reserva mínima"
+                    label="Mínimo de emergencia"
+                    hint="Avisar crítico"
                     error={errors.safetyStock?.message}
                   >
                     <Input
@@ -435,8 +435,8 @@ function ProductForm({ product, onClose }: { product: AdminProduct | null; onClo
                     />
                   </Field>
                   <Field
-                    label="Lead time (días)"
-                    hint="Días demora proveedor"
+                    label="Demora del proveedor"
+                    hint="Días que tarda el pedido"
                     error={errors.leadTimeDays?.message}
                   >
                     <Input

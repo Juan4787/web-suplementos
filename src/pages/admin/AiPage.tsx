@@ -85,10 +85,10 @@ export default function AiPage() {
   return (
     <RoleGate capability="use_ai">
       <div className="page-enter">
-        <PageHeader title="Asistente del negocio" description="PostgreSQL calcula. La IA consulta resultados compactos, los relaciona y los explica." />
+        <PageHeader title="Asistente del negocio" description="La base de datos calcula los números exactos de tu tienda y el asistente te ayuda a interpretarlos y tomar decisiones." />
         <div className="grid gap-6 xl:grid-cols-[1fr_20rem]">
           <section className="flex min-h-[42rem] flex-col overflow-hidden rounded-[2rem] bg-white shadow-card">
-            <div className="flex items-center justify-between gap-3 border-b border-ink-950/8 px-5 py-4 sm:px-6"><div className="flex items-center gap-3"><span className="grid size-10 place-items-center rounded-2xl bg-brand-100 text-brand-700"><Bot className="size-5" /></span><div><h2 className="font-black">Analista Impulso</h2><p className="text-xs font-semibold text-brand-600">Disponible · sin permisos de escritura</p></div></div><div className="flex items-center gap-2"><span className="hidden items-center gap-2 rounded-full bg-cream-100 px-3 py-2 text-xs font-black text-ink-600 lg:inline-flex"><Database className="size-3.5" /> Datos de la tienda</span><span className="inline-flex items-center rounded-full border border-ink-950/10 bg-white px-3 py-2 text-xs font-black text-ink-700">Automático</span></div></div>
+            <div className="flex items-center justify-between gap-3 border-b border-ink-950/8 px-5 py-4 sm:px-6"><div className="flex items-center gap-3"><span className="grid size-10 place-items-center rounded-2xl bg-brand-100 text-brand-700"><Bot className="size-5" /></span><div><h2 className="font-black">Analista Impulso</h2><p className="text-xs font-semibold text-brand-600">Disponible · Modo solo lectura</p></div></div><div className="flex items-center gap-2"><span className="hidden items-center gap-2 rounded-full bg-cream-100 px-3 py-2 text-xs font-black text-ink-600 lg:inline-flex"><Database className="size-3.5" /> Datos de la tienda</span><span className="inline-flex items-center rounded-full border border-ink-950/10 bg-white px-3 py-2 text-xs font-black text-ink-700">Automático</span></div></div>
             <div className="flex-1 space-y-5 overflow-y-auto bg-cream-50 p-4 sm:p-6">
               {messages.map((message) => (
                 <article key={message.id} className={`flex gap-3 ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
@@ -96,8 +96,7 @@ export default function AiPage() {
                   <div className={`max-w-[82%] rounded-[1.5rem] px-4 py-3 text-sm leading-6 sm:max-w-[72%] ${message.role === 'user' ? 'rounded-br-md bg-brand-600 text-white' : 'rounded-bl-md border border-ink-950/7 bg-white text-ink-800 shadow-sm'}`}>
                     <p className="whitespace-pre-wrap">{message.content}</p>
                     {message.evidence?.length ? <details className="mt-3 border-t border-ink-950/8 pt-2"><summary className="cursor-pointer text-[11px] font-black text-ink-600">Datos exactos usados</summary><dl className="mt-2 space-y-1.5">{message.evidence.map((fact) => <div key={`${fact.label}-${fact.formatted}`} className="flex items-start justify-between gap-4 text-xs"><dt className="text-ink-600">{fact.label}</dt><dd className="shrink-0 font-black text-ink-950">{fact.formatted}</dd></div>)}</dl></details> : null}
-                    {message.consulted ? <p className="mt-3 flex items-center gap-1.5 border-t border-ink-950/8 pt-2 text-[10px] font-black uppercase tracking-wider text-brand-600"><Database className="size-3" /> Respuesta basada en datos consultados</p> : null}
-                    {message.model ? <p className="mt-1 text-[10px] font-bold text-ink-600">{message.model}{message.fallback ? ' · respaldo' : ''}</p> : null}
+                    {message.consulted ? <p className="mt-3 flex items-center gap-1.5 border-t border-ink-950/8 pt-2 text-[10px] font-black uppercase tracking-wider text-brand-600"><Database className="size-3" /> Respuesta basada en datos reales de tu tienda</p> : null}
                   </div>
                   {message.role === 'user' ? <span className="grid size-9 shrink-0 place-items-center rounded-full bg-brand-100 text-brand-700"><User className="size-4" /></span> : null}
                 </article>
@@ -111,7 +110,7 @@ export default function AiPage() {
             </div>
           </section>
           <aside className="space-y-5">
-            <section className="rounded-[1.75rem] bg-ink-950 p-5 text-white"><LockKeyhole className="size-6 text-brand-300" /><h2 className="mt-4 font-display text-xl font-black">No puede escribir</h2><p className="mt-2 text-sm leading-6 text-white/60">No existe ninguna herramienta para cambiar stock, precios, pedidos ni compras. RLS también limita lo que puede leer.</p></section>
+            <section className="rounded-[1.75rem] bg-ink-950 p-5 text-white"><LockKeyhole className="size-6 text-brand-300" /><h2 className="mt-4 font-display text-xl font-black">Seguridad total</h2><p className="mt-2 text-sm leading-6 text-white/60">El asistente no puede modificar stock, precios, compras ni pedidos. Solo responde preguntas de consulta.</p></section>
             <section className="rounded-[1.75rem] bg-white p-5 shadow-card"><h3 className="flex items-center gap-2 text-sm font-black text-ink-950"><Sparkles className="size-4 text-brand-600" /> Preguntas sugeridas</h3><div className="mt-4 space-y-2">{suggestions.map((suggestion) => <button key={suggestion} className="w-full rounded-2xl bg-cream-100 p-3 text-left text-xs font-bold leading-5 transition hover:bg-brand-50 hover:text-brand-700" onClick={() => submit(suggestion)}>{suggestion}</button>)}</div></section>
           </aside>
         </div>

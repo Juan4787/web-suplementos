@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { formatMoney } from './money';
 import type { CartLine, CheckoutData, ImportOrderInput, StoreSettings } from './types';
 
-export const WHATSAPP_PROTOCOL_HEADER = '*PEDIDO IMPULSO · V1*';
+export const WHATSAPP_PROTOCOL_HEADER = '*PEDIDO IMPULSO*';
 
 const field = (label: string, value: string): string => `*${label}*\n${value}`;
 
@@ -153,7 +153,9 @@ const parseArs = (value: string): number => {
 
 const splitSections = (message: string): Map<string, string> => {
   const chunks = normalizeProtocolText(message).split(/\n\n+/);
-  if (chunks[0] !== WHATSAPP_PROTOCOL_HEADER) throw new Error('Encabezado inválido.');
+  if (chunks[0] !== '*PEDIDO IMPULSO*' && chunks[0] !== '*PEDIDO IMPULSO · V1*') {
+    throw new Error('Encabezado inválido.');
+  }
   const sections = new Map<string, string>();
   sections.set('Encabezado', chunks[0]);
   for (const chunk of chunks.slice(1)) {

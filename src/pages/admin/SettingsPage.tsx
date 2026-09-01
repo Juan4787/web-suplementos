@@ -202,7 +202,7 @@ function BackupsTab() {
         <span className="grid size-12 place-items-center rounded-xl bg-brand-50 text-brand-700">
           <FileSpreadsheet className="size-6" />
         </span>
-        <h3 className="mt-4 font-display text-2xl font-black text-ink-950">Respaldo tabular completo</h3>
+        <h3 className="mt-4 font-display text-2xl font-black text-ink-950">Respaldo completo en Excel</h3>
         <p className="mt-2 text-sm text-ink-600 leading-relaxed">
           Descargá un archivo de Excel con 13 hojas que contiene toda tu información comercial (productos, stock, pedidos, ventas, compras, clientes e índices).
         </p>
@@ -257,7 +257,7 @@ function BackupsTab() {
           <ImageOff className="size-5 text-amber-800" />
           <h4 className="mt-3 font-display text-lg font-black">Alcance del respaldo</h4>
           <p className="mt-1 text-xs text-amber-950/80 leading-5">
-            El archivo exporta registros comerciales en formato tabular. No incluye archivos binarios de imágenes pesadas.
+            El archivo exporta los registros comerciales en Excel. No incluye los archivos de imágenes ni claves del sistema.
           </p>
         </div>
       </aside>
@@ -370,7 +370,7 @@ function UsersTab({
           <Shield className="size-5 text-brand-600" />
           <h4 className="mt-3 font-display text-lg font-black">Rol Personal</h4>
           <p className="mt-1 text-xs text-ink-600 leading-5">
-            Operación de catálogo, stock, pedidos y compras. El backend filtra y nunca envía costos ni información financiera.
+            Operación de catálogo, stock, pedidos y compras. El sistema oculta automáticamente los costos y datos financieros.
           </p>
         </div>
       </div>
