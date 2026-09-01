@@ -101,59 +101,118 @@ function PurchaseFormModal({ onClose }: { onClose: () => void }) {
           <Field label="Proveedor" hint="Nombre del laboratorio o distribuidor"><Input placeholder="Ej. Star Nutrition" value={supplier} onChange={(event) => setSupplier(event.target.value)} /></Field>
           <Field label="Fecha estimada de entrega"><Input type="date" value={expectedAt} onChange={(event) => setExpectedAt(event.target.value)} /></Field>
           <div className="space-y-3">
-            <label className="text-[13px] font-black uppercase tracking-wider text-ink-700">Productos pedidos</label>
+            <div className="flex items-center justify-between">
+              <label className="text-[13px] font-black uppercase tracking-wider text-ink-700">
+                Productos pedidos ({lines.length})
+              </label>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={() => setLines([...lines, { productId: '', quantity: 1, unitCostPesos: 0 }])}
+              >
+                + Agregar producto
+              </Button>
+            </div>
+
             {lines.map((line, index) => (
-              <div key={index} className="grid grid-cols-[1fr_80px_110px_36px] items-center gap-2">
-                <Select value={line.productId} onChange={(event) => {
-                  const updated = [...lines];
-                  const item = updated[index];
-                  if (item) {
-                    item.productId = event.target.value;
-                    const prod = productsQuery.data?.find((p) => p.id === event.target.value);
-                    if (prod) item.unitCostPesos = (prod.currentCostCents ?? 0) / 100;
-                  }
-                  setLines(updated);
-                }}>
-                  <option value="">Seleccionar…</option>
-                  {productsQuery.data?.map((p) => <option key={p.id} value={p.id}>{p.name} ({p.presentation})</option>)}
+              <div
+                key={index}
+                className="space-y-3 rounded-2xl border border-ink-950/10 bg-cream-50/70 p-3.5 sm:p-4 transition"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[12px] font-black uppercase tracking-wider text-ink-600">
+                    Producto #{index + 1}
+                  </span>
+                  {lines.length > 1 && (
+                    <button
+                      type="button"
+                      className="flex items-center gap-1 rounded-lg px-2 py-1 text-[12px] font-bold text-red-600 hover:bg-red-50 hover:text-red-700 transition"
+                      onClick={() => setLines(lines.filter((_, i) => i !== index))}
+                    >
+                      <X className="size-3.5" /> Quitar
+                    </button>
+                  )}
+                </div>
+
+                {/* Full width select: never cut or abbreviated */}
+                <Select
+                  placeholder="Seleccionar producto…"
+                  value={line.productId}
+                  onChange={(event) => {
+                    const updated = [...lines];
+                    const item = updated[index];
+                    if (item) {
+                      item.productId = event.target.value;
+                      const prod = productsQuery.data?.find((p) => p.id === event.target.value);
+                      if (prod) item.unitCostPesos = (prod.currentCostCents ?? 0) / 100;
+                    }
+                    setLines(updated);
+                  }}
+                >
+                  <option value="">Seleccionar producto…</option>
+                  {productsQuery.data?.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} {p.presentation ? `(${p.presentation})` : ''}
+                    </option>
+                  ))}
                 </Select>
-                <Input
-                  type="text"
-                  inputMode="numeric"
-                  pattern="[0-9]*"
-                  placeholder="Cant."
-                  value={line.quantity || ''}
-                  onFocus={(e) => e.target.select()}
-                  onChange={(event) => {
-                    const updated = [...lines];
-                    const item = updated[index];
-                    if (item) {
-                      const clean = sanitizeIntegerInput(event.target.value, String(item.quantity || ''));
-                      item.quantity = clean === '' ? 0 : parseInt(clean, 10);
-                    }
-                    setLines(updated);
-                  }}
-                />
-                <Input
-                  type="text"
-                  inputMode="decimal"
-                  placeholder="$ Costo"
-                  value={line.unitCostPesos || ''}
-                  onFocus={(e) => e.target.select()}
-                  onChange={(event) => {
-                    const updated = [...lines];
-                    const item = updated[index];
-                    if (item) {
-                      const clean = sanitizeDecimalInput(event.target.value, String(item.unitCostPesos || ''));
-                      item.unitCostPesos = clean === '' ? 0 : parseFloat(clean) || 0;
-                    }
-                    setLines(updated);
-                  }}
-                />
-                <button type="button" className="grid size-9 place-items-center text-ink-400 hover:text-red-600" onClick={() => setLines(lines.filter((_, i) => i !== index))} disabled={lines.length === 1}><X className="size-4" /></button>
+
+                {/* Quantity and unit cost in responsive 2 columns */}
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="Cantidad">
+                    <div className="relative">
+                      <Input
+                        type="text"
+                        inputMode="numeric"
+                        pattern="[0-9]*"
+                        placeholder="1"
+                        value={line.quantity || ''}
+                        onFocus={(e) => e.target.select()}
+                        onChange={(event) => {
+                          const updated = [...lines];
+                          const item = updated[index];
+                          if (item) {
+                            const clean = sanitizeIntegerInput(event.target.value, String(item.quantity || ''));
+                            item.quantity = clean === '' ? 0 : parseInt(clean, 10);
+                          }
+                          setLines(updated);
+                        }}
+                        className="pr-8"
+                      />
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-ink-500 pointer-events-none">
+                        u.
+                      </span>
+                    </div>
+                  </Field>
+
+                  <Field label="Costo c/u">
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-bold text-ink-500 pointer-events-none">
+                        $
+                      </span>
+                      <Input
+                        type="text"
+                        inputMode="decimal"
+                        placeholder="0"
+                        value={line.unitCostPesos || ''}
+                        onFocus={(e) => e.target.select()}
+                        onChange={(event) => {
+                          const updated = [...lines];
+                          const item = updated[index];
+                          if (item) {
+                            const clean = sanitizeDecimalInput(event.target.value, String(item.unitCostPesos || ''));
+                            item.unitCostPesos = clean === '' ? 0 : parseFloat(clean) || 0;
+                          }
+                          setLines(updated);
+                        }}
+                        className="pl-7"
+                      />
+                    </div>
+                  </Field>
+                </div>
               </div>
             ))}
-            <Button type="button" variant="secondary" size="sm" onClick={() => setLines([...lines, { productId: '', quantity: 1, unitCostPesos: 0 }])}>+ Agregar otro producto</Button>
           </div>
           <Field label="Notas internas"><Input placeholder="Ej. Factura A pendiente, pago 50% contra entrega…" value={notes} onChange={(event) => setNotes(event.target.value)} /></Field>
         </div>

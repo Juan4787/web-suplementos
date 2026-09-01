@@ -167,7 +167,7 @@ export function Select({
       >
         <span
           className={cn(
-            'truncate',
+            'text-left break-words leading-tight line-clamp-2',
             !selectedOption || selectedOption.value === ''
               ? 'text-ink-500 font-medium'
               : 'text-ink-950 font-bold'
@@ -188,7 +188,7 @@ export function Select({
         <div
           role="listbox"
           aria-label={ariaLabel}
-          className="absolute left-0 right-0 top-[calc(100%+6px)] z-50 flex max-h-72 flex-col rounded-2xl border border-ink-950/10 bg-white/95 p-1.5 shadow-[0_16px_40px_rgba(15,23,42,0.18)] backdrop-blur-xl animate-in fade-in zoom-in-95 duration-150"
+          className="absolute left-0 top-[calc(100%+6px)] z-50 flex max-h-80 w-full min-w-full sm:min-w-[340px] max-w-[calc(100vw-2rem)] flex-col rounded-2xl border border-ink-950/10 bg-white/95 p-1.5 shadow-[0_16px_40px_rgba(15,23,42,0.18)] backdrop-blur-xl animate-in fade-in zoom-in-95 duration-150"
         >
           {/* Search bar for large option lists */}
           {showSearch && (
@@ -225,15 +225,15 @@ export function Select({
                     disabled={option.disabled}
                     onClick={() => !option.disabled && handleSelect(option.value)}
                     className={cn(
-                      'flex w-full items-center justify-between gap-2 rounded-xl px-3.5 py-2.5 text-left text-[14px] transition active:scale-[0.99]',
+                      'flex w-full items-center justify-between gap-2.5 rounded-xl px-3.5 py-2.5 text-left text-[14px] transition active:scale-[0.99]',
                       isSelected
                         ? 'bg-brand-50 text-brand-700 font-black shadow-xs'
                         : 'text-ink-800 font-bold hover:bg-cream-100 hover:text-ink-950',
                       option.disabled && 'cursor-not-allowed opacity-40 hover:bg-transparent'
                     )}
                   >
-                    <span className="truncate">{option.label}</span>
-                    {isSelected && <Check className="size-4 shrink-0 text-brand-600" />}
+                    <span className="text-left break-words leading-snug whitespace-normal">{option.label}</span>
+                    {isSelected && <Check className="size-4 shrink-0 text-brand-600 ml-2" />}
                   </button>
                 );
               })

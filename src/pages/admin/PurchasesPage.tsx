@@ -45,40 +45,129 @@ function PurchaseForm({ onClose }: { onClose: () => void }) {
     <Modal isOpen={true} onClose={onClose} ariaLabelledBy="purchase-title" maxWidth="2xl">
       <div className="flex items-start justify-between"><div><h2 id="purchase-title" className="font-display text-3xl font-black text-ink-950">Nueva compra</h2><p className="mt-1 text-[14.5px] font-medium text-ink-700">Registrá los productos pedidos a un proveedor.</p></div><button className="grid size-10 place-items-center rounded-full hover:bg-cream-100 text-ink-600 transition" onClick={onClose}><X className="size-5" /></button></div>
       <div className="mt-7 grid gap-5 sm:grid-cols-2"><Field label="Proveedor"><Input value={supplier} onChange={(event) => setSupplier(event.target.value)} /></Field><Field label="Llegada estimada" hint="Opcional"><Input type="date" value={expectedAt} onChange={(event) => setExpectedAt(event.target.value)} /></Field></div>
-      <div className="mt-7"><div className="flex items-center justify-between"><h3 className="font-display text-xl font-black">Productos</h3><Button variant="ghost" size="sm" onClick={() => setLines((current) => [...current, { productId: '', quantity: 1, unitCostPesos: 0 }])}><Plus className="size-4" /> Agregar línea</Button></div>
-        <div className="mt-3 space-y-3">{lines.map((line, index) => (
-          <div key={index} className="grid gap-3 rounded-2xl bg-cream-100 p-4 sm:grid-cols-[1fr_6rem_9rem_auto] sm:items-end">
-            <Field label="Producto"><Select value={line.productId} onChange={(event) => setLines((current) => current.map((entry, position) => position === index ? { ...entry, productId: event.target.value, unitCostPesos: (productsQuery.data?.find((product) => product.id === event.target.value)?.currentCostCents ?? 0) / 100 } : entry))}><option value="">Elegir…</option>{productsQuery.data?.filter((product) => product.active).map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}</Select></Field>
-            <Field label="Cantidad">
-              <Input
-                type="text"
-                inputMode="numeric"
-                pattern="[0-9]*"
-                placeholder="1"
-                value={line.quantity || ''}
-                onFocus={(e) => e.target.select()}
-                onChange={(event) => {
-                  const clean = sanitizeIntegerInput(event.target.value, String(line.quantity || ''));
-                  setLines((current) => current.map((entry, position) => position === index ? { ...entry, quantity: clean === '' ? 0 : parseInt(clean, 10) } : entry));
-                }}
-              />
-            </Field>
-            <Field label="Costo c/u">
-              <Input
-                type="text"
-                inputMode="decimal"
-                placeholder="0"
-                value={line.unitCostPesos || ''}
-                onFocus={(e) => e.target.select()}
-                onChange={(event) => {
-                  const clean = sanitizeDecimalInput(event.target.value, String(line.unitCostPesos || ''));
-                  setLines((current) => current.map((entry, position) => position === index ? { ...entry, unitCostPesos: clean === '' ? 0 : parseFloat(clean) || 0 } : entry));
-                }}
-              />
-            </Field>
-            <button className="grid size-10 place-items-center rounded-full text-red-700 hover:bg-red-50" onClick={() => setLines((current) => current.filter((_, position) => position !== index))} aria-label="Quitar línea"><X className="size-4" /></button>
-          </div>
-        ))}</div>
+      <div className="mt-7">
+        <div className="flex items-center justify-between">
+          <h3 className="font-display text-xl font-black">
+            Productos pedidos ({lines.length})
+          </h3>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setLines((current) => [...current, { productId: '', quantity: 1, unitCostPesos: 0 }])}
+          >
+            <Plus className="size-4" /> Agregar producto
+          </Button>
+        </div>
+
+        <div className="mt-3 space-y-3">
+          {lines.map((line, index) => (
+            <div
+              key={index}
+              className="space-y-3 rounded-2xl border border-ink-950/10 bg-cream-50/70 p-3.5 sm:p-4 transition"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[12px] font-black uppercase tracking-wider text-ink-600">
+                  Producto #{index + 1}
+                </span>
+                {lines.length > 1 && (
+                  <button
+                    type="button"
+                    className="flex items-center gap-1 rounded-lg px-2 py-1 text-[12px] font-bold text-red-600 hover:bg-red-50 hover:text-red-700 transition"
+                    onClick={() => setLines((current) => current.filter((_, position) => position !== index))}
+                  >
+                    <X className="size-3.5" /> Quitar
+                  </button>
+                )}
+              </div>
+
+              {/* Full width select: never cut or abbreviated */}
+              <Select
+                placeholder="Seleccionar producto…"
+                value={line.productId}
+                onChange={(event) =>
+                  setLines((current) =>
+                    current.map((entry, position) =>
+                      position === index
+                        ? {
+                            ...entry,
+                            productId: event.target.value,
+                            unitCostPesos:
+                              (productsQuery.data?.find((product) => product.id === event.target.value)
+                                ?.currentCostCents ?? 0) / 100
+                          }
+                        : entry
+                    )
+                  )
+                }
+              >
+                <option value="">Seleccionar producto…</option>
+                {productsQuery.data
+                  ?.filter((product) => product.active)
+                  .map((product) => (
+                    <option key={product.id} value={product.id}>
+                      {product.name} {product.presentation ? `(${product.presentation})` : ''}
+                    </option>
+                  ))}
+              </Select>
+
+              {/* Quantity and unit cost in responsive 2 columns */}
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Cantidad">
+                  <div className="relative">
+                    <Input
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      placeholder="1"
+                      value={line.quantity || ''}
+                      onFocus={(e) => e.target.select()}
+                      onChange={(event) => {
+                        const clean = sanitizeIntegerInput(event.target.value, String(line.quantity || ''));
+                        setLines((current) =>
+                          current.map((entry, position) =>
+                            position === index
+                              ? { ...entry, quantity: clean === '' ? 0 : parseInt(clean, 10) }
+                              : entry
+                          )
+                        );
+                      }}
+                      className="pr-8"
+                    />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-ink-500 pointer-events-none">
+                      u.
+                    </span>
+                  </div>
+                </Field>
+
+                <Field label="Costo c/u">
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-bold text-ink-500 pointer-events-none">
+                      $
+                    </span>
+                    <Input
+                      type="text"
+                      inputMode="decimal"
+                      placeholder="0"
+                      value={line.unitCostPesos || ''}
+                      onFocus={(e) => e.target.select()}
+                      onChange={(event) => {
+                        const clean = sanitizeDecimalInput(event.target.value, String(line.unitCostPesos || ''));
+                        setLines((current) =>
+                          current.map((entry, position) =>
+                            position === index
+                              ? { ...entry, unitCostPesos: clean === '' ? 0 : parseFloat(clean) || 0 }
+                              : entry
+                          )
+                        );
+                      }}
+                      className="pl-7"
+                    />
+                  </div>
+                </Field>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
       <div className="mt-5"><Field label="Notas" hint="Opcional"><Textarea value={notes} onChange={(event) => setNotes(event.target.value)} /></Field></div>
       {create.error ? <div className="mt-5"><ErrorState error={create.error} /></div> : null}
