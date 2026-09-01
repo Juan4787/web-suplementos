@@ -58,7 +58,13 @@ export default function StorefrontPage() {
           </div>
           <div className="relative mx-auto hidden w-full max-w-md lg:block" aria-hidden="true">
             <div className="absolute -inset-8 rotate-6 rounded-[4rem] border-2 border-dashed border-brand-500/20" />
-            <img src="/products/creatina.jpg" alt="Pote profesional de Creatina Monohidratada Impulso" className="relative aspect-square w-full -rotate-3 rounded-[3rem] object-cover shadow-2xl" width="720" height="720" />
+            <img
+              src="/image-hero.png"
+              alt="Suplementos deportivos de calidad premium Impulso"
+              className="relative aspect-square w-full -rotate-3 rounded-[3rem] object-cover shadow-2xl"
+              width="720"
+              height="720"
+            />
             <div className="absolute -bottom-8 -left-14 rounded-[1.5rem] bg-white p-5 text-ink-950 shadow-soft">
               <p className="text-xs font-black uppercase tracking-[0.15em] text-brand-600">Compra simple</p>
               <p className="mt-1 font-display text-2xl font-black">Sin registros.</p>
