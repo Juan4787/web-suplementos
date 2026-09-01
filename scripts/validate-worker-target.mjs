@@ -39,8 +39,8 @@ const runWrangler = (args) => {
 
 export const assertWorkerTarget = () => {
   const nodeMajor = Number.parseInt(process.versions.node.split('.')[0] ?? '', 10);
-  if (!Number.isInteger(nodeMajor) || nodeMajor < 24) {
-    fail(`se requiere Node 24 o superior; la sesion usa Node ${process.versions.node}.`);
+  if (!Number.isInteger(nodeMajor) || nodeMajor < 20) {
+    fail(`se requiere Node 20 o superior; la sesion usa Node ${process.versions.node}.`);
   }
 
   if (resolve(process.cwd()) !== PROJECT_ROOT) {
