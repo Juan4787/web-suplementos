@@ -36,6 +36,7 @@ export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputE
 );
 
 export { Select, type SelectOption, type SelectProps } from './Select';
+export { DatePicker, type DatePickerProps } from './DatePicker';
 
 export const Textarea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<HTMLTextAreaElement>>(
   function Textarea({ className, ...props }, ref) {

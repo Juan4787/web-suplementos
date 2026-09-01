@@ -26,7 +26,7 @@ import { MetricCard } from '@/components/admin/MetricCard';
 import { PageHeader } from '@/components/layout/AdminShell';
 import { RoleGate } from '@/components/layout/RoleGate';
 import { ErrorState, LoadingState } from '@/components/ui/DataState';
-import { Input } from '@/components/ui/Field';
+import { DatePicker, Input } from '@/components/ui/Field';
 import { StatusChip } from '@/components/ui/StatusChip';
 import { formatMoney } from '@/domain/money';
 import { formatUnits } from '@/domain/quantity';
@@ -71,26 +71,25 @@ export default function AnalyticsPage() {
           title="Analíticas comerciales"
           description="Evolución en pesos, compras ajustadas por inflación y volumen de unidades para analizar el crecimiento real de tu negocio."
           action={
-            <div className="flex flex-wrap items-center gap-2 rounded-2xl bg-white p-2 shadow-card">
-              <CalendarRange className="ml-2 size-4 text-ink-600" />
-              <label className="text-[10px] font-black uppercase tracking-wider text-ink-600">
-                Desde
-                <Input
-                  type="date"
-                  className="mt-1 min-h-8 border-0 bg-cream-100 px-2 text-xs"
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 rounded-2xl bg-white p-2 shadow-card">
+              <div className="w-36">
+                <span className="text-[10px] font-black uppercase tracking-wider text-ink-600 block px-1">Desde</span>
+                <DatePicker
+                  className="mt-0.5"
                   value={from}
-                  onChange={(event) => setFrom(event.target.value)}
+                  onChange={(val) => setFrom(val)}
+                  placeholder="Desde…"
                 />
-              </label>
-              <label className="text-[10px] font-black uppercase tracking-wider text-ink-600">
-                Hasta
-                <Input
-                  type="date"
-                  className="mt-1 min-h-8 border-0 bg-cream-100 px-2 text-xs"
+              </div>
+              <div className="w-36">
+                <span className="text-[10px] font-black uppercase tracking-wider text-ink-600 block px-1">Hasta</span>
+                <DatePicker
+                  className="mt-0.5"
                   value={to}
-                  onChange={(event) => setTo(event.target.value)}
+                  onChange={(val) => setTo(val)}
+                  placeholder="Hasta…"
                 />
-              </label>
+              </div>
             </div>
           }
         />

@@ -27,7 +27,7 @@ import { useBusinessQuery } from '@/app/use-business-query';
 import { PageHeader } from '@/components/layout/AdminShell';
 import { Button } from '@/components/ui/Button';
 import { ErrorState, LoadingState } from '@/components/ui/DataState';
-import { Field, Input, Select, Textarea } from '@/components/ui/Field';
+import { DatePicker, Field, Input, Select, Textarea } from '@/components/ui/Field';
 import { Drawer, Modal } from '@/components/ui/Modal';
 import { StatusChip } from '@/components/ui/StatusChip';
 import { inventoryStatus, sanitizeDecimalInput, sanitizeIntegerInput } from '@/domain/inventory';
@@ -128,12 +128,10 @@ function PurchaseFormModal({ onClose }: { onClose: () => void }) {
 
         {/* Cuándo debería llegar */}
         <Field label="Cuándo debería llegar">
-          <Input
-            type="date"
+          <DatePicker
             value={expectedAt}
-            onChange={(event) => setExpectedAt(event.target.value)}
-            onClick={(e) => (e.target as HTMLInputElement).showPicker?.()}
-            className="cursor-pointer w-full"
+            onChange={(val) => setExpectedAt(val)}
+            placeholder="dd/mm/aaaa"
           />
         </Field>
 

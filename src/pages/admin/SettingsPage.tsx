@@ -26,7 +26,7 @@ import { PageHeader } from '@/components/layout/AdminShell';
 import { RoleGate } from '@/components/layout/RoleGate';
 import { Button } from '@/components/ui/Button';
 import { ErrorState, LoadingState } from '@/components/ui/DataState';
-import { Field, Input, Select, Textarea } from '@/components/ui/Field';
+import { DatePicker, Field, Input, Select, Textarea } from '@/components/ui/Field';
 import { StatusChip } from '@/components/ui/StatusChip';
 import { Toast } from '@/components/ui/Toast';
 import { sanitizeDecimalInput, sanitizeIntegerInput } from '@/domain/inventory';
@@ -136,7 +136,7 @@ function InflationTab({
           />
         </Field>
         <Field label="Publicado">
-          <Input type="date" value={publishedAt} onChange={(e) => setPublishedAt(e.target.value)} />
+          <DatePicker value={publishedAt} onChange={(val) => setPublishedAt(val)} />
         </Field>
         <Field label="Fuente oficial">
           <Input value={sourceUrl} onChange={(e) => setSourceUrl(e.target.value)} />

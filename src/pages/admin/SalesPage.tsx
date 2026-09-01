@@ -37,7 +37,7 @@ import { PageHeader } from '@/components/layout/AdminShell';
 import { RoleGate } from '@/components/layout/RoleGate';
 import { Button } from '@/components/ui/Button';
 import { ErrorState, LoadingState } from '@/components/ui/DataState';
-import { Input, Select } from '@/components/ui/Field';
+import { DatePicker, Input, Select } from '@/components/ui/Field';
 import { formatMoney } from '@/domain/money';
 import { formatUnits } from '@/domain/quantity';
 import { cn } from '@/lib/cn';
@@ -214,25 +214,25 @@ export default function SalesPage() {
               </div>
 
               {preset === 'custom' ? (
-                <div className="flex items-center gap-2 rounded-2xl border border-ink-950/15 bg-white p-2 shadow-sm">
-                  <label className="text-[12px] font-black uppercase tracking-wider text-ink-700">
-                    Desde
-                    <Input
-                      type="date"
-                      className="mt-1 min-h-9 border-0 bg-cream-100 px-2 text-[14px]"
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 rounded-2xl border border-ink-950/15 bg-white p-2 shadow-sm">
+                  <div className="w-40">
+                    <span className="text-[11px] font-black uppercase tracking-wider text-ink-600 block px-1">Desde</span>
+                    <DatePicker
+                      className="mt-0.5"
                       value={from}
-                      onChange={(e) => setFrom(e.target.value)}
+                      onChange={(val) => setFrom(val)}
+                      placeholder="Desde…"
                     />
-                  </label>
-                  <label className="text-[12px] font-black uppercase tracking-wider text-ink-700">
-                    Hasta
-                    <Input
-                      type="date"
-                      className="mt-1 min-h-9 border-0 bg-cream-100 px-2 text-[14px]"
+                  </div>
+                  <div className="w-40">
+                    <span className="text-[11px] font-black uppercase tracking-wider text-ink-600 block px-1">Hasta</span>
+                    <DatePicker
+                      className="mt-0.5"
                       value={to}
-                      onChange={(e) => setTo(e.target.value)}
+                      onChange={(val) => setTo(val)}
+                      placeholder="Hasta…"
                     />
-                  </label>
+                  </div>
                 </div>
               ) : null}
             </div>
