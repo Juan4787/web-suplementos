@@ -4,6 +4,7 @@ import {
   availableStock,
   inventoryStatus,
   projectedStock,
+  sanitizeDecimalInput,
   sanitizeIntegerInput,
   suggestedPurchase
 } from './inventory';
@@ -82,6 +83,7 @@ describe('inventory domain logic', () => {
     expect(sanitizeIntegerInput('00', '0')).toBe('0');
     expect(sanitizeIntegerInput('015', '')).toBe('15');
     expect(sanitizeIntegerInput('007', '')).toBe('7');
+    expect(sanitizeIntegerInput('07000', '0')).toBe('7000');
 
     // Backspacing completely
     expect(sanitizeIntegerInput('', '5')).toBe('');
@@ -90,5 +92,21 @@ describe('inventory domain logic', () => {
     expect(sanitizeIntegerInput('5a', '5')).toBe('5');
     expect(sanitizeIntegerInput('abc', '')).toBe('');
     expect(sanitizeIntegerInput('-4', '')).toBe('4');
+  });
+
+  it('sanitizes decimal and percentage input cleanly', () => {
+    // Typing single digit over 0
+    expect(sanitizeDecimalInput('01', '0')).toBe('1');
+    expect(sanitizeDecimalInput('10', '0')).toBe('1');
+    expect(sanitizeDecimalInput('07000', '0')).toBe('7000');
+
+    // Decimals
+    expect(sanitizeDecimalInput('0.5', '0')).toBe('0.5');
+    expect(sanitizeDecimalInput('0,5', '0')).toBe('0.5');
+    expect(sanitizeDecimalInput('21', '')).toBe('21');
+    expect(sanitizeDecimalInput('10.5', '10')).toBe('10.5');
+    expect(sanitizeDecimalInput('01.5', '')).toBe('1.5');
+    expect(sanitizeDecimalInput('1.2.3', '')).toBe('1.23');
+    expect(sanitizeDecimalInput('', '21')).toBe('');
   });
 });

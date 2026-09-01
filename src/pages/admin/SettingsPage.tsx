@@ -29,6 +29,7 @@ import { ErrorState, LoadingState } from '@/components/ui/DataState';
 import { Field, Input, Select, Textarea } from '@/components/ui/Field';
 import { StatusChip } from '@/components/ui/StatusChip';
 import { Toast } from '@/components/ui/Toast';
+import { sanitizeDecimalInput, sanitizeIntegerInput } from '@/domain/inventory';
 import type { StoreSettings, UserRole } from '@/domain/types';
 import { cn } from '@/lib/cn';
 import { getBusinessApi } from '@/services/business-api';
@@ -39,9 +40,9 @@ type DraftSettings = {
   whatsappPhone: string;
   transferAlias: string;
   transferAccount: string;
-  standardShippingPesos: number;
-  expressShippingPesos: number;
-  taxRatePercent: number;
+  standardShippingPesosStr: string;
+  expressShippingPesosStr: string;
+  taxRatePercentStr: string;
 };
 
 type Phase = 'idle' | 'fetching' | 'transforming' | 'writing' | 'done';
@@ -52,9 +53,18 @@ const toDraft = (settings: StoreSettings): DraftSettings => ({
   whatsappPhone: settings.whatsappPhone,
   transferAlias: settings.transferAlias,
   transferAccount: settings.transferAccount,
-  standardShippingPesos: settings.standardShippingCents / 100,
-  expressShippingPesos: settings.expressShippingCents / 100,
-  taxRatePercent: settings.taxRateBasisPoints / 100
+  standardShippingPesosStr:
+    settings.standardShippingCents > 0
+      ? String(settings.standardShippingCents / 100)
+      : '',
+  expressShippingPesosStr:
+    settings.expressShippingCents > 0
+      ? String(settings.expressShippingCents / 100)
+      : '',
+  taxRatePercentStr:
+    settings.taxRateBasisPoints > 0
+      ? String(settings.taxRateBasisPoints / 100)
+      : ''
 });
 
 function InflationTab({
@@ -117,7 +127,13 @@ function InflationTab({
           <Input type="month" value={period} onChange={(e) => setPeriod(e.target.value)} />
         </Field>
         <Field label="Valor del índice">
-          <Input placeholder="Ej: 5824.2" value={indexValue} onChange={(e) => setIndexValue(e.target.value)} />
+          <Input
+            placeholder="Ej: 5824.2"
+            value={indexValue}
+            inputMode="decimal"
+            onFocus={(e) => e.target.select()}
+            onChange={(e) => setIndexValue(sanitizeDecimalInput(e.target.value, indexValue))}
+          />
         </Field>
         <Field label="Publicado">
           <Input type="date" value={publishedAt} onChange={(e) => setPublishedAt(e.target.value)} />
@@ -419,15 +435,22 @@ export default function SettingsPage() {
   const saveSettings = useMutation({
     mutationFn: async () => {
       if (!draft) return;
+      const standardShippingPesos =
+        draft.standardShippingPesosStr === '' ? 0 : parseFloat(draft.standardShippingPesosStr) || 0;
+      const expressShippingPesos =
+        draft.expressShippingPesosStr === '' ? 0 : parseFloat(draft.expressShippingPesosStr) || 0;
+      const taxRatePercent =
+        draft.taxRatePercentStr === '' ? 0 : parseFloat(draft.taxRatePercentStr) || 0;
+
       return (await getBusinessApi()).updateSettings({
         storeName: draft.storeName.trim(),
         tagline: draft.tagline.trim(),
         whatsappPhone: draft.whatsappPhone.trim(),
         transferAlias: draft.transferAlias.trim(),
         transferAccount: draft.transferAccount.trim(),
-        standardShippingCents: Math.round(draft.standardShippingPesos * 100),
-        expressShippingCents: Math.round(draft.expressShippingPesos * 100),
-        taxRateBasisPoints: Math.round(draft.taxRatePercent * 100),
+        standardShippingCents: Math.round(standardShippingPesos * 100),
+        expressShippingCents: Math.round(expressShippingPesos * 100),
+        taxRateBasisPoints: Math.round(taxRatePercent * 100),
         currency: 'ARS'
       });
     },
@@ -555,13 +578,45 @@ export default function SettingsPage() {
                   </div>
                   <div className="mt-5 grid gap-4 sm:grid-cols-3">
                     <Field label="Envío estándar ($)">
-                      <Input type="number" min="0" value={draft.standardShippingPesos} onChange={(e) => setDraft({ ...draft, standardShippingPesos: Number(e.target.value) })} />
+                      <Input
+                        type="text"
+                        inputMode="numeric"
+                        pattern="[0-9]*"
+                        placeholder="0"
+                        value={draft.standardShippingPesosStr}
+                        onFocus={(e) => e.target.select()}
+                        onChange={(e) => {
+                          const clean = sanitizeIntegerInput(e.target.value, draft.standardShippingPesosStr);
+                          setDraft({ ...draft, standardShippingPesosStr: clean });
+                        }}
+                      />
                     </Field>
                     <Field label="Envío express ($)">
-                      <Input type="number" min="0" value={draft.expressShippingPesos} onChange={(e) => setDraft({ ...draft, expressShippingPesos: Number(e.target.value) })} />
+                      <Input
+                        type="text"
+                        inputMode="numeric"
+                        pattern="[0-9]*"
+                        placeholder="0"
+                        value={draft.expressShippingPesosStr}
+                        onFocus={(e) => e.target.select()}
+                        onChange={(e) => {
+                          const clean = sanitizeIntegerInput(e.target.value, draft.expressShippingPesosStr);
+                          setDraft({ ...draft, expressShippingPesosStr: clean });
+                        }}
+                      />
                     </Field>
                     <Field label="Tasa impositiva (%)">
-                      <Input type="number" min="0" step="0.1" value={draft.taxRatePercent} onChange={(e) => setDraft({ ...draft, taxRatePercent: Number(e.target.value) })} />
+                      <Input
+                        type="text"
+                        inputMode="decimal"
+                        placeholder="0"
+                        value={draft.taxRatePercentStr}
+                        onFocus={(e) => e.target.select()}
+                        onChange={(e) => {
+                          const clean = sanitizeDecimalInput(e.target.value, draft.taxRatePercentStr);
+                          setDraft({ ...draft, taxRatePercentStr: clean });
+                        }}
+                      />
                     </Field>
                   </div>
                 </section>

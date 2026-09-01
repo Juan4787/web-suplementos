@@ -60,11 +60,42 @@ export const sanitizeIntegerInput = (newValue: string, prevValue = ''): string =
     }
   }
 
-  // Strip leading zeroes for numbers like "00", "012" -> "12"
+  // Strip leading zeroes for numbers like "00", "012", "07000" -> "7000"
   if (digits.length > 1 && digits.startsWith('0')) {
     digits = digits.replace(/^0+/, '') || '0';
   }
 
   return digits;
+};
+
+export const sanitizeDecimalInput = (newValue: string, prevValue = ''): string => {
+  let clean = newValue.replace(/,/g, '.');
+  clean = clean.replace(/[^\d.]/g, '');
+
+  const parts = clean.split('.');
+  if (parts.length > 2) {
+    clean = parts[0] + '.' + parts.slice(1).join('');
+  }
+
+  if (clean === '') {
+    return '';
+  }
+
+  // If previous was '0' and user typed a single digit (producing '01' or '10')
+  if (prevValue === '0' && clean.length === 2 && !clean.includes('.')) {
+    if (clean.startsWith('0')) {
+      return clean.slice(1); // '01' -> '1'
+    }
+    if (clean.endsWith('0')) {
+      return clean.slice(0, 1); // '10' -> '1'
+    }
+  }
+
+  // Strip leading zeroes for numbers like "07000" -> "7000", but preserve "0.X" and "0"
+  if (clean.length > 1 && clean.startsWith('0') && !clean.startsWith('0.')) {
+    clean = clean.replace(/^0+/, '') || '0';
+  }
+
+  return clean;
 };
 
