@@ -145,6 +145,29 @@ function PurchaseFormModal({ onClose }: { onClose: () => void }) {
   );
 }
 
+function getExclusiveRanges(reorderPoint: number, safetyStock: number) {
+  const okMin = Math.max(reorderPoint, safetyStock) + 1;
+  const okText = `${okMin}+`;
+
+  let buyText = '';
+  if (reorderPoint > safetyStock) {
+    const buyMin = safetyStock + 1;
+    buyText = buyMin === reorderPoint ? `${reorderPoint}` : `${buyMin}–${reorderPoint}`;
+  }
+
+  let urgentText = '';
+  if (safetyStock > 0) {
+    urgentText = safetyStock === 1 ? '1' : `1–${safetyStock}`;
+  }
+
+  return {
+    ok: okText,
+    buy: buyText,
+    urgent: urgentText,
+    out: '0'
+  };
+}
+
 function StockDetailDrawer({
   item,
   onClose,
@@ -201,6 +224,7 @@ function StockDetailDrawer({
   });
 
   const previewStatus = inventoryStatus(item.available, reorderPoint, safetyStock);
+  const ranges = getExclusiveRanges(reorderPoint, safetyStock);
 
   const recentMovements = (movementsQuery.data?.items ?? [])
     .filter(
@@ -313,14 +337,13 @@ function StockDetailDrawer({
               <span className="text-[11px] font-medium text-ink-500">En pedidos</span>
             </div>
 
-            {/* EN STOCK */}
+            {/* TOTAL */}
             <div className="rounded-2xl bg-cream-50 p-3.5 border border-ink-950/6 flex flex-col justify-between">
-              <span className="block text-[11px] font-black uppercase tracking-wider text-ink-600">En stock</span>
+              <span className="block text-[11px] font-black uppercase tracking-wider text-ink-600">Total</span>
               <div className="my-1 flex items-baseline gap-1">
                 <span className="text-2xl font-black text-ink-950">{item.onHand}</span>
                 <span className="text-xs font-bold text-ink-500">u.</span>
               </div>
-              <span className="text-[11px] font-medium text-ink-500">Total físico</span>
             </div>
           </div>
         </div>
@@ -387,16 +410,24 @@ function StockDetailDrawer({
             </div>
           </div>
 
-          {/* Escala conceptual */}
+          {/* Escala conceptual de rangos exclusivos */}
           <div className="mt-3.5 rounded-xl bg-cream-50/80 p-2.5 border border-ink-950/6">
-            <div className="flex items-center justify-between text-[10.5px] font-extrabold text-ink-700">
-              <span className="text-emerald-700">OK ({`>${reorderPoint}`})</span>
-              <span className="text-ink-400">→</span>
-              <span className="text-amber-700">Comprar ({`≤${reorderPoint}`})</span>
-              <span className="text-ink-400">→</span>
-              <span className="text-rose-700">Urgente ({`≤${safetyStock}`})</span>
-              <span className="text-ink-400">→</span>
-              <span className="text-red-700">Sin stock (0)</span>
+            <div className="flex flex-wrap items-center justify-between gap-1 text-[11px] font-extrabold text-ink-700">
+              <span className="text-emerald-700">OK: {ranges.ok}</span>
+              <span className="text-ink-300">→</span>
+              {ranges.buy ? (
+                <>
+                  <span className="text-amber-700">COMPRAR: {ranges.buy}</span>
+                  <span className="text-ink-300">→</span>
+                </>
+              ) : null}
+              {ranges.urgent ? (
+                <>
+                  <span className="text-rose-700">URGENTE: {ranges.urgent}</span>
+                  <span className="text-ink-300">→</span>
+                </>
+              ) : null}
+              <span className="text-red-700">SIN STOCK: {ranges.out}</span>
             </div>
           </div>
 
@@ -455,22 +486,15 @@ function StockDetailDrawer({
         <div>
           <h4 className="text-[12px] font-black uppercase tracking-wider text-ink-600 mb-2">Lo que viene</h4>
           {item.incoming > 0 ? (
-            <div className="grid grid-cols-2 gap-3 rounded-2xl bg-brand-50/70 p-4 border border-brand-200/70">
-              <div>
-                <span className="block text-[11.5px] font-black uppercase text-brand-800">En camino</span>
-                <span className="text-2xl font-black text-brand-950">{item.incoming} u.</span>
-              </div>
-              <div>
-                <span className="block text-[11.5px] font-black uppercase text-brand-800">Vas a tener</span>
-                <span className="text-2xl font-black text-brand-700">{item.projected} u.</span>
-              </div>
+            <div className="rounded-2xl bg-brand-50/70 p-4 border border-brand-200/70 space-y-1">
+              <p className="text-[15px] font-black text-brand-950">{item.incoming} unidades en camino</p>
+              <p className="text-xs font-medium text-brand-800">
+                Cuando lleguen vas a tener <strong className="font-black text-brand-950">{item.projected} u.</strong>
+              </p>
             </div>
           ) : (
-            <div className="rounded-2xl bg-cream-50 p-3.5 border border-ink-950/6 flex items-center justify-between">
-              <span className="text-xs font-bold text-ink-600">No hay compras en camino.</span>
-              <span className="text-xs font-semibold text-ink-500">
-                Vas a tener: <strong className="text-ink-950 font-black">{item.projected} u.</strong>
-              </span>
+            <div className="rounded-2xl bg-cream-50 p-3.5 border border-ink-950/6">
+              <p className="text-xs font-bold text-ink-700">No hay compras en camino.</p>
             </div>
           )}
         </div>
@@ -520,9 +544,13 @@ function StockDetailDrawer({
                   </dd>
                 </div>
                 <div>
-                  <dt className="font-semibold text-ink-700">Conviene comprar</dt>
+                  <dt className="font-semibold text-ink-700">Cuánto comprar</dt>
                   <dd className="text-[15px] font-black text-brand-700">
-                    {item.suggestedPurchase > 0 ? `${item.suggestedPurchase} unidades` : 'Nada por ahora'}
+                    {item.averageDailySales === 0 || item.coverageDays === null
+                      ? 'Sin datos suficientes'
+                      : item.suggestedPurchase > 0
+                        ? `${item.suggestedPurchase} unidades`
+                        : '0 unidades (cubierto)'}
                   </dd>
                 </div>
               </dl>
@@ -719,6 +747,11 @@ export default function InventoryPage() {
     [inventoryQuery.data]
   );
 
+  const okCount = useMemo(
+    () => (inventoryQuery.data ?? []).filter((i) => i.status === 'ok').length,
+    [inventoryQuery.data]
+  );
+
   const filteredMovements = useMemo(() => {
     const raw = movementsQuery.data?.items ?? [];
     return raw
@@ -837,14 +870,14 @@ export default function InventoryPage() {
                 onClick={() => setStockFilter('attention')}
                 className={cn('min-h-11 rounded-full px-4 text-[13.5px] font-bold transition select-none', stockFilter === 'attention' ? 'bg-red-600 text-white font-black' : 'border border-ink-950/15 bg-white text-ink-800 hover:border-ink-950/25')}
               >
-                Requieren atención ({attentionCount})
+                Necesitan atención ({attentionCount})
               </button>
               <button
                 type="button"
                 onClick={() => setStockFilter('ok')}
                 className={cn('min-h-11 rounded-full px-4 text-[13.5px] font-bold transition select-none', stockFilter === 'ok' ? 'bg-ink-950 text-white font-black' : 'border border-ink-950/15 bg-white text-ink-800 hover:border-ink-950/25')}
               >
-                En orden
+                OK ({okCount})
               </button>
             </div>
           </div>
@@ -854,55 +887,56 @@ export default function InventoryPage() {
 
           {inventoryQuery.data ? (
             <div className="overflow-hidden rounded-2xl border border-ink-950/8 bg-white shadow-sm">
+              {/* Discrete Table Header */}
+              <div className="hidden sm:grid sm:grid-cols-[1fr_7.5rem_8rem_2.5rem] items-center px-6 py-2.5 bg-cream-100/70 border-b border-ink-950/6 text-[11px] font-black uppercase tracking-wider text-ink-600">
+                <span>Producto</span>
+                <span>Disponible</span>
+                <span>Estado</span>
+                <span className="sr-only">Ver detalle</span>
+              </div>
+
               <div className="divide-y divide-ink-950/6">
                 {filteredStock.map((item) => {
                   const isProblem = item.status !== 'ok';
-                  const isCovered = item.available <= 0 && item.incoming > 0 && item.suggestedPurchase === 0;
 
                   return (
                     <article
                       key={item.id}
+                      onClick={() => setDetailItem(item)}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          setDetailItem(item);
+                        }
+                      }}
                       className={cn(
-                        'grid min-h-[4.25rem] gap-4 p-4 transition sm:grid-cols-[1fr_8rem_9rem_auto] sm:items-center sm:px-6 sm:py-3.5',
+                        'grid min-h-[3.75rem] gap-2 p-3.5 sm:p-4 transition cursor-pointer sm:grid-cols-[1fr_7.5rem_8rem_2.5rem] sm:items-center sm:px-6 select-none focus:outline-none focus:bg-cream-100/80',
                         isProblem ? 'bg-amber-50/40 hover:bg-amber-50/70' : 'hover:bg-cream-50'
                       )}
                     >
                       {/* Product identity */}
-                      <div className="min-w-0">
-                        <h3 className="truncate text-[16.5px] font-black text-ink-950">{item.name}</h3>
-                        {isCovered ? (
-                          <p className="mt-0.5 flex items-center gap-1 text-[14px] font-bold text-ink-800">
-                            {item.incoming} unidades en camino · reposición cubierta
-                          </p>
-                        ) : item.suggestedPurchase > 0 ? (
-                          <p className="mt-0.5 flex items-center gap-1 text-[14px] font-black text-amber-900">
-                            <AlertTriangle className="size-4 text-amber-600" />
-                            Comprar {item.suggestedPurchase} unidades
-                          </p>
-                        ) : null}
+                      <div className="min-w-0 pr-2">
+                        <h3 className="truncate text-[15.5px] font-black text-ink-950">{item.name}</h3>
+                        <p className="text-[12.5px] font-medium text-ink-600 truncate">{item.presentation}</p>
                       </div>
 
                       {/* Quantity available */}
                       <div>
-                        <span className="block text-[13px] font-black uppercase tracking-wider text-ink-700">Disponible</span>
-                        <span className={cn('text-[18px] font-black', item.available <= 0 ? 'text-red-700' : 'text-ink-950')}>{item.available} u.</span>
+                        <span className={cn('text-[16px] font-black', item.available <= 0 ? 'text-red-700' : 'text-ink-950')}>
+                          {item.available} u.
+                        </span>
                       </div>
 
-                      {/* Status Exception Chip */}
+                      {/* Status Chip */}
                       <div>
                         <StatusChip label={statusLabels[item.status]} tone={statusTones[item.status]} />
                       </div>
 
-                      {/* Actions */}
-                      <div className="flex items-center justify-end">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setDetailItem(item)}
-                          className="text-ink-800 hover:text-ink-950 font-black text-[14.5px]"
-                        >
-                          Detalles <ChevronRight className="size-4" />
-                        </Button>
+                      {/* Arrow indicator */}
+                      <div className="flex items-center justify-end text-ink-400">
+                        <ChevronRight className="size-5" />
                       </div>
                     </article>
                   );
