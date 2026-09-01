@@ -361,6 +361,20 @@ describe('demoBusinessApi lifecycle and domain guarantees', () => {
     expect(afterProduct.onHand).toBe(initialOnHand + 15);
   });
 
+  it('records "Proveedor no informado" when supplier name is empty or whitespace', async () => {
+    const products = await demoBusinessApi.listAdminProducts();
+    const targetProduct = products[0]!;
+
+    const purchase = await demoBusinessApi.createPurchase({
+      supplierName: '   ',
+      expectedAt: null,
+      notes: null,
+      items: [{ productId: targetProduct.id, quantity: 5, unitCostCents: 100000 }]
+    });
+
+    expect(purchase.supplierName).toBe('Proveedor no informado');
+  });
+
   it('calculates sales analytics and respects unpublished IPC months without interpolating', async () => {
     const analytics = await demoBusinessApi.getAnalytics('2026-07-01', '2026-08-28');
     expect(typeof analytics.revenueCents).toBe('number');

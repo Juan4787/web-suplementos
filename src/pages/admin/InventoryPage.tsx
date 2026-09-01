@@ -73,7 +73,7 @@ function PurchaseFormModal({ onClose }: { onClose: () => void }) {
   const productsQuery = useBusinessQuery({ queryKey: queryKeys.products, queryFn: (api) => api.listAdminProducts() });
   const create = useMutation({
     mutationFn: async () => (await getBusinessApi()).createPurchase({
-      supplierName: supplier.trim(),
+      supplierName: supplier.trim() || 'Proveedor no informado',
       expectedAt: expectedAt ? new Date(`${expectedAt}T12:00:00-03:00`).toISOString() : null,
       notes: notes.trim() || null,
       items: lines.map((line) => ({ productId: line.productId, quantity: line.quantity, unitCostCents: pesosToCents(line.unitCostPesos) }))
@@ -87,7 +87,7 @@ function PurchaseFormModal({ onClose }: { onClose: () => void }) {
       onClose();
     }
   });
-  const valid = supplier.trim().length > 0 && lines.every((line) => line.productId && line.quantity > 0);
+  const valid = lines.length > 0 && lines.every((line) => line.productId && line.quantity > 0);
   return (
     <Modal isOpen={true} onClose={onClose} ariaLabelledBy="purchase-title" maxWidth="lg">
         <div className="flex items-start justify-between">
@@ -98,7 +98,7 @@ function PurchaseFormModal({ onClose }: { onClose: () => void }) {
           <button className="grid size-9 place-items-center rounded-full hover:bg-cream-100 text-ink-600 transition" onClick={onClose} aria-label="Cerrar modal"><X className="size-5" /></button>
         </div>
         <div className="mt-5 space-y-4">
-          <Field label="Proveedor" hint="Nombre del laboratorio o distribuidor"><Input placeholder="Ej. Star Nutrition" value={supplier} onChange={(event) => setSupplier(event.target.value)} /></Field>
+          <Field label="Proveedor" hint="Opcional. Si queda vacío se guardará como «Proveedor no informado»"><Input placeholder="Ej. Star Nutrition (opcional)" value={supplier} onChange={(event) => setSupplier(event.target.value)} /></Field>
           <Field label="Fecha estimada de entrega"><Input type="date" value={expectedAt} onChange={(event) => setExpectedAt(event.target.value)} /></Field>
           <div className="space-y-3">
             <div className="flex items-center justify-between">

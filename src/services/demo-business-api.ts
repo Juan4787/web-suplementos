@@ -502,7 +502,7 @@ export const demoBusinessApi: BusinessApi = {
     const purchase: Purchase = {
       id: nextUuid(),
       number: Math.max(...state.purchases.map((entry) => entry.number), 0) + 1,
-      supplierName: input.supplierName,
+      supplierName: input.supplierName?.trim() || 'Proveedor no informado',
       state: 'ordered',
       orderedAt: now,
       expectedAt: input.expectedAt,

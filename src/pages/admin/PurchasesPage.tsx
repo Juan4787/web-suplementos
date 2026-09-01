@@ -26,7 +26,7 @@ function PurchaseForm({ onClose }: { onClose: () => void }) {
   const productsQuery = useBusinessQuery({ queryKey: queryKeys.products, queryFn: (api) => api.listAdminProducts() });
   const create = useMutation({
     mutationFn: async () => (await getBusinessApi()).createPurchase({
-      supplierName: supplier.trim(),
+      supplierName: supplier.trim() || 'Proveedor no informado',
       expectedAt: expectedAt ? new Date(`${expectedAt}T12:00:00-03:00`).toISOString() : null,
       notes: notes.trim() || null,
       items: lines.map((line) => ({ productId: line.productId, quantity: line.quantity, unitCostCents: pesosToCents(line.unitCostPesos) }))
@@ -40,11 +40,11 @@ function PurchaseForm({ onClose }: { onClose: () => void }) {
       onClose();
     }
   });
-  const valid = supplier.trim().length >= 2 && lines.length > 0 && lines.every((line) => line.productId && line.quantity > 0 && line.unitCostPesos >= 0);
+  const valid = lines.length > 0 && lines.every((line) => line.productId && line.quantity > 0 && line.unitCostPesos >= 0);
   return (
     <Modal isOpen={true} onClose={onClose} ariaLabelledBy="purchase-title" maxWidth="2xl">
       <div className="flex items-start justify-between"><div><h2 id="purchase-title" className="font-display text-3xl font-black text-ink-950">Nueva compra</h2><p className="mt-1 text-[14.5px] font-medium text-ink-700">Registrá los productos pedidos a un proveedor.</p></div><button className="grid size-10 place-items-center rounded-full hover:bg-cream-100 text-ink-600 transition" onClick={onClose}><X className="size-5" /></button></div>
-      <div className="mt-7 grid gap-5 sm:grid-cols-2"><Field label="Proveedor"><Input value={supplier} onChange={(event) => setSupplier(event.target.value)} /></Field><Field label="Llegada estimada" hint="Opcional"><Input type="date" value={expectedAt} onChange={(event) => setExpectedAt(event.target.value)} /></Field></div>
+      <div className="mt-7 grid gap-5 sm:grid-cols-2"><Field label="Proveedor" hint="Opcional. Si queda vacío se guardará como «Proveedor no informado»"><Input placeholder="Ej. Star Nutrition (opcional)" value={supplier} onChange={(event) => setSupplier(event.target.value)} /></Field><Field label="Llegada estimada" hint="Opcional"><Input type="date" value={expectedAt} onChange={(event) => setExpectedAt(event.target.value)} /></Field></div>
       <div className="mt-7">
         <div className="flex items-center justify-between">
           <h3 className="font-display text-xl font-black">
