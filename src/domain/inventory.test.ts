@@ -4,6 +4,7 @@ import {
   availableStock,
   inventoryStatus,
   projectedStock,
+  sanitizeIntegerInput,
   suggestedPurchase
 } from './inventory';
 
@@ -62,5 +63,32 @@ describe('inventory domain logic', () => {
 
     // Zero sales with existing stock
     expect(suggestedPurchase(5, 0, 0, 7, 2)).toBe(0);
+  });
+
+  it('sanitizes integer input for human-friendly typing without 05 or 50 bugs', () => {
+    // Typing over a 0
+    expect(sanitizeIntegerInput('05', '0')).toBe('5');
+    expect(sanitizeIntegerInput('50', '0')).toBe('5');
+    expect(sanitizeIntegerInput('02', '0')).toBe('2');
+    expect(sanitizeIntegerInput('20', '0')).toBe('2');
+
+    // Normal typing
+    expect(sanitizeIntegerInput('5', '')).toBe('5');
+    expect(sanitizeIntegerInput('12', '1')).toBe('12');
+    expect(sanitizeIntegerInput('50', '5')).toBe('50'); // typing 0 after 5 gives 50
+    expect(sanitizeIntegerInput('100', '10')).toBe('100');
+
+    // Stripping leading zeroes
+    expect(sanitizeIntegerInput('00', '0')).toBe('0');
+    expect(sanitizeIntegerInput('015', '')).toBe('15');
+    expect(sanitizeIntegerInput('007', '')).toBe('7');
+
+    // Backspacing completely
+    expect(sanitizeIntegerInput('', '5')).toBe('');
+
+    // Stripping non-numeric characters
+    expect(sanitizeIntegerInput('5a', '5')).toBe('5');
+    expect(sanitizeIntegerInput('abc', '')).toBe('');
+    expect(sanitizeIntegerInput('-4', '')).toBe('4');
   });
 });

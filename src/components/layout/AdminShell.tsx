@@ -171,7 +171,7 @@ function Sidebar({ mobile = false, close }: { mobile?: boolean; close?: (() => v
 export function AdminShell() {
   const { user, loading, isDemo } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
-  if (loading) return <LoadingState label="Comprobando tu acceso…" />;
+  if (loading && !user) return <LoadingState label="Comprobando tu acceso…" />;
   if (!user) return <Navigate to="/ingresar" />;
   return (
     <div className="min-h-screen bg-cream-100">

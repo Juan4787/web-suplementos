@@ -67,18 +67,59 @@ const profileFromRpc = (data: unknown, fallbackEmail: string): AppUser => {
   };
 };
 
+const AUTH_PROFILE_CACHE_KEY = 'suplementos_auth_profile';
+
+const getCachedProfile = (): AppUser | null => {
+  try {
+    const raw = window.localStorage.getItem(AUTH_PROFILE_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (
+      typeof parsed === 'object' &&
+      parsed !== null &&
+      typeof parsed.id === 'string' &&
+      typeof parsed.displayName === 'string' &&
+      (parsed.role === 'owner' || parsed.role === 'staff')
+    ) {
+      return parsed as AppUser;
+    }
+  } catch {}
+  return null;
+};
+
+const setCachedProfile = (user: AppUser | null) => {
+  try {
+    if (user) {
+      window.localStorage.setItem(AUTH_PROFILE_CACHE_KEY, JSON.stringify(user));
+    } else {
+      window.localStorage.removeItem(AUTH_PROFILE_CACHE_KEY);
+    }
+  } catch {}
+};
+
 export function AuthProvider({ children }: PropsWithChildren) {
   const [user, setUser] = useState<AppUser | null>(() => {
-    if (!appEnv.isDemo) return null;
-    try {
-      const saved = window.sessionStorage.getItem('demo_role');
-      if (saved === 'staff') return demoStaff;
-      if (saved === 'owner') return demoOwner;
-    } catch {}
-    return demoOwner;
+    if (appEnv.isDemo) {
+      try {
+        const saved = window.sessionStorage.getItem('demo_role');
+        if (saved === 'staff') return demoStaff;
+        if (saved === 'owner') return demoOwner;
+      } catch {}
+      return demoOwner;
+    }
+    return getCachedProfile();
   });
-  const [loading, setLoading] = useState(!appEnv.isDemo && appEnv.mode === 'supabase');
+  const [loading, setLoading] = useState(() => {
+    if (appEnv.isDemo) return false;
+    if (appEnv.mode !== 'supabase') return false;
+    return getCachedProfile() === null;
+  });
   const [authError, setAuthError] = useState<AppError | null>(null);
+
+  const updateActiveUser = useCallback((nextUser: AppUser | null) => {
+    setUser(nextUser);
+    setCachedProfile(nextUser);
+  }, []);
 
   const requestSupabaseProfile = useCallback(async (fallbackEmail: string): Promise<AppUser> => {
     const { data, error } = await getSupabaseClient().rpc('get_current_profile');
@@ -86,7 +127,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
     return profileFromRpc(data, fallbackEmail);
   }, []);
 
-  const loadSupabaseProfile = useCallback(async () => {
+  const loadSupabaseProfile = useCallback(async (_isInitial = false) => {
     if (appEnv.mode !== 'supabase') return;
     const client = getSupabaseClient();
     try {
@@ -94,30 +135,44 @@ export function AuthProvider({ children }: PropsWithChildren) {
       if (sessionError) throw profileRequestError(sessionError);
       const session = sessionData.session;
       if (!session) {
-        setUser(null);
+        updateActiveUser(null);
         setAuthError(null);
         return;
       }
-      setUser(await requestSupabaseProfile(session.user.email ?? ''));
+      const profile = await requestSupabaseProfile(session.user.email ?? '');
+      updateActiveUser(profile);
       setAuthError(null);
     } catch (caught) {
-      setUser(null);
-      setAuthError(caught instanceof AppError ? caught : profileRequestError(caught));
+      const err = caught instanceof AppError ? caught : profileRequestError(caught);
+      if (err.kind === 'auth') {
+        updateActiveUser(null);
+        setAuthError(err);
+      } else {
+        // En errores temporales de red, conservamos el usuario en memoria
+        setAuthError(err);
+      }
     } finally {
       setLoading(false);
     }
-  }, [requestSupabaseProfile]);
+  }, [requestSupabaseProfile, updateActiveUser]);
 
   useEffect(() => {
     if (appEnv.mode !== 'supabase') return;
-    void loadSupabaseProfile();
+    void loadSupabaseProfile(true);
     const client = getSupabaseClient();
-    const { data } = client.auth.onAuthStateChange(() => {
-      setLoading(true);
-      void loadSupabaseProfile();
+    const { data } = client.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_OUT' || !session) {
+        updateActiveUser(null);
+        setLoading(false);
+      } else if (event === 'SIGNED_IN') {
+        void loadSupabaseProfile(false);
+      } else {
+        // TOKEN_REFRESHED, USER_UPDATED: revalidación silenciosa en segundo plano
+        void loadSupabaseProfile(false);
+      }
     });
     return () => data.subscription.unsubscribe();
-  }, [loadSupabaseProfile]);
+  }, [loadSupabaseProfile, updateActiveUser]);
 
   const signIn = useCallback(async (email: string, password: string) => {
     if (appEnv.isDemo) {
@@ -142,16 +197,16 @@ export function AuthProvider({ children }: PropsWithChildren) {
     }
     try {
       const profile = await requestSupabaseProfile(data.user.email ?? email);
-      setUser(profile);
+      updateActiveUser(profile);
       setAuthError(null);
     } catch (caught) {
       const accessError = caught instanceof AppError ? caught : profileRequestError(caught);
-      setUser(null);
+      updateActiveUser(null);
       setAuthError(accessError);
       if (accessError.kind === 'auth') await client.auth.signOut({ scope: 'local' });
       throw accessError;
     }
-  }, [requestSupabaseProfile]);
+  }, [requestSupabaseProfile, updateActiveUser]);
 
   const signOut = useCallback(async () => {
     if (appEnv.isDemo) {
@@ -163,9 +218,9 @@ export function AuthProvider({ children }: PropsWithChildren) {
       return;
     }
     if (appEnv.mode === 'supabase') await getSupabaseClient().auth.signOut();
-    setUser(null);
+    updateActiveUser(null);
     setAuthError(null);
-  }, []);
+  }, [updateActiveUser]);
 
   const switchDemoRole = useCallback((role: UserRole) => {
     if (appEnv.isDemo) {

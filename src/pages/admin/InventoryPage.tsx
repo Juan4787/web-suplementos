@@ -30,7 +30,7 @@ import { ErrorState, LoadingState } from '@/components/ui/DataState';
 import { Field, Input, Select, Textarea } from '@/components/ui/Field';
 import { Drawer, Modal } from '@/components/ui/Modal';
 import { StatusChip } from '@/components/ui/StatusChip';
-import { inventoryStatus } from '@/domain/inventory';
+import { inventoryStatus, sanitizeIntegerInput } from '@/domain/inventory';
 import { formatMoney, pesosToCents } from '@/domain/money';
 import { can } from '@/domain/permissions';
 import { formatProducts, formatUnits } from '@/domain/quantity';
@@ -39,25 +39,25 @@ import { useAuth } from '@/features/auth/AuthProvider';
 import { cn } from '@/lib/cn';
 import { getBusinessApi } from '@/services/business-api';
 
-const statusLabels: Record<InventoryItem['status'], string> = {
+const statusLabels = {
   ok: 'OK',
   low: 'COMPRAR',
   critical: 'URGENTE',
   out: 'SIN STOCK'
-};
+} as const;
 
-const statusTones: Record<InventoryItem['status'], 'success' | 'warning' | 'danger'> = {
+const statusTones = {
   ok: 'success',
   low: 'warning',
   critical: 'danger',
   out: 'danger'
-};
+} as const;
 
 const movementKindLabels = {
   sale: 'Venta entregada',
   purchase_received: 'Compra recibida',
   return: 'Devolución',
-  adjustment: 'Corrección manual',
+  adjustment: 'Stock corregido',
   reservation: 'Reserva de pedido',
   reservation_release: 'Liberación de reserva'
 } as const;
@@ -180,16 +180,20 @@ function StockDetailDrawer({
   onNavigateToMovements: () => void;
 }) {
   const queryClient = useQueryClient();
-  const [reorderPoint, setReorderPoint] = useState(item.reorderPoint);
-  const [safetyStock, setSafetyStock] = useState(item.safetyStock);
-  const [leadTimeDays, setLeadTimeDays] = useState(item.leadTimeDays);
+  const [reorderPointStr, setReorderPointStr] = useState(
+    item.reorderPoint > 0 ? String(item.reorderPoint) : ''
+  );
+  const [safetyStockStr, setSafetyStockStr] = useState(
+    item.safetyStock > 0 ? String(item.safetyStock) : ''
+  );
+  const [leadTimeDaysStr, setLeadTimeDaysStr] = useState(String(item.leadTimeDays));
   const [showCalculation, setShowCalculation] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
   useEffect(() => {
-    setReorderPoint(item.reorderPoint);
-    setSafetyStock(item.safetyStock);
-    setLeadTimeDays(item.leadTimeDays);
+    setReorderPointStr(item.reorderPoint > 0 ? String(item.reorderPoint) : '');
+    setSafetyStockStr(item.safetyStock > 0 ? String(item.safetyStock) : '');
+    setLeadTimeDaysStr(String(item.leadTimeDays));
     setSaveSuccess(false);
   }, [item.id, item.reorderPoint, item.safetyStock, item.leadTimeDays]);
 
@@ -197,6 +201,10 @@ function StockDetailDrawer({
     queryKey: queryKeys.movements(1),
     queryFn: (api) => api.listMovements(1, 100)
   });
+
+  const reorderPoint = reorderPointStr === '' ? 0 : parseInt(reorderPointStr, 10);
+  const safetyStock = safetyStockStr === '' ? 0 : parseInt(safetyStockStr, 10);
+  const leadTimeDays = leadTimeDaysStr === '' ? item.leadTimeDays : parseInt(leadTimeDaysStr, 10);
 
   const isDirty =
     reorderPoint !== item.reorderPoint ||
@@ -226,6 +234,17 @@ function StockDetailDrawer({
   const previewStatus = inventoryStatus(item.available, reorderPoint, safetyStock);
   const ranges = getExclusiveRanges(reorderPoint, safetyStock);
 
+  const scaleSegments: { label: string; tone: string }[] = [
+    { label: `OK: ${ranges.ok}`, tone: 'text-emerald-700' }
+  ];
+  if (ranges.buy) {
+    scaleSegments.push({ label: `Comprar: ${ranges.buy}`, tone: 'text-amber-700' });
+  }
+  if (ranges.urgent) {
+    scaleSegments.push({ label: `Urgente: ${ranges.urgent}`, tone: 'text-rose-700' });
+  }
+  scaleSegments.push({ label: `Sin stock: ${ranges.out}`, tone: 'text-red-700' });
+
   const recentMovements = (movementsQuery.data?.items ?? [])
     .filter(
       (m) =>
@@ -234,12 +253,16 @@ function StockDetailDrawer({
     )
     .slice(0, 3);
 
+  const formattedDailySales = Number.isInteger(item.averageDailySales)
+    ? String(item.averageDailySales)
+    : item.averageDailySales.toLocaleString('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 1 });
+
   return (
     <Drawer isOpen={true} onClose={onClose} ariaLabelledBy="drawer-title">
-      {/* 1. CABECERA DEL PRODUCTO */}
+      {/* 1. CABECERA DEL PRODUCTO (Con botón cerrar de 44x44px target) */}
       <div className="flex items-start justify-between">
-        <div>
-          <h2 id="drawer-title" className="font-display text-2xl font-black text-ink-950">
+        <div className="min-w-0 pr-2">
+          <h2 id="drawer-title" className="font-display text-2xl font-black text-ink-950 truncate">
             {item.name}
           </h2>
           <div className="mt-1.5 flex items-center gap-2.5">
@@ -248,7 +271,7 @@ function StockDetailDrawer({
           </div>
         </div>
         <button
-          className="grid size-10 place-items-center rounded-full hover:bg-cream-100 text-ink-600 transition"
+          className="grid size-11 shrink-0 place-items-center rounded-full hover:bg-cream-100 text-ink-600 transition -mr-2"
           onClick={onClose}
           aria-label="Cerrar panel"
         >
@@ -257,177 +280,170 @@ function StockDetailDrawer({
       </div>
 
       <div className="mt-6 space-y-5 flex-1">
-        {/* 2. ALERTA SUPERIOR (Conclusión directa) */}
-        <div
-          className={cn(
-            'rounded-2xl p-4 text-[13.5px] border font-medium leading-relaxed shadow-sm',
-            item.status === 'ok' && 'bg-emerald-50 text-emerald-950 border-emerald-200',
-            item.status === 'low' && 'bg-amber-50 text-amber-950 border-amber-200',
-            item.status === 'critical' && 'bg-rose-50 text-rose-950 border-rose-200',
-            item.status === 'out' && 'bg-red-50 text-red-950 border-red-200'
-          )}
-        >
-          {item.status === 'out' && (
-            <div className="flex items-start gap-2.5">
-              <AlertTriangle className="size-5 shrink-0 text-red-700 mt-0.5" />
-              <div>
-                <p className="font-bold text-red-950">Sin stock</p>
-                <p className="text-[12.5px] text-red-800 mt-0.5">No quedan unidades disponibles para vender.</p>
+        {/* 2. ALERTA SUPERIOR (Solo para estados que requieren atención: out, critical, low) */}
+        {item.status !== 'ok' && (
+          <div
+            className={cn(
+              'rounded-2xl p-4 text-[13.5px] border font-medium leading-relaxed shadow-sm',
+              item.status === 'low' && 'bg-amber-50 text-amber-950 border-amber-200',
+              item.status === 'critical' && 'bg-rose-50 text-rose-950 border-rose-200',
+              item.status === 'out' && 'bg-red-50 text-red-950 border-red-200'
+            )}
+          >
+            {item.status === 'out' && (
+              <div className="flex items-start gap-2.5">
+                <AlertTriangle className="size-5 shrink-0 text-red-700 mt-0.5" />
+                <div>
+                  <p className="font-bold text-red-950">Sin stock</p>
+                  <p className="text-[12.5px] text-red-800 mt-0.5">No quedan unidades para vender.</p>
+                </div>
               </div>
-            </div>
-          )}
-          {item.status === 'critical' && (
-            <div className="flex items-start gap-2.5">
-              <AlertTriangle className="size-5 shrink-0 text-rose-700 mt-0.5" />
-              <div>
-                <p className="font-bold text-rose-950">Queda muy poco stock</p>
-                <p className="text-[12.5px] text-rose-800 mt-0.5">
-                  Quedan <strong>{item.available} unidades</strong>. Tu aviso urgente está en <strong>{item.safetyStock}</strong>.
-                </p>
+            )}
+            {item.status === 'critical' && (
+              <div className="flex items-start gap-2.5">
+                <AlertTriangle className="size-5 shrink-0 text-rose-700 mt-0.5" />
+                <div>
+                  <p className="font-bold text-rose-950">Queda muy poco stock</p>
+                  <p className="text-[12.5px] text-rose-800 mt-0.5">
+                    Quedan <strong>{item.available} {item.available === 1 ? 'unidad' : 'unidades'}</strong>. Tu aviso urgente está en <strong>{item.safetyStock}</strong>.
+                  </p>
+                </div>
               </div>
-            </div>
-          )}
-          {item.status === 'low' && (
-            <div className="flex items-start gap-2.5">
-              <Info className="size-5 shrink-0 text-amber-700 mt-0.5" />
-              <div>
-                <p className="font-bold text-amber-950">Conviene comprar</p>
-                <p className="text-[12.5px] text-amber-900 mt-0.5">
-                  Quedan <strong>{item.available} unidades disponibles</strong>. Querés que te avisemos desde <strong>{item.reorderPoint}</strong>.
-                </p>
+            )}
+            {item.status === 'low' && (
+              <div className="flex items-start gap-2.5">
+                <Info className="size-5 shrink-0 text-amber-700 mt-0.5" />
+                <div>
+                  <p className="font-bold text-amber-950">Conviene comprar</p>
+                  <p className="text-[12.5px] text-amber-900 mt-0.5">
+                    Quedan <strong>{item.available} {item.available === 1 ? 'unidad' : 'unidades'}</strong>. Tu aviso está en <strong>{item.reorderPoint}</strong>.
+                  </p>
+                </div>
               </div>
-            </div>
-          )}
-          {item.status === 'ok' && (
-            <div className="flex items-start gap-2.5">
-              <CheckCircle2 className="size-5 shrink-0 text-emerald-700 mt-0.5" />
-              <div>
-                <p className="font-bold text-emerald-950">Stock en orden</p>
-                <p className="text-[12.5px] text-emerald-800 mt-0.5">
-                  Hay <strong>{item.available} unidades disponibles</strong> para vender.
-                </p>
-              </div>
-            </div>
-          )}
-        </div>
+            )}
+          </div>
+        )}
 
-        {/* 3. STOCK HOY (Hero disponible) */}
+        {/* 3. STOCK HOY (Tarjetas con alineación vertical geométrica perfecta de 3 filas) */}
         <div>
           <h4 className="text-[12px] font-black uppercase tracking-wider text-ink-600 mb-2">Stock hoy</h4>
           <div className="grid grid-cols-3 gap-2.5">
-            {/* DISPONIBLE (Hero mayor jerarquía) */}
-            <div className="col-span-3 sm:col-span-1 rounded-2xl bg-emerald-50/90 border border-emerald-200/90 p-4 flex flex-col justify-between shadow-sm">
-              <span className="block text-[11px] font-black uppercase tracking-wider text-emerald-800">Disponible</span>
-              <div className="my-1 flex items-baseline gap-1.5">
-                <span className={cn('text-3xl font-black tracking-tight', item.available <= 0 ? 'text-red-700' : 'text-emerald-950')}>
+            {/* DISPONIBLE */}
+            <div className="rounded-2xl bg-cream-50 p-3.5 border border-ink-950/6 flex flex-col">
+              <span className="block text-[12px] font-black uppercase tracking-wider text-ink-700">Disponible</span>
+              <div className="my-1.5 flex items-baseline gap-1">
+                <span
+                  className={cn(
+                    'text-3xl font-black tracking-tight leading-none',
+                    item.available <= 0
+                      ? 'text-red-700'
+                      : item.status === 'critical'
+                        ? 'text-rose-700'
+                        : item.status === 'low'
+                          ? 'text-amber-800'
+                          : 'text-ink-950'
+                  )}
+                >
                   {item.available}
                 </span>
-                <span className="text-xs font-bold text-emerald-800">u.</span>
+                <span className="text-xs font-bold text-ink-500">u.</span>
               </div>
-              <span className="text-[11px] font-semibold text-emerald-800/80">Para vender</span>
+              <span className="text-[11.5px] font-semibold text-ink-500 min-h-[1.125rem]">Para vender</span>
             </div>
 
             {/* RESERVADO */}
-            <div className="rounded-2xl bg-cream-50 p-3.5 border border-ink-950/6 flex flex-col justify-between">
-              <span className="block text-[11px] font-black uppercase tracking-wider text-ink-600">Reservado</span>
-              <div className="my-1 flex items-baseline gap-1">
-                <span className="text-2xl font-black text-ink-950">{item.reserved}</span>
+            <div className="rounded-2xl bg-cream-50 p-3.5 border border-ink-950/6 flex flex-col">
+              <span className="block text-[12px] font-black uppercase tracking-wider text-ink-700">Reservado</span>
+              <div className="my-1.5 flex items-baseline gap-1">
+                <span className="text-3xl font-black text-ink-950 tracking-tight leading-none">{item.reserved}</span>
                 <span className="text-xs font-bold text-ink-500">u.</span>
               </div>
-              <span className="text-[11px] font-medium text-ink-500">En pedidos</span>
+              <span className="text-[11.5px] font-semibold text-ink-500 min-h-[1.125rem]">En pedidos</span>
             </div>
 
             {/* TOTAL */}
-            <div className="rounded-2xl bg-cream-50 p-3.5 border border-ink-950/6 flex flex-col justify-between">
-              <span className="block text-[11px] font-black uppercase tracking-wider text-ink-600">Total</span>
-              <div className="my-1 flex items-baseline gap-1">
-                <span className="text-2xl font-black text-ink-950">{item.onHand}</span>
+            <div className="rounded-2xl bg-cream-50 p-3.5 border border-ink-950/6 flex flex-col">
+              <span className="block text-[12px] font-black uppercase tracking-wider text-ink-700">Total</span>
+              <div className="my-1.5 flex items-baseline gap-1">
+                <span className="text-3xl font-black text-ink-950 tracking-tight leading-none">{item.onHand}</span>
                 <span className="text-xs font-bold text-ink-500">u.</span>
               </div>
+              <span className="text-[11.5px] font-semibold text-transparent min-h-[1.125rem] select-none" aria-hidden="true">Total</span>
             </div>
           </div>
         </div>
 
-        {/* 4. CUÁNDO AVISARME */}
+        {/* 4. CUÁNDO AVISARME (Filas verticales con inputs limpios y placeholder 0) */}
         <div className="rounded-2xl border border-ink-950/10 bg-white p-4 shadow-sm">
-          <div className="flex items-center justify-between mb-3">
-            <div>
-              <h4 className="text-[13px] font-black uppercase tracking-wider text-ink-900">
-                Cuándo avisarme
-              </h4>
-              <p className="text-[12px] font-medium text-ink-600">
-                Elegí cuándo querés recibir cada aviso.
-              </p>
-            </div>
-            <SlidersHorizontal className="size-4 text-ink-500" />
-          </div>
+          <h4 className="text-[13px] font-black uppercase tracking-wider text-ink-900 mb-3">
+            Cuándo avisarme
+          </h4>
 
-          <div className="grid grid-cols-2 gap-3.5 pt-1">
-            {/* Campo 1: Avisarme para comprar */}
-            <div className="rounded-xl bg-amber-50/40 p-2.5 border border-amber-200/60">
-              <label className="flex items-center gap-1.5 text-[12.5px] font-black text-amber-950 mb-1.5">
-                <span className="size-2 rounded-full bg-amber-500 inline-block" />
-                Avisarme para comprar
-              </label>
-              <div className="relative">
+          <div className="divide-y divide-ink-950/6">
+            {/* Fila 1: Comprar */}
+            <div className="flex min-h-[64px] items-center justify-between py-2">
+              <div className="flex items-center gap-2.5">
+                <span className="size-2.5 rounded-full bg-amber-500 shrink-0" />
+                <span className="text-[15px] font-black text-ink-950">Comprar</span>
+              </div>
+
+              <div className="relative flex items-center">
                 <Input
-                  type="number"
-                  min="0"
-                  value={reorderPoint}
-                  onChange={(e) => setReorderPoint(Math.max(0, parseInt(e.target.value, 10) || 0))}
-                  className="pr-8 text-[15px] font-black bg-white"
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  value={reorderPointStr}
+                  placeholder="0"
+                  onFocus={(e) => e.target.select()}
+                  onChange={(e) => {
+                    const clean = sanitizeIntegerInput(e.target.value, reorderPointStr);
+                    setReorderPointStr(clean);
+                  }}
+                  className="h-12 w-28 pr-7 text-right text-[16px] font-black bg-cream-50 border-ink-950/12 focus:bg-white focus:ring-1 focus:ring-amber-500/50"
                 />
                 <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs font-bold text-ink-500 pointer-events-none">
                   u.
                 </span>
               </div>
-              <p className="mt-1.5 text-[11px] font-semibold text-amber-900/90 leading-tight">
-                {reorderPoint > 0 ? `Cuando queden ${reorderPoint} o menos.` : 'Desactivado · Sin alerta previa'}
-              </p>
             </div>
 
-            {/* Campo 2: Avisarme urgente */}
-            <div className="rounded-xl bg-rose-50/40 p-2.5 border border-rose-200/60">
-              <label className="flex items-center gap-1.5 text-[12.5px] font-black text-rose-950 mb-1.5">
-                <span className="size-2 rounded-full bg-rose-500 inline-block" />
-                Avisarme urgente
-              </label>
-              <div className="relative">
+            {/* Fila 2: Urgente */}
+            <div className="flex min-h-[64px] items-center justify-between py-2">
+              <div className="flex items-center gap-2.5">
+                <span className="size-2.5 rounded-full bg-rose-500 shrink-0" />
+                <span className="text-[15px] font-black text-ink-950">Urgente</span>
+              </div>
+
+              <div className="relative flex items-center">
                 <Input
-                  type="number"
-                  min="0"
-                  value={safetyStock}
-                  onChange={(e) => setSafetyStock(Math.max(0, parseInt(e.target.value, 10) || 0))}
-                  className="pr-8 text-[15px] font-black bg-white"
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  value={safetyStockStr}
+                  placeholder="0"
+                  onFocus={(e) => e.target.select()}
+                  onChange={(e) => {
+                    const clean = sanitizeIntegerInput(e.target.value, safetyStockStr);
+                    setSafetyStockStr(clean);
+                  }}
+                  className="h-12 w-28 pr-7 text-right text-[16px] font-black bg-cream-50 border-ink-950/12 focus:bg-white focus:ring-1 focus:ring-rose-500/50"
                 />
                 <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs font-bold text-ink-500 pointer-events-none">
                   u.
                 </span>
               </div>
-              <p className="mt-1.5 text-[11px] font-semibold text-rose-900/90 leading-tight">
-                {safetyStock > 0 ? `Cuando queden ${safetyStock} o menos.` : 'Desactivado · Sin alerta previa'}
-              </p>
             </div>
           </div>
 
-          {/* Escala conceptual de rangos exclusivos */}
-          <div className="mt-3.5 rounded-xl bg-cream-50/80 p-2.5 border border-ink-950/6">
+          {/* Escala limpia segmentada con puntos separadores garantizados */}
+          <div className="mt-3 rounded-xl bg-cream-50/80 p-2.5 border border-ink-950/6">
             <div className="flex flex-wrap items-center justify-between gap-1 text-[11px] font-extrabold text-ink-700">
-              <span className="text-emerald-700">OK: {ranges.ok}</span>
-              <span className="text-ink-300">→</span>
-              {ranges.buy ? (
-                <>
-                  <span className="text-amber-700">COMPRAR: {ranges.buy}</span>
-                  <span className="text-ink-300">→</span>
-                </>
-              ) : null}
-              {ranges.urgent ? (
-                <>
-                  <span className="text-rose-700">URGENTE: {ranges.urgent}</span>
-                  <span className="text-ink-300">→</span>
-                </>
-              ) : null}
-              <span className="text-red-700">SIN STOCK: {ranges.out}</span>
+              {scaleSegments.map((seg, idx) => (
+                <div key={idx} className="flex items-center gap-1.5">
+                  {idx > 0 && <span className="text-ink-400">·</span>}
+                  <span className={seg.tone}>{seg.label}</span>
+                </div>
+              ))}
             </div>
           </div>
 
@@ -447,9 +463,11 @@ function StockDetailDrawer({
                     type="button"
                     variant="ghost"
                     size="sm"
+                    className="min-h-10 px-3"
                     onClick={() => {
-                      setReorderPoint(item.reorderPoint);
-                      setSafetyStock(item.safetyStock);
+                      setReorderPointStr(item.reorderPoint > 0 ? String(item.reorderPoint) : '');
+                      setSafetyStockStr(item.safetyStock > 0 ? String(item.safetyStock) : '');
+                      setLeadTimeDaysStr(String(item.leadTimeDays));
                     }}
                   >
                     Descartar
@@ -458,6 +476,7 @@ function StockDetailDrawer({
                     type="button"
                     variant="dark"
                     size="sm"
+                    className="min-h-10 px-4"
                     loading={updateThresholds.isPending}
                     onClick={() => updateThresholds.mutate()}
                   >
@@ -482,29 +501,27 @@ function StockDetailDrawer({
           )}
         </div>
 
-        {/* 5. LO QUE VIENE */}
-        <div>
-          <h4 className="text-[12px] font-black uppercase tracking-wider text-ink-600 mb-2">Lo que viene</h4>
-          {item.incoming > 0 ? (
+        {/* 5. LO QUE VIENE (Solo si hay compras en camino) */}
+        {item.incoming > 0 ? (
+          <div>
+            <h4 className="text-[12px] font-black uppercase tracking-wider text-ink-600 mb-2">Lo que viene</h4>
             <div className="rounded-2xl bg-brand-50/70 p-4 border border-brand-200/70 space-y-1">
-              <p className="text-[15px] font-black text-brand-950">{item.incoming} unidades en camino</p>
+              <p className="text-[15px] font-black text-brand-950">
+                {item.incoming} {item.incoming === 1 ? 'unidad en camino' : 'unidades en camino'}
+              </p>
               <p className="text-xs font-medium text-brand-800">
-                Cuando lleguen vas a tener <strong className="font-black text-brand-950">{item.projected} u.</strong>
+                Cuando lleguen vas a tener <strong className="font-black text-brand-950">{item.projected} {item.projected === 1 ? 'unidad' : 'unidades'}</strong>.
               </p>
             </div>
-          ) : (
-            <div className="rounded-2xl bg-cream-50 p-3.5 border border-ink-950/6">
-              <p className="text-xs font-bold text-ink-700">No hay compras en camino.</p>
-            </div>
-          )}
-        </div>
+          </div>
+        ) : null}
 
-        {/* 6. CÓMO SE CALCULA */}
-        <div className="overflow-hidden rounded-2xl border border-ink-950/8 bg-white p-4">
+        {/* 6. CÓMO SE CALCULA (Fila completa con área táctil cómoda de 48px) */}
+        <div className="overflow-hidden rounded-2xl border border-ink-950/8 bg-white">
           <button
             type="button"
             onClick={() => setShowCalculation(!showCalculation)}
-            className="flex w-full items-center justify-between text-[13px] font-black uppercase tracking-wider text-ink-800 hover:text-ink-950"
+            className="flex min-h-12 w-full items-center justify-between px-4 py-3 text-[13px] font-black uppercase tracking-wider text-ink-800 hover:text-ink-950 active:bg-cream-100 transition"
           >
             <span>{showCalculation ? 'Ocultar cálculo ▴' : 'Ver cómo se calcula ▾'}</span>
             <ChevronDown
@@ -513,62 +530,73 @@ function StockDetailDrawer({
           </button>
 
           {showCalculation ? (
-            <div className="mt-4 space-y-3 border-t border-ink-950/6 pt-3">
+            <div className="space-y-3 border-t border-ink-950/6 p-4 pt-3">
               <dl className="grid grid-cols-2 gap-3 text-sm">
                 <div>
                   <dt className="font-semibold text-ink-700">Venta promedio</dt>
                   <dd className="text-[15px] font-black text-ink-950">
-                    {item.averageDailySales.toFixed(1)} por día
+                    {formattedDailySales} por día
                   </dd>
                 </div>
                 <div>
                   <dt className="font-semibold text-ink-700">El proveedor tarda</dt>
-                  <dd className="text-[15px] font-black text-ink-950">{item.leadTimeDays} días</dd>
+                  <dd className="text-[15px] font-black text-ink-950">
+                    {item.leadTimeDays} {item.leadTimeDays === 1 ? 'día' : 'días'}
+                  </dd>
                 </div>
                 <div>
                   <dt className="font-semibold text-ink-700">Aviso de compra</dt>
                   <dd className="text-[15px] font-black text-ink-950">
-                    {item.reorderPoint > 0 ? `${item.reorderPoint} unidades` : 'Desactivado'}
+                    {item.reorderPoint} {item.reorderPoint === 1 ? 'unidad' : 'unidades'}
                   </dd>
                 </div>
                 <div>
                   <dt className="font-semibold text-ink-700">Aviso urgente</dt>
                   <dd className="text-[15px] font-black text-ink-950">
-                    {item.safetyStock > 0 ? `${item.safetyStock} unidades` : 'Desactivado'}
+                    {item.safetyStock} {item.safetyStock === 1 ? 'unidad' : 'unidades'}
                   </dd>
                 </div>
-                <div>
-                  <dt className="font-semibold text-ink-700">El stock alcanza para</dt>
-                  <dd className="text-[15px] font-black text-ink-950">
-                    {item.coverageDays !== null ? `${item.coverageDays} días` : 'Sin datos suficientes'}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="font-semibold text-ink-700">Cuánto comprar</dt>
-                  <dd className="text-[15px] font-black text-brand-700">
-                    {item.averageDailySales === 0 || item.coverageDays === null
-                      ? 'Sin datos suficientes'
-                      : item.suggestedPurchase > 0
-                        ? `${item.suggestedPurchase} unidades`
-                        : '0 unidades (cubierto)'}
-                  </dd>
-                </div>
+
+                {item.averageDailySales === 0 || item.coverageDays === null ? (
+                  <div className="col-span-2 rounded-xl bg-cream-50 p-3 text-xs font-semibold text-ink-600 border border-ink-950/6">
+                    Todavía no hay ventas suficientes para calcular cuánto dura el stock y cuánto conviene comprar.
+                  </div>
+                ) : (
+                  <>
+                    <div>
+                      <dt className="font-semibold text-ink-700">El stock alcanza para</dt>
+                      <dd className="text-[15px] font-black text-ink-950">
+                        {item.coverageDays} {item.coverageDays === 1 ? 'día' : 'días'}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="font-semibold text-ink-700">Cuánto comprar</dt>
+                      <dd className="text-[15px] font-black text-brand-700">
+                        {item.suggestedPurchase > 0
+                          ? `${item.suggestedPurchase} ${item.suggestedPurchase === 1 ? 'unidad' : 'unidades'}`
+                          : '0 unidades (cubierto)'}
+                      </dd>
+                    </div>
+                  </>
+                )}
               </dl>
             </div>
           ) : null}
         </div>
 
-        {/* 7. ÚLTIMOS MOVIMIENTOS */}
+        {/* 7. ÚLTIMOS MOVIMIENTOS (Con header tappable de 44px) */}
         <div className="rounded-2xl border border-ink-950/8 bg-white p-4">
           <div className="flex items-center justify-between mb-2.5">
             <h4 className="text-xs font-black uppercase tracking-wider text-ink-600">Últimos movimientos</h4>
-            <button
-              type="button"
-              onClick={onNavigateToMovements}
-              className="text-xs font-bold text-brand-600 hover:text-brand-700"
-            >
-              Ver todos →
-            </button>
+            {recentMovements.length > 0 ? (
+              <button
+                type="button"
+                onClick={onNavigateToMovements}
+                className="flex items-center min-h-11 px-2 -mr-2 text-xs font-bold text-brand-600 hover:text-brand-700 active:opacity-75 transition"
+              >
+                Ver todos →
+              </button>
+            ) : null}
           </div>
 
           {recentMovements.length === 0 ? (
@@ -606,22 +634,19 @@ function StockDetailDrawer({
           )}
         </div>
 
-        {/* 8. OTRAS ACCIONES */}
-        <div className="rounded-2xl border border-ink-950/8 bg-cream-50/50 p-4">
-          <h4 className="text-xs font-black uppercase tracking-wider text-ink-600 mb-2">Otras acciones</h4>
-          <Button
-            variant="secondary"
-            size="sm"
-            className="w-full justify-start text-xs font-bold"
-            onClick={() => onOpenAdjust(item)}
-          >
-            <SlidersHorizontal className="size-4" /> Corregir stock
-          </Button>
-        </div>
+        {/* 8. ACCIÓN DIRECTA (Botón con área táctil cómoda de 44px de alto) */}
+        <Button
+          variant="secondary"
+          size="sm"
+          className="w-full justify-center text-xs font-bold min-h-11"
+          onClick={() => onOpenAdjust(item)}
+        >
+          <SlidersHorizontal className="size-4" /> Corregir stock
+        </Button>
       </div>
 
       <div className="mt-8 flex justify-end border-t border-ink-950/8 pt-4">
-        <Button variant="ghost" size="sm" onClick={onClose}>
+        <Button variant="ghost" size="sm" className="min-h-10 px-4" onClick={onClose}>
           Cerrar
         </Button>
       </div>
@@ -892,7 +917,7 @@ export default function InventoryPage() {
                 <span>Producto</span>
                 <span>Disponible</span>
                 <span>Estado</span>
-                <span className="sr-only">Ver detalle</span>
+                <span className="sr-only">Ver</span>
               </div>
 
               <div className="divide-y divide-ink-950/6">
@@ -912,7 +937,7 @@ export default function InventoryPage() {
                         }
                       }}
                       className={cn(
-                        'grid min-h-[3.75rem] gap-2 p-3.5 sm:p-4 transition cursor-pointer sm:grid-cols-[1fr_7.5rem_8rem_2.5rem] sm:items-center sm:px-6 select-none focus:outline-none focus:bg-cream-100/80',
+                        'group grid min-h-[3.75rem] gap-2 p-3.5 sm:p-4 transition cursor-pointer sm:grid-cols-[1fr_7.5rem_8rem_2.5rem] sm:items-center sm:px-6 select-none focus:outline-none focus:bg-cream-100/80',
                         isProblem ? 'bg-amber-50/40 hover:bg-amber-50/70' : 'hover:bg-cream-50'
                       )}
                     >
@@ -934,9 +959,9 @@ export default function InventoryPage() {
                         <StatusChip label={statusLabels[item.status]} tone={statusTones[item.status]} />
                       </div>
 
-                      {/* Arrow indicator */}
-                      <div className="flex items-center justify-end text-ink-400">
-                        <ChevronRight className="size-5" />
+                      {/* Chevron affordance */}
+                      <div className="flex items-center justify-end text-ink-400 group-hover:text-ink-700 transition">
+                        <ChevronRight className="size-5 transition-transform group-hover:translate-x-0.5" />
                       </div>
                     </article>
                   );
