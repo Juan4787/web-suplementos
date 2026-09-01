@@ -42,75 +42,118 @@ function PurchaseForm({ onClose }: { onClose: () => void }) {
   });
   const valid = lines.length > 0 && lines.every((line) => line.productId && line.quantity > 0 && line.unitCostPesos >= 0);
   return (
-    <Modal isOpen={true} onClose={onClose} ariaLabelledBy="purchase-title" maxWidth="2xl">
-      <div className="flex items-start justify-between"><div><h2 id="purchase-title" className="font-display text-3xl font-black text-ink-950">Nueva compra</h2><p className="mt-1 text-[14.5px] font-medium text-ink-700">Registrá los productos pedidos a un proveedor.</p></div><button className="grid size-10 place-items-center rounded-full hover:bg-cream-100 text-ink-600 transition" onClick={onClose}><X className="size-5" /></button></div>
-      <div className="mt-7 grid gap-5 sm:grid-cols-2"><Field label="Proveedor" hint="Opcional. Si queda vacío se guardará como «Proveedor no informado»"><Input placeholder="Ej. Star Nutrition (opcional)" value={supplier} onChange={(event) => setSupplier(event.target.value)} /></Field><Field label="Llegada estimada" hint="Opcional"><Input type="date" value={expectedAt} onChange={(event) => setExpectedAt(event.target.value)} /></Field></div>
-      <div className="mt-7">
-        <div className="flex items-center justify-between">
-          <h3 className="font-display text-xl font-black">
-            Productos pedidos ({lines.length})
-          </h3>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setLines((current) => [...current, { productId: '', quantity: 1, unitCostPesos: 0 }])}
-          >
-            <Plus className="size-4" /> Agregar producto
-          </Button>
+    <Modal
+      isOpen={true}
+      onClose={onClose}
+      ariaLabelledBy="purchase-title"
+      maxWidth="lg"
+      className="p-0 flex flex-col max-h-[90vh] overflow-hidden"
+    >
+      {/* Header fijo */}
+      <div className="flex items-start justify-between border-b border-ink-950/6 bg-white px-6 pt-6 pb-4 sm:px-8 sm:pt-8 shrink-0">
+        <div>
+          <h2 id="purchase-title" className="font-display text-2xl sm:text-3xl font-black text-ink-950">
+            Nuevo pedido al proveedor
+          </h2>
+          <p className="mt-1 text-[14.5px] font-medium text-ink-700">
+            Anotá qué pediste y cuándo debería llegar.
+          </p>
+        </div>
+        <button
+          className="grid size-11 shrink-0 place-items-center rounded-full hover:bg-cream-100 text-ink-600 transition"
+          onClick={onClose}
+          aria-label="Cerrar modal"
+        >
+          <X className="size-5" />
+        </button>
+      </div>
+
+      {/* Contenido scrolleable */}
+      <div className="flex-1 overflow-y-auto px-6 py-5 sm:px-8 space-y-5 custom-scrollbar">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Proveedor · opcional">
+            <Input
+              placeholder="Ej. Star Nutrition"
+              value={supplier}
+              onChange={(event) => setSupplier(event.target.value)}
+            />
+          </Field>
+          <Field label="Cuándo debería llegar">
+            <Input
+              type="date"
+              value={expectedAt}
+              onChange={(event) => setExpectedAt(event.target.value)}
+              className="cursor-pointer"
+            />
+          </Field>
         </div>
 
-        <div className="mt-3 space-y-3">
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-[13px] font-black uppercase tracking-wider text-ink-700">
+              PRODUCTOS ({lines.length})
+            </h3>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              className="min-h-[44px] rounded-xl px-4 text-[13.5px]"
+              onClick={() => setLines((current) => [...current, { productId: '', quantity: 1, unitCostPesos: 0 }])}
+            >
+              + Agregar producto
+            </Button>
+          </div>
+
           {lines.map((line, index) => (
             <div
               key={index}
-              className="space-y-3 rounded-2xl border border-ink-950/10 bg-cream-50/70 p-3.5 sm:p-4 transition"
+              className="space-y-3 rounded-2xl border border-ink-950/8 bg-cream-50/40 p-3.5 sm:p-4 transition"
             >
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-[12px] font-black uppercase tracking-wider text-ink-600">
-                  Producto #{index + 1}
-                </span>
+              {/* Selector de producto con botón de eliminar táctil 44x44 */}
+              <div className="flex items-center gap-2">
+                <div className="flex-1">
+                  <Select
+                    placeholder="Seleccionar producto…"
+                    value={line.productId}
+                    onChange={(event) =>
+                      setLines((current) =>
+                        current.map((entry, position) =>
+                          position === index
+                            ? {
+                                ...entry,
+                                productId: event.target.value,
+                                unitCostPesos:
+                                  (productsQuery.data?.find((product) => product.id === event.target.value)
+                                    ?.currentCostCents ?? 0) / 100
+                              }
+                            : entry
+                        )
+                      )
+                    }
+                  >
+                    <option value="">Seleccionar producto…</option>
+                    {productsQuery.data
+                      ?.filter((product) => product.active)
+                      .map((product) => (
+                        <option key={product.id} value={product.id}>
+                          {product.name} {product.presentation ? `(${product.presentation})` : ''}
+                        </option>
+                      ))}
+                  </Select>
+                </div>
                 {lines.length > 1 && (
                   <button
                     type="button"
-                    className="flex items-center gap-1 rounded-lg px-2 py-1 text-[12px] font-bold text-red-600 hover:bg-red-50 hover:text-red-700 transition"
+                    className="grid size-11 shrink-0 place-items-center rounded-xl text-ink-400 hover:bg-red-50 hover:text-red-600 transition"
                     onClick={() => setLines((current) => current.filter((_, position) => position !== index))}
+                    aria-label="Quitar producto"
                   >
-                    <X className="size-3.5" /> Quitar
+                    <X className="size-5" />
                   </button>
                 )}
               </div>
 
-              {/* Full width select: never cut or abbreviated */}
-              <Select
-                placeholder="Seleccionar producto…"
-                value={line.productId}
-                onChange={(event) =>
-                  setLines((current) =>
-                    current.map((entry, position) =>
-                      position === index
-                        ? {
-                            ...entry,
-                            productId: event.target.value,
-                            unitCostPesos:
-                              (productsQuery.data?.find((product) => product.id === event.target.value)
-                                ?.currentCostCents ?? 0) / 100
-                          }
-                        : entry
-                    )
-                  )
-                }
-              >
-                <option value="">Seleccionar producto…</option>
-                {productsQuery.data
-                  ?.filter((product) => product.active)
-                  .map((product) => (
-                    <option key={product.id} value={product.id}>
-                      {product.name} {product.presentation ? `(${product.presentation})` : ''}
-                    </option>
-                  ))}
-              </Select>
-
-              {/* Quantity and unit cost in responsive 2 columns */}
+              {/* Cantidad y Costo por unidad */}
               <div className="grid grid-cols-2 gap-3">
                 <Field label="Cantidad">
                   <div className="relative">
@@ -139,7 +182,7 @@ function PurchaseForm({ onClose }: { onClose: () => void }) {
                   </div>
                 </Field>
 
-                <Field label="Costo c/u">
+                <Field label="Costo por unidad">
                   <div className="relative">
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-bold text-ink-500 pointer-events-none">
                       $
@@ -168,10 +211,33 @@ function PurchaseForm({ onClose }: { onClose: () => void }) {
             </div>
           ))}
         </div>
+
+        <Field label="Notas · opcional">
+          <Input
+            placeholder="Ej. 50% pagado. Resto contra entrega."
+            value={notes}
+            onChange={(event) => setNotes(event.target.value)}
+          />
+        </Field>
+
+        {create.error ? <ErrorState error={create.error} /> : null}
       </div>
-      <div className="mt-5"><Field label="Notas" hint="Opcional"><Textarea value={notes} onChange={(event) => setNotes(event.target.value)} /></Field></div>
-      {create.error ? <div className="mt-5"><ErrorState error={create.error} /></div> : null}
-      <div className="mt-7 flex justify-end gap-3"><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button variant="dark" disabled={!valid} loading={create.isPending} onClick={() => create.mutate()}>Registrar pedido al proveedor</Button></div>
+
+      {/* Footer fijo sticky */}
+      <div className="flex items-center justify-end gap-3 border-t border-ink-950/8 bg-cream-50/70 px-6 py-4 sm:px-8 shrink-0 rounded-b-[2rem]">
+        <Button variant="ghost" onClick={onClose} className="min-h-12 px-5 text-[15px] font-bold">
+          Cancelar
+        </Button>
+        <Button
+          variant="dark"
+          disabled={!valid}
+          loading={create.isPending}
+          onClick={() => create.mutate()}
+          className="min-h-12 px-6 text-[15px] font-black"
+        >
+          Guardar pedido
+        </Button>
+      </div>
     </Modal>
   );
 }

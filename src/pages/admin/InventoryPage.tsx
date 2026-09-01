@@ -89,138 +89,193 @@ function PurchaseFormModal({ onClose }: { onClose: () => void }) {
   });
   const valid = lines.length > 0 && lines.every((line) => line.productId && line.quantity > 0);
   return (
-    <Modal isOpen={true} onClose={onClose} ariaLabelledBy="purchase-title" maxWidth="lg">
-        <div className="flex items-start justify-between">
-          <div>
-            <h3 id="purchase-title" className="font-display text-2xl font-black text-ink-950">Nueva orden de compra</h3>
-            <p className="mt-1 text-[14px] font-medium text-ink-700">Registrá un pedido al proveedor para alimentar el stock proyectado.</p>
-          </div>
-          <button className="grid size-9 place-items-center rounded-full hover:bg-cream-100 text-ink-600 transition" onClick={onClose} aria-label="Cerrar modal"><X className="size-5" /></button>
+    <Modal
+      isOpen={true}
+      onClose={onClose}
+      ariaLabelledBy="purchase-title"
+      maxWidth="lg"
+      className="p-0 flex flex-col max-h-[90vh] overflow-hidden"
+    >
+      {/* Header fijo */}
+      <div className="flex items-start justify-between border-b border-ink-950/6 bg-white px-6 pt-6 pb-4 sm:px-8 sm:pt-8 shrink-0">
+        <div>
+          <h2 id="purchase-title" className="font-display text-2xl sm:text-3xl font-black text-ink-950">
+            Nuevo pedido al proveedor
+          </h2>
+          <p className="mt-1 text-[14.5px] font-medium text-ink-700">
+            Anotá qué pediste y cuándo debería llegar.
+          </p>
         </div>
-        <div className="mt-5 space-y-4">
-          <Field label="Proveedor" hint="Opcional. Si queda vacío se guardará como «Proveedor no informado»"><Input placeholder="Ej. Star Nutrition (opcional)" value={supplier} onChange={(event) => setSupplier(event.target.value)} /></Field>
-          <Field label="Fecha estimada de entrega"><Input type="date" value={expectedAt} onChange={(event) => setExpectedAt(event.target.value)} /></Field>
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <label className="text-[13px] font-black uppercase tracking-wider text-ink-700">
-                Productos pedidos ({lines.length})
-              </label>
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                onClick={() => setLines([...lines, { productId: '', quantity: 1, unitCostPesos: 0 }])}
-              >
-                + Agregar producto
-              </Button>
-            </div>
+        <button
+          className="grid size-11 shrink-0 place-items-center rounded-full hover:bg-cream-100 text-ink-600 transition"
+          onClick={onClose}
+          aria-label="Cerrar modal"
+        >
+          <X className="size-5" />
+        </button>
+      </div>
 
-            {lines.map((line, index) => (
-              <div
-                key={index}
-                className="space-y-3 rounded-2xl border border-ink-950/10 bg-cream-50/70 p-3.5 sm:p-4 transition"
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-[12px] font-black uppercase tracking-wider text-ink-600">
-                    Producto #{index + 1}
-                  </span>
-                  {lines.length > 1 && (
-                    <button
-                      type="button"
-                      className="flex items-center gap-1 rounded-lg px-2 py-1 text-[12px] font-bold text-red-600 hover:bg-red-50 hover:text-red-700 transition"
-                      onClick={() => setLines(lines.filter((_, i) => i !== index))}
-                    >
-                      <X className="size-3.5" /> Quitar
-                    </button>
-                  )}
+      {/* Contenido scrolleable */}
+      <div className="flex-1 overflow-y-auto px-6 py-5 sm:px-8 space-y-5 custom-scrollbar">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Proveedor · opcional">
+            <Input
+              placeholder="Ej. Star Nutrition"
+              value={supplier}
+              onChange={(event) => setSupplier(event.target.value)}
+            />
+          </Field>
+          <Field label="Cuándo debería llegar">
+            <Input
+              type="date"
+              value={expectedAt}
+              onChange={(event) => setExpectedAt(event.target.value)}
+              className="cursor-pointer"
+            />
+          </Field>
+        </div>
+
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-[13px] font-black uppercase tracking-wider text-ink-700">
+              PRODUCTOS ({lines.length})
+            </h3>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              className="min-h-[44px] rounded-xl px-4 text-[13.5px]"
+              onClick={() => setLines([...lines, { productId: '', quantity: 1, unitCostPesos: 0 }])}
+            >
+              + Agregar producto
+            </Button>
+          </div>
+
+          {lines.map((line, index) => (
+            <div
+              key={index}
+              className="space-y-3 rounded-2xl border border-ink-950/8 bg-cream-50/40 p-3.5 sm:p-4 transition"
+            >
+              {/* Selector de producto con botón de eliminar táctil 44x44 */}
+              <div className="flex items-center gap-2">
+                <div className="flex-1">
+                  <Select
+                    placeholder="Seleccionar producto…"
+                    value={line.productId}
+                    onChange={(event) => {
+                      const updated = [...lines];
+                      const item = updated[index];
+                      if (item) {
+                        item.productId = event.target.value;
+                        const prod = productsQuery.data?.find((p) => p.id === event.target.value);
+                        if (prod) item.unitCostPesos = (prod.currentCostCents ?? 0) / 100;
+                      }
+                      setLines(updated);
+                    }}
+                  >
+                    <option value="">Seleccionar producto…</option>
+                    {productsQuery.data?.filter((p) => p.active !== false).map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name} {p.presentation ? `(${p.presentation})` : ''}
+                      </option>
+                    ))}
+                  </Select>
                 </div>
-
-                {/* Full width select: never cut or abbreviated */}
-                <Select
-                  placeholder="Seleccionar producto…"
-                  value={line.productId}
-                  onChange={(event) => {
-                    const updated = [...lines];
-                    const item = updated[index];
-                    if (item) {
-                      item.productId = event.target.value;
-                      const prod = productsQuery.data?.find((p) => p.id === event.target.value);
-                      if (prod) item.unitCostPesos = (prod.currentCostCents ?? 0) / 100;
-                    }
-                    setLines(updated);
-                  }}
-                >
-                  <option value="">Seleccionar producto…</option>
-                  {productsQuery.data?.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name} {p.presentation ? `(${p.presentation})` : ''}
-                    </option>
-                  ))}
-                </Select>
-
-                {/* Quantity and unit cost in responsive 2 columns */}
-                <div className="grid grid-cols-2 gap-3">
-                  <Field label="Cantidad">
-                    <div className="relative">
-                      <Input
-                        type="text"
-                        inputMode="numeric"
-                        pattern="[0-9]*"
-                        placeholder="1"
-                        value={line.quantity || ''}
-                        onFocus={(e) => e.target.select()}
-                        onChange={(event) => {
-                          const updated = [...lines];
-                          const item = updated[index];
-                          if (item) {
-                            const clean = sanitizeIntegerInput(event.target.value, String(item.quantity || ''));
-                            item.quantity = clean === '' ? 0 : parseInt(clean, 10);
-                          }
-                          setLines(updated);
-                        }}
-                        className="pr-8"
-                      />
-                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-ink-500 pointer-events-none">
-                        u.
-                      </span>
-                    </div>
-                  </Field>
-
-                  <Field label="Costo c/u">
-                    <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-bold text-ink-500 pointer-events-none">
-                        $
-                      </span>
-                      <Input
-                        type="text"
-                        inputMode="decimal"
-                        placeholder="0"
-                        value={line.unitCostPesos || ''}
-                        onFocus={(e) => e.target.select()}
-                        onChange={(event) => {
-                          const updated = [...lines];
-                          const item = updated[index];
-                          if (item) {
-                            const clean = sanitizeDecimalInput(event.target.value, String(item.unitCostPesos || ''));
-                            item.unitCostPesos = clean === '' ? 0 : parseFloat(clean) || 0;
-                          }
-                          setLines(updated);
-                        }}
-                        className="pl-7"
-                      />
-                    </div>
-                  </Field>
-                </div>
+                {lines.length > 1 && (
+                  <button
+                    type="button"
+                    className="grid size-11 shrink-0 place-items-center rounded-xl text-ink-400 hover:bg-red-50 hover:text-red-600 transition"
+                    onClick={() => setLines(lines.filter((_, i) => i !== index))}
+                    aria-label="Quitar producto"
+                  >
+                    <X className="size-5" />
+                  </button>
+                )}
               </div>
-            ))}
-          </div>
-          <Field label="Notas internas"><Input placeholder="Ej. Factura A pendiente, pago 50% contra entrega…" value={notes} onChange={(event) => setNotes(event.target.value)} /></Field>
+
+              {/* Cantidad y Costo por unidad */}
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Cantidad">
+                  <div className="relative">
+                    <Input
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      placeholder="1"
+                      value={line.quantity || ''}
+                      onFocus={(e) => e.target.select()}
+                      onChange={(event) => {
+                        const updated = [...lines];
+                        const item = updated[index];
+                        if (item) {
+                          const clean = sanitizeIntegerInput(event.target.value, String(item.quantity || ''));
+                          item.quantity = clean === '' ? 0 : parseInt(clean, 10);
+                        }
+                        setLines(updated);
+                      }}
+                      className="pr-8"
+                    />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-ink-500 pointer-events-none">
+                      u.
+                    </span>
+                  </div>
+                </Field>
+
+                <Field label="Costo por unidad">
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-bold text-ink-500 pointer-events-none">
+                      $
+                    </span>
+                    <Input
+                      type="text"
+                      inputMode="decimal"
+                      placeholder="0"
+                      value={line.unitCostPesos || ''}
+                      onFocus={(e) => e.target.select()}
+                      onChange={(event) => {
+                        const updated = [...lines];
+                        const item = updated[index];
+                        if (item) {
+                          const clean = sanitizeDecimalInput(event.target.value, String(item.unitCostPesos || ''));
+                          item.unitCostPesos = clean === '' ? 0 : parseFloat(clean) || 0;
+                        }
+                        setLines(updated);
+                      }}
+                      className="pl-7"
+                    />
+                  </div>
+                </Field>
+              </div>
+            </div>
+          ))}
         </div>
-        {create.error ? <div className="mt-5"><ErrorState error={create.error} /></div> : null}
-        <div className="mt-7 flex justify-end gap-3">
-          <Button variant="ghost" onClick={onClose}>Cancelar</Button>
-          <Button variant="dark" disabled={!valid} loading={create.isPending} onClick={() => create.mutate()}>Registrar pedido al proveedor</Button>
-        </div>
+
+        <Field label="Notas · opcional">
+          <Input
+            placeholder="Ej. 50% pagado. Resto contra entrega."
+            value={notes}
+            onChange={(event) => setNotes(event.target.value)}
+          />
+        </Field>
+
+        {create.error ? <ErrorState error={create.error} /> : null}
+      </div>
+
+      {/* Footer fijo sticky */}
+      <div className="flex items-center justify-end gap-3 border-t border-ink-950/8 bg-cream-50/70 px-6 py-4 sm:px-8 shrink-0 rounded-b-[2rem]">
+        <Button variant="ghost" onClick={onClose} className="min-h-12 px-5 text-[15px] font-bold">
+          Cancelar
+        </Button>
+        <Button
+          variant="dark"
+          disabled={!valid}
+          loading={create.isPending}
+          onClick={() => create.mutate()}
+          className="min-h-12 px-6 text-[15px] font-black"
+        >
+          Guardar pedido
+        </Button>
+      </div>
     </Modal>
   );
 }
