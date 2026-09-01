@@ -30,10 +30,10 @@ import { cn } from '@/lib/cn';
 import { getBusinessApi } from '@/services/business-api';
 
 const labels: Record<InventoryItem['status'], string> = {
-  ok: 'En orden',
-  low: 'Stock bajo',
-  critical: 'Crítico',
-  out: 'Sin stock'
+  ok: 'OK',
+  low: 'COMPRAR',
+  critical: 'URGENTE',
+  out: 'SIN STOCK'
 };
 
 export default function StockPage() {

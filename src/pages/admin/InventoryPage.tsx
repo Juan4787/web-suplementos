@@ -40,25 +40,25 @@ import { cn } from '@/lib/cn';
 import { getBusinessApi } from '@/services/business-api';
 
 const statusLabels: Record<InventoryItem['status'], string> = {
-  ok: 'En orden',
-  low: 'Stock bajo',
-  critical: 'Crítico',
-  out: 'Sin stock'
+  ok: 'OK',
+  low: 'COMPRAR',
+  critical: 'URGENTE',
+  out: 'SIN STOCK'
 };
 
 const statusTones: Record<InventoryItem['status'], 'success' | 'warning' | 'danger'> = {
   ok: 'success',
   low: 'warning',
-  critical: 'warning',
+  critical: 'danger',
   out: 'danger'
 };
 
 const movementKindLabels = {
-  sale: 'Venta',
+  sale: 'Venta entregada',
   purchase_received: 'Compra recibida',
   return: 'Devolución',
-  adjustment: 'Ajuste',
-  reservation: 'Reserva',
+  adjustment: 'Corrección manual',
+  reservation: 'Reserva de pedido',
   reservation_release: 'Liberación de reserva'
 } as const;
 
@@ -80,53 +80,62 @@ function PurchaseFormModal({ onClose }: { onClose: () => void }) {
     }),
     onSuccess: async () => {
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: queryKeys.purchasesRoot }),
         queryClient.invalidateQueries({ queryKey: queryKeys.inventory }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.purchases(1) }),
         queryClient.invalidateQueries({ queryKey: queryKeys.dashboard })
       ]);
       onClose();
     }
   });
-  const valid = supplier.trim().length >= 2 && lines.length > 0 && lines.every((line) => line.productId && line.quantity > 0 && line.unitCostPesos >= 0);
+  const valid = supplier.trim().length > 0 && lines.every((line) => line.productId && line.quantity > 0);
   return (
-    <Modal isOpen={true} onClose={onClose} ariaLabelledBy="purchase-title" maxWidth="2xl">
-      <div className="flex items-start justify-between">
-        <div>
-          <h2 id="purchase-title" className="font-display text-3xl font-black text-ink-950">Nueva compra</h2>
-          <p className="mt-1 text-[14.5px] font-medium text-ink-700">Registrá los productos pedidos a un proveedor.</p>
-        </div>
-        <button className="grid size-10 place-items-center rounded-full hover:bg-cream-100 text-ink-600 transition" onClick={onClose} aria-label="Cerrar modal">
-          <X className="size-5" />
-        </button>
-      </div>
-        <div className="mt-7 grid gap-5 sm:grid-cols-2">
-          <Field label="Proveedor"><Input value={supplier} onChange={(event) => setSupplier(event.target.value)} placeholder="Nombre del proveedor" /></Field>
-          <Field label="Llegada estimada" hint="Opcional"><Input type="date" value={expectedAt} onChange={(event) => setExpectedAt(event.target.value)} /></Field>
-        </div>
-        <div className="mt-7">
-          <div className="flex items-center justify-between">
-            <h3 className="font-display text-xl font-black text-ink-950">Productos</h3>
-            <Button variant="ghost" size="sm" onClick={() => setLines((current) => [...current, { productId: '', quantity: 1, unitCostPesos: 0 }])}>
-              <Plus className="size-4" /> Agregar línea
-            </Button>
+    <Modal isOpen={true} onClose={onClose} ariaLabelledBy="purchase-title" maxWidth="lg">
+        <div className="flex items-start justify-between">
+          <div>
+            <h3 id="purchase-title" className="font-display text-2xl font-black text-ink-950">Nueva orden de compra</h3>
+            <p className="mt-1 text-[14px] font-medium text-ink-700">Registrá un pedido al proveedor para alimentar el stock proyectado.</p>
           </div>
-          <div className="mt-3 space-y-3">
+          <button className="grid size-9 place-items-center rounded-full hover:bg-cream-100 text-ink-600 transition" onClick={onClose} aria-label="Cerrar modal"><X className="size-5" /></button>
+        </div>
+        <div className="mt-5 space-y-4">
+          <Field label="Proveedor" hint="Nombre del laboratorio o distribuidor"><Input placeholder="Ej. Star Nutrition" value={supplier} onChange={(event) => setSupplier(event.target.value)} /></Field>
+          <Field label="Fecha estimada de entrega"><Input type="date" value={expectedAt} onChange={(event) => setExpectedAt(event.target.value)} /></Field>
+          <div className="space-y-3">
+            <label className="text-[13px] font-black uppercase tracking-wider text-ink-700">Productos pedidos</label>
             {lines.map((line, index) => (
-              <div key={index} className="grid gap-3 rounded-2xl bg-cream-50 p-4 border border-ink-950/6 sm:grid-cols-[1fr_6rem_9rem_auto] sm:items-end">
-                <Field label="Producto">
-                  <Select value={line.productId} onChange={(event) => setLines((current) => current.map((entry, position) => position === index ? { ...entry, productId: event.target.value, unitCostPesos: (productsQuery.data?.find((product) => product.id === event.target.value)?.currentCostCents ?? 0) / 100 } : entry))}>
-                    <option value="">Elegir…</option>
-                    {productsQuery.data?.filter((product) => product.active).map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}
-                  </Select>
-                </Field>
-                <Field label="Cantidad"><Input type="number" min="1" value={line.quantity} onChange={(event) => setLines((current) => current.map((entry, position) => position === index ? { ...entry, quantity: Number(event.target.value) } : entry))} /></Field>
-                <Field label="Costo c/u"><Input type="number" min="0" step="0.01" value={line.unitCostPesos} onChange={(event) => setLines((current) => current.map((entry, position) => position === index ? { ...entry, unitCostPesos: Number(event.target.value) } : entry))} /></Field>
-                <button className="grid size-10 place-items-center rounded-full text-red-700 hover:bg-red-50" onClick={() => setLines((current) => current.filter((_, position) => position !== index))} aria-label="Quitar línea"><X className="size-4" /></button>
+              <div key={index} className="grid grid-cols-[1fr_80px_110px_36px] items-center gap-2">
+                <Select value={line.productId} onChange={(event) => {
+                  const updated = [...lines];
+                  const item = updated[index];
+                  if (item) {
+                    item.productId = event.target.value;
+                    const prod = productsQuery.data?.find((p) => p.id === event.target.value);
+                    if (prod) item.unitCostPesos = (prod.currentCostCents ?? 0) / 100;
+                  }
+                  setLines(updated);
+                }}>
+                  <option value="">Seleccionar…</option>
+                  {productsQuery.data?.map((p) => <option key={p.id} value={p.id}>{p.name} ({p.presentation})</option>)}
+                </Select>
+                <Input type="number" min="1" placeholder="Cant." value={line.quantity || ''} onChange={(event) => {
+                  const updated = [...lines];
+                  const item = updated[index];
+                  if (item) item.quantity = parseInt(event.target.value, 10) || 0;
+                  setLines(updated);
+                }} />
+                <Input type="number" min="0" placeholder="$ Costo" value={line.unitCostPesos || ''} onChange={(event) => {
+                  const updated = [...lines];
+                  const item = updated[index];
+                  if (item) item.unitCostPesos = parseFloat(event.target.value) || 0;
+                  setLines(updated);
+                }} />
+                <button type="button" className="grid size-9 place-items-center text-ink-400 hover:text-red-600" onClick={() => setLines(lines.filter((_, i) => i !== index))} disabled={lines.length === 1}><X className="size-4" /></button>
               </div>
             ))}
+            <Button type="button" variant="secondary" size="sm" onClick={() => setLines([...lines, { productId: '', quantity: 1, unitCostPesos: 0 }])}>+ Agregar otro producto</Button>
           </div>
+          <Field label="Notas internas"><Input placeholder="Ej. Factura A pendiente, pago 50% contra entrega…" value={notes} onChange={(event) => setNotes(event.target.value)} /></Field>
         </div>
-        <div className="mt-5"><Field label="Notas" hint="Opcional"><Textarea value={notes} onChange={(event) => setNotes(event.target.value)} /></Field></div>
         {create.error ? <div className="mt-5"><ErrorState error={create.error} /></div> : null}
         <div className="mt-7 flex justify-end gap-3">
           <Button variant="ghost" onClick={onClose}>Cancelar</Button>
@@ -203,6 +212,7 @@ function StockDetailDrawer({
 
   return (
     <Drawer isOpen={true} onClose={onClose} ariaLabelledBy="drawer-title">
+      {/* 1. CABECERA DEL PRODUCTO */}
       <div className="flex items-start justify-between">
         <div>
           <h2 id="drawer-title" className="font-display text-2xl font-black text-ink-950">
@@ -223,7 +233,7 @@ function StockDetailDrawer({
       </div>
 
       <div className="mt-6 space-y-5 flex-1">
-        {/* Bloque 1 — Diagnóstico claro en lenguaje humano */}
+        {/* 2. ALERTA SUPERIOR (Conclusión directa) */}
         <div
           className={cn(
             'rounded-2xl p-4 text-[13.5px] border font-medium leading-relaxed shadow-sm',
@@ -237,8 +247,8 @@ function StockDetailDrawer({
             <div className="flex items-start gap-2.5">
               <AlertTriangle className="size-5 shrink-0 text-red-700 mt-0.5" />
               <div>
-                <p className="font-bold text-red-950">Sin stock disponible</p>
-                <p className="text-[12.5px] text-red-800 mt-0.5">No quedan unidades físicas disponibles para la venta.</p>
+                <p className="font-bold text-red-950">Sin stock</p>
+                <p className="text-[12.5px] text-red-800 mt-0.5">No quedan unidades disponibles para vender.</p>
               </div>
             </div>
           )}
@@ -246,9 +256,9 @@ function StockDetailDrawer({
             <div className="flex items-start gap-2.5">
               <AlertTriangle className="size-5 shrink-0 text-rose-700 mt-0.5" />
               <div>
-                <p className="font-bold text-rose-950">Stock crítico</p>
+                <p className="font-bold text-rose-950">Queda muy poco stock</p>
                 <p className="text-[12.5px] text-rose-800 mt-0.5">
-                  Quedan solo <strong>{item.available} u.</strong> disponibles (igual o por debajo del stock de seguridad de <strong>{item.safetyStock} u.</strong>).
+                  Quedan <strong>{item.available} unidades</strong>. Tu aviso urgente está en <strong>{item.safetyStock}</strong>.
                 </p>
               </div>
             </div>
@@ -257,9 +267,9 @@ function StockDetailDrawer({
             <div className="flex items-start gap-2.5">
               <Info className="size-5 shrink-0 text-amber-700 mt-0.5" />
               <div>
-                <p className="font-bold text-amber-950">Alerta de stock bajo activada</p>
+                <p className="font-bold text-amber-950">Conviene comprar</p>
                 <p className="text-[12.5px] text-amber-900 mt-0.5">
-                  Hay <strong>{item.available} u.</strong> disponibles y el límite de stock bajo configurado es de <strong>≤ {item.reorderPoint} u.</strong>
+                  Quedan <strong>{item.available} unidades disponibles</strong>. Querés que te avisemos desde <strong>{item.reorderPoint}</strong>.
                 </p>
               </div>
             </div>
@@ -270,52 +280,71 @@ function StockDetailDrawer({
               <div>
                 <p className="font-bold text-emerald-950">Stock en orden</p>
                 <p className="text-[12.5px] text-emerald-800 mt-0.5">
-                  El stock disponible (<strong>{item.available} u.</strong>) supera el límite de alerta de reposición (<strong>&gt; {item.reorderPoint} u.</strong>).
+                  Hay <strong>{item.available} unidades disponibles</strong> para vender.
                 </p>
               </div>
             </div>
           )}
         </div>
 
-        {/* Bloque 2 — Existencias */}
+        {/* 3. STOCK HOY (Hero disponible) */}
         <div>
-          <h4 className="text-[13px] font-black uppercase tracking-wider text-ink-700 mb-2">Existencias actuales</h4>
-          <div className="grid grid-cols-3 gap-2.5 rounded-2xl bg-cream-50 p-4 border border-ink-950/6">
-            <div>
-              <span className="block text-[12px] font-black uppercase text-ink-600">Stock real</span>
-              <span className="text-2xl font-black text-ink-950">{item.onHand}</span>
+          <h4 className="text-[12px] font-black uppercase tracking-wider text-ink-600 mb-2">Stock hoy</h4>
+          <div className="grid grid-cols-3 gap-2.5">
+            {/* DISPONIBLE (Hero mayor jerarquía) */}
+            <div className="col-span-3 sm:col-span-1 rounded-2xl bg-emerald-50/90 border border-emerald-200/90 p-4 flex flex-col justify-between shadow-sm">
+              <span className="block text-[11px] font-black uppercase tracking-wider text-emerald-800">Disponible</span>
+              <div className="my-1 flex items-baseline gap-1.5">
+                <span className={cn('text-3xl font-black tracking-tight', item.available <= 0 ? 'text-red-700' : 'text-emerald-950')}>
+                  {item.available}
+                </span>
+                <span className="text-xs font-bold text-emerald-800">u.</span>
+              </div>
+              <span className="text-[11px] font-semibold text-emerald-800/80">Para vender</span>
             </div>
-            <div>
-              <span className="block text-[12px] font-black uppercase text-ink-600">Reservado</span>
-              <span className="text-2xl font-black text-ink-950">{item.reserved}</span>
+
+            {/* RESERVADO */}
+            <div className="rounded-2xl bg-cream-50 p-3.5 border border-ink-950/6 flex flex-col justify-between">
+              <span className="block text-[11px] font-black uppercase tracking-wider text-ink-600">Reservado</span>
+              <div className="my-1 flex items-baseline gap-1">
+                <span className="text-2xl font-black text-ink-950">{item.reserved}</span>
+                <span className="text-xs font-bold text-ink-500">u.</span>
+              </div>
+              <span className="text-[11px] font-medium text-ink-500">En pedidos</span>
             </div>
-            <div>
-              <span className="block text-[12px] font-black uppercase text-ink-600">Disponible</span>
-              <span className={cn('text-2xl font-black', item.available <= 0 ? 'text-red-700' : 'text-emerald-700')}>
-                {item.available}
-              </span>
+
+            {/* EN STOCK */}
+            <div className="rounded-2xl bg-cream-50 p-3.5 border border-ink-950/6 flex flex-col justify-between">
+              <span className="block text-[11px] font-black uppercase tracking-wider text-ink-600">En stock</span>
+              <div className="my-1 flex items-baseline gap-1">
+                <span className="text-2xl font-black text-ink-950">{item.onHand}</span>
+                <span className="text-xs font-bold text-ink-500">u.</span>
+              </div>
+              <span className="text-[11px] font-medium text-ink-500">Total físico</span>
             </div>
           </div>
         </div>
 
-        {/* Bloque 3 — Configuración editable de alertas */}
+        {/* 4. CUÁNDO AVISARME */}
         <div className="rounded-2xl border border-ink-950/10 bg-white p-4 shadow-sm">
           <div className="flex items-center justify-between mb-3">
             <div>
               <h4 className="text-[13px] font-black uppercase tracking-wider text-ink-900">
-                Alertas de reposición y stock
+                Cuándo avisarme
               </h4>
               <p className="text-[12px] font-medium text-ink-600">
-                Ajustá cuándo querés que el sistema te avise que el stock está bajo o crítico.
+                Elegí cuándo querés recibir cada aviso.
               </p>
             </div>
             <SlidersHorizontal className="size-4 text-ink-500" />
           </div>
 
           <div className="grid grid-cols-2 gap-3.5 pt-1">
-            <div>
-              <label className="block text-[12.5px] font-black text-ink-900 mb-1">
-                Alerta de stock bajo
+            {/* Campo 1: Avisarme para comprar */}
+            <div className="rounded-xl bg-amber-50/40 p-2.5 border border-amber-200/60">
+              <label className="flex items-center gap-1.5 text-[12.5px] font-black text-amber-950 mb-1.5">
+                <span className="size-2 rounded-full bg-amber-500 inline-block" />
+                Avisarme para comprar
               </label>
               <div className="relative">
                 <Input
@@ -323,20 +352,22 @@ function StockDetailDrawer({
                   min="0"
                   value={reorderPoint}
                   onChange={(e) => setReorderPoint(Math.max(0, parseInt(e.target.value, 10) || 0))}
-                  className="pr-8 text-[15px] font-black"
+                  className="pr-8 text-[15px] font-black bg-white"
                 />
                 <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs font-bold text-ink-500 pointer-events-none">
                   u.
                 </span>
               </div>
-              <p className="mt-1 text-[11px] font-medium text-ink-600 leading-tight">
-                Avisa cuando el disponible sea ≤ este número
+              <p className="mt-1.5 text-[11px] font-semibold text-amber-900/90 leading-tight">
+                {reorderPoint > 0 ? `Cuando queden ${reorderPoint} o menos.` : 'Desactivado · Sin alerta previa'}
               </p>
             </div>
 
-            <div>
-              <label className="block text-[12.5px] font-black text-ink-900 mb-1">
-                Mínimo de emergencia
+            {/* Campo 2: Avisarme urgente */}
+            <div className="rounded-xl bg-rose-50/40 p-2.5 border border-rose-200/60">
+              <label className="flex items-center gap-1.5 text-[12.5px] font-black text-rose-950 mb-1.5">
+                <span className="size-2 rounded-full bg-rose-500 inline-block" />
+                Avisarme urgente
               </label>
               <div className="relative">
                 <Input
@@ -344,19 +375,32 @@ function StockDetailDrawer({
                   min="0"
                   value={safetyStock}
                   onChange={(e) => setSafetyStock(Math.max(0, parseInt(e.target.value, 10) || 0))}
-                  className="pr-8 text-[15px] font-black"
+                  className="pr-8 text-[15px] font-black bg-white"
                 />
                 <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs font-bold text-ink-500 pointer-events-none">
                   u.
                 </span>
               </div>
-              <p className="mt-1 text-[11px] font-medium text-ink-600 leading-tight">
-                Avisa crítico si el disponible cae a ≤ este número
+              <p className="mt-1.5 text-[11px] font-semibold text-rose-900/90 leading-tight">
+                {safetyStock > 0 ? `Cuando queden ${safetyStock} o menos.` : 'Desactivado · Sin alerta previa'}
               </p>
             </div>
           </div>
 
-          {/* Vista previa y botón de guardado si hay cambios */}
+          {/* Escala conceptual */}
+          <div className="mt-3.5 rounded-xl bg-cream-50/80 p-2.5 border border-ink-950/6">
+            <div className="flex items-center justify-between text-[10.5px] font-extrabold text-ink-700">
+              <span className="text-emerald-700">OK ({`>${reorderPoint}`})</span>
+              <span className="text-ink-400">→</span>
+              <span className="text-amber-700">Comprar ({`≤${reorderPoint}`})</span>
+              <span className="text-ink-400">→</span>
+              <span className="text-rose-700">Urgente ({`≤${safetyStock}`})</span>
+              <span className="text-ink-400">→</span>
+              <span className="text-red-700">Sin stock (0)</span>
+            </div>
+          </div>
+
+          {/* Vista previa y botón de guardado */}
           {isDirty && (
             <div className="mt-4 rounded-xl bg-amber-50/70 p-3 border border-amber-200/80">
               <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
@@ -386,7 +430,7 @@ function StockDetailDrawer({
                     loading={updateThresholds.isPending}
                     onClick={() => updateThresholds.mutate()}
                   >
-                    Guardar alertas
+                    Guardar
                   </Button>
                 </div>
               </div>
@@ -396,7 +440,7 @@ function StockDetailDrawer({
           {saveSuccess && (
             <div className="mt-3 flex items-center gap-2 rounded-xl bg-emerald-50 p-2.5 text-xs font-bold text-emerald-800 border border-emerald-200">
               <Check className="size-4 text-emerald-700" />
-              <span>¡Alertas actualizadas con éxito!</span>
+              <span>¡Avisos actualizados con éxito!</span>
             </div>
           )}
 
@@ -407,29 +451,38 @@ function StockDetailDrawer({
           )}
         </div>
 
-        {/* Bloque 4 — Reposición */}
+        {/* 5. LO QUE VIENE */}
         <div>
-          <h4 className="text-[13px] font-black uppercase tracking-wider text-ink-700 mb-2">Reposición y proyección</h4>
-          <div className="grid grid-cols-2 gap-3 rounded-2xl bg-cream-50 p-4 border border-ink-950/6">
-            <div>
-              <span className="block text-[12px] font-black uppercase text-ink-600">En camino</span>
-              <span className="text-2xl font-black text-ink-950">{item.incoming}</span>
+          <h4 className="text-[12px] font-black uppercase tracking-wider text-ink-600 mb-2">Lo que viene</h4>
+          {item.incoming > 0 ? (
+            <div className="grid grid-cols-2 gap-3 rounded-2xl bg-brand-50/70 p-4 border border-brand-200/70">
+              <div>
+                <span className="block text-[11.5px] font-black uppercase text-brand-800">En camino</span>
+                <span className="text-2xl font-black text-brand-950">{item.incoming} u.</span>
+              </div>
+              <div>
+                <span className="block text-[11.5px] font-black uppercase text-brand-800">Vas a tener</span>
+                <span className="text-2xl font-black text-brand-700">{item.projected} u.</span>
+              </div>
             </div>
-            <div>
-              <span className="block text-[12px] font-black uppercase text-ink-600">Stock estimado futuro</span>
-              <span className="text-2xl font-black text-brand-700">{item.projected}</span>
+          ) : (
+            <div className="rounded-2xl bg-cream-50 p-3.5 border border-ink-950/6 flex items-center justify-between">
+              <span className="text-xs font-bold text-ink-600">No hay compras en camino.</span>
+              <span className="text-xs font-semibold text-ink-500">
+                Vas a tener: <strong className="text-ink-950 font-black">{item.projected} u.</strong>
+              </span>
             </div>
-          </div>
+          )}
         </div>
 
-        {/* Bloque 5 — Cálculo de reposición */}
+        {/* 6. CÓMO SE CALCULA */}
         <div className="overflow-hidden rounded-2xl border border-ink-950/8 bg-white p-4">
           <button
             type="button"
             onClick={() => setShowCalculation(!showCalculation)}
             className="flex w-full items-center justify-between text-[13px] font-black uppercase tracking-wider text-ink-800 hover:text-ink-950"
           >
-            <span>{showCalculation ? 'Ocultar detalles de reposición ▴' : 'Ver detalles de reposición y tiempos ▾'}</span>
+            <span>{showCalculation ? 'Ocultar cálculo ▴' : 'Ver cómo se calcula ▾'}</span>
             <ChevronDown
               className={cn('size-4 text-ink-600 transition-transform', showCalculation && 'rotate-180')}
             />
@@ -439,33 +492,37 @@ function StockDetailDrawer({
             <div className="mt-4 space-y-3 border-t border-ink-950/6 pt-3">
               <dl className="grid grid-cols-2 gap-3 text-sm">
                 <div>
-                  <dt className="font-semibold text-ink-700">Venta promedio/día</dt>
+                  <dt className="font-semibold text-ink-700">Venta promedio</dt>
                   <dd className="text-[15px] font-black text-ink-950">
-                    {item.averageDailySales.toFixed(1)} u./día
+                    {item.averageDailySales.toFixed(1)} por día
                   </dd>
                 </div>
                 <div>
-                  <dt className="font-semibold text-ink-700">Demora del proveedor</dt>
+                  <dt className="font-semibold text-ink-700">El proveedor tarda</dt>
                   <dd className="text-[15px] font-black text-ink-950">{item.leadTimeDays} días</dd>
                 </div>
                 <div>
-                  <dt className="font-semibold text-ink-700">Mínimo de emergencia</dt>
-                  <dd className="text-[15px] font-black text-ink-950">{item.safetyStock} u.</dd>
-                </div>
-                <div>
-                  <dt className="font-semibold text-ink-700">Límite de alerta</dt>
-                  <dd className="text-[15px] font-black text-ink-950">{item.reorderPoint} u.</dd>
-                </div>
-                <div>
-                  <dt className="font-semibold text-ink-700">Días de stock restantes</dt>
+                  <dt className="font-semibold text-ink-700">Aviso de compra</dt>
                   <dd className="text-[15px] font-black text-ink-950">
-                    {item.coverageDays ?? '—'} días
+                    {item.reorderPoint > 0 ? `${item.reorderPoint} unidades` : 'Desactivado'}
                   </dd>
                 </div>
                 <div>
-                  <dt className="font-semibold text-ink-700">Compra sugerida</dt>
+                  <dt className="font-semibold text-ink-700">Aviso urgente</dt>
+                  <dd className="text-[15px] font-black text-ink-950">
+                    {item.safetyStock > 0 ? `${item.safetyStock} unidades` : 'Desactivado'}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="font-semibold text-ink-700">El stock alcanza para</dt>
+                  <dd className="text-[15px] font-black text-ink-950">
+                    {item.coverageDays !== null ? `${item.coverageDays} días` : 'Sin datos suficientes'}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="font-semibold text-ink-700">Conviene comprar</dt>
                   <dd className="text-[15px] font-black text-brand-700">
-                    {item.suggestedPurchase} u.
+                    {item.suggestedPurchase > 0 ? `${item.suggestedPurchase} unidades` : 'Nada por ahora'}
                   </dd>
                 </div>
               </dl>
@@ -473,59 +530,64 @@ function StockDetailDrawer({
           ) : null}
         </div>
 
-        {/* Bloque 6 — Movimientos recientes */}
+        {/* 7. ÚLTIMOS MOVIMIENTOS */}
         <div className="rounded-2xl border border-ink-950/8 bg-white p-4">
           <div className="flex items-center justify-between mb-2.5">
-            <h4 className="text-xs font-black uppercase tracking-wider text-ink-600">Movimientos recientes</h4>
+            <h4 className="text-xs font-black uppercase tracking-wider text-ink-600">Últimos movimientos</h4>
             <button
               type="button"
               onClick={onNavigateToMovements}
               className="text-xs font-bold text-brand-600 hover:text-brand-700"
             >
-              Ver historial completo →
+              Ver todos →
             </button>
           </div>
 
           {recentMovements.length === 0 ? (
-            <p className="text-xs text-ink-600 font-medium py-1">Sin movimientos recientes registrados.</p>
+            <p className="text-xs text-ink-600 font-medium py-1">Todavía no hay movimientos.</p>
           ) : (
             <div className="space-y-2">
-              {recentMovements.map((mov) => (
-                <div key={mov.id} className="flex items-center justify-between rounded-xl bg-cream-50 p-2.5 text-xs">
-                  <div>
-                    <p className="font-bold text-ink-950">{movementKindLabels[mov.kind] ?? mov.kind}</p>
-                    <p className="text-[11px] text-ink-600">
-                      {new Intl.DateTimeFormat('es-AR', { dateStyle: 'short', timeStyle: 'short' }).format(
-                        new Date(mov.createdAt)
+              {recentMovements.map((mov) => {
+                const totalUnits = mov.physicalDelta !== 0 ? mov.physicalDelta : mov.reservedDelta;
+                const sign = totalUnits > 0 ? '+' : '';
+                return (
+                  <div key={mov.id} className="flex items-center justify-between rounded-xl bg-cream-50 p-2.5 text-xs">
+                    <div>
+                      <p className="font-bold text-ink-950">{movementKindLabels[mov.kind] ?? mov.kind}</p>
+                      <p className="text-[11px] text-ink-600">
+                        {new Intl.DateTimeFormat('es-AR', {
+                          day: 'numeric',
+                          month: 'short',
+                          hour: '2-digit',
+                          minute: '2-digit'
+                        }).format(new Date(mov.createdAt))}
+                      </p>
+                    </div>
+                    <span
+                      className={cn(
+                        'font-black',
+                        totalUnits < 0 ? 'text-red-700' : 'text-emerald-700'
                       )}
-                    </p>
+                    >
+                      {`${sign}${totalUnits} ${Math.abs(totalUnits) === 1 ? 'unidad' : 'unidades'}`}
+                    </span>
                   </div>
-                  <span
-                    className={cn(
-                      'font-black',
-                      mov.physicalDelta < 0 || mov.reservedDelta < 0 ? 'text-red-700' : 'text-emerald-700'
-                    )}
-                  >
-                    {mov.physicalDelta !== 0
-                      ? `${mov.physicalDelta > 0 ? '+' : ''}${mov.physicalDelta} fís.`
-                      : `${mov.reservedDelta > 0 ? '+' : ''}${mov.reservedDelta} res.`}
-                  </span>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
 
-        {/* Bloque 7 — Más acciones */}
+        {/* 8. OTRAS ACCIONES */}
         <div className="rounded-2xl border border-ink-950/8 bg-cream-50/50 p-4">
-          <h4 className="text-xs font-black uppercase tracking-wider text-ink-600 mb-2">Más acciones</h4>
+          <h4 className="text-xs font-black uppercase tracking-wider text-ink-600 mb-2">Otras acciones</h4>
           <Button
             variant="secondary"
             size="sm"
             className="w-full justify-start text-xs font-bold"
             onClick={() => onOpenAdjust(item)}
           >
-            <SlidersHorizontal className="size-4" /> Registrar ajuste manual
+            <SlidersHorizontal className="size-4" /> Corregir stock
           </Button>
         </div>
       </div>
@@ -552,7 +614,7 @@ export default function InventoryPage() {
   const [stockSearch, setStockSearch] = useState('');
   const [detailItem, setDetailItem] = useState<InventoryItem | null>(null);
   const [adjustItem, setAdjustItem] = useState<InventoryItem | null>(null);
-  const [delta, setDelta] = useState('');
+  const [targetStock, setTargetStock] = useState('');
   const [reason, setReason] = useState('');
   const [showPurchaseForm, setShowPurchaseForm] = useState(false);
 
@@ -587,11 +649,17 @@ export default function InventoryPage() {
   const adjustment = useMutation({
     mutationFn: async () => {
       if (!adjustItem) return;
-      await (await getBusinessApi()).adjustStock(adjustItem.id, Number(delta), reason);
+      const targetNum = parseInt(targetStock, 10);
+      const calculatedDelta = targetNum - adjustItem.onHand;
+      await (await getBusinessApi()).adjustStock(
+        adjustItem.id,
+        calculatedDelta,
+        reason.trim() || 'Corrección manual de stock'
+      );
     },
     onSuccess: async () => {
       setAdjustItem(null);
-      setDelta('');
+      setTargetStock('');
       setReason('');
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: queryKeys.inventory }),
@@ -822,15 +890,7 @@ export default function InventoryPage() {
 
                       {/* Status Exception Chip */}
                       <div>
-                        {item.status === 'critical' ? (
-                          <StatusChip label="Crítico" tone="danger" />
-                        ) : item.status === 'out' ? (
-                          <StatusChip label="Sin stock" tone="danger" />
-                        ) : item.status === 'low' ? (
-                          <StatusChip label="Stock bajo" tone="warning" />
-                        ) : (
-                          <span className="text-[14px] font-bold text-ink-700">En orden</span>
-                        )}
+                        <StatusChip label={statusLabels[item.status]} tone={statusTones[item.status]} />
                       </div>
 
                       {/* Actions */}
@@ -1151,7 +1211,7 @@ export default function InventoryPage() {
         </section>
       ) : null}
 
-      {/* DRAWER: Radiografía y Configuración de Stock */}
+      {/* DRAWER: Detalle y Configuración de Stock */}
       {detailItem ? (
         <StockDetailDrawer
           item={(inventoryQuery.data ?? []).find((i) => i.id === detailItem.id) ?? detailItem}
@@ -1159,7 +1219,7 @@ export default function InventoryPage() {
           onOpenAdjust={(target) => {
             setDetailItem(null);
             setAdjustItem(target);
-            setDelta('');
+            setTargetStock(String(target.onHand));
             setReason('');
           }}
           onNavigateToMovements={() => {
@@ -1169,13 +1229,13 @@ export default function InventoryPage() {
         />
       ) : null}
 
-      {/* MODAL: Ajuste Manual */}
+      {/* MODAL: Corregir Stock */}
       {adjustItem ? (
         <Modal isOpen={true} onClose={() => setAdjustItem(null)} ariaLabelledBy="adjust-title" maxWidth="lg">
           <div className="flex items-start justify-between">
             <div>
-              <h3 id="adjust-title" className="font-display text-2xl font-black text-ink-950">Registrar ajuste · {adjustItem.name}</h3>
-              <p className="mt-1 text-[14px] font-medium text-ink-700">Modificá el stock físico por rotura, vencimiento o auditoría.</p>
+              <h3 id="adjust-title" className="font-display text-2xl font-black text-ink-950">Corregir stock · {adjustItem.name}</h3>
+              <p className="mt-1 text-[14px] font-medium text-ink-700">Ajustá la cantidad de unidades que hay realmente en la tienda.</p>
             </div>
             <button className="grid size-9 place-items-center rounded-full hover:bg-cream-100 text-ink-600 transition" onClick={() => setAdjustItem(null)} aria-label="Cerrar modal">
               <X className="size-5" />
@@ -1183,11 +1243,37 @@ export default function InventoryPage() {
           </div>
 
           <div className="mt-5 space-y-4">
-            <Field label="Variación de unidades" hint="Usa valores negativos (-) para mermas y positivos (+) para ingresos">
-              <Input type="number" placeholder="Ej: -2 o 5" value={delta} onChange={(e) => setDelta(e.target.value)} />
+            <Field label="¿Cuántas unidades hay realmente?" hint={`Actualmente figuran ${adjustItem.onHand} unidades en stock.`}>
+              <div className="relative">
+                <Input
+                  type="number"
+                  min="0"
+                  placeholder={`Ej. ${adjustItem.onHand}`}
+                  value={targetStock}
+                  onChange={(e) => setTargetStock(e.target.value)}
+                  className="text-lg font-black pr-10"
+                />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm font-bold text-ink-500 pointer-events-none">
+                  u.
+                </span>
+              </div>
             </Field>
-            <Field label="Motivo del ajuste">
-              <Input placeholder="Ej: Rotura en depósito, auditoría física…" value={reason} onChange={(e) => setReason(e.target.value)} />
+
+            {targetStock !== '' && !isNaN(Number(targetStock)) && Number(targetStock) !== adjustItem.onHand && (
+              <div className="rounded-xl bg-cream-100 p-3 text-xs font-bold text-ink-800 flex items-center justify-between">
+                <span>Variación a registrar:</span>
+                <span className={cn('font-black text-sm', Number(targetStock) - adjustItem.onHand > 0 ? 'text-emerald-700' : 'text-red-700')}>
+                  {Number(targetStock) - adjustItem.onHand > 0 ? `+${Number(targetStock) - adjustItem.onHand}` : `${Number(targetStock) - adjustItem.onHand}`} unidades
+                </span>
+              </div>
+            )}
+
+            <Field label="Motivo (opcional)" hint="Ej: Conteo físico, mercadería dañada, vencimiento…">
+              <Input
+                placeholder="Ej. Conteo físico en local"
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+              />
             </Field>
           </div>
 
@@ -1197,11 +1283,11 @@ export default function InventoryPage() {
             <Button variant="ghost" onClick={() => setAdjustItem(null)}>Cancelar</Button>
             <Button
               variant="dark"
-              disabled={!delta || Number(delta) === 0 || !reason.trim()}
+              disabled={targetStock === '' || isNaN(Number(targetStock)) || Number(targetStock) === adjustItem.onHand || Number(targetStock) < 0}
               loading={adjustment.isPending}
               onClick={() => adjustment.mutate()}
             >
-              Guardar ajuste
+              Guardar corrección
             </Button>
           </div>
         </Modal>

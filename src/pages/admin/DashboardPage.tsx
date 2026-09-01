@@ -22,10 +22,10 @@ import { formatUnits } from '@/domain/quantity';
 import { useAuth } from '@/features/auth/AuthProvider';
 
 const stockLabel = {
-  ok: 'En orden',
-  low: 'Stock bajo',
-  critical: 'Crítico',
-  out: 'Sin stock'
+  ok: 'OK',
+  low: 'COMPRAR',
+  critical: 'URGENTE',
+  out: 'SIN STOCK'
 } as const;
 
 export default function DashboardPage() {
