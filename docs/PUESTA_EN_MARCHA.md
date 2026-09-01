@@ -14,7 +14,7 @@ No publicar para uso comercial mientras ocurra cualquiera de estas condiciones:
 - no existe una copia reciente de base de datos y del bucket de imágenes fuera de Supabase;
 - la prueba manual de pedido completo no está aprobada en celular y escritorio.
 
-La IA no integra esta puerta inicial. Debe permanecer desactivada hasta elegir proveedor y modelo; el negocio completo tiene que operar sin ella.
+La IA no integra esta puerta inicial: el negocio completo tiene que operar sin ella. La infraestructura ya está certificada y activa; Global Zero Data Retention fue comprobado en la organización de Groq asociada a la clave instalada.
 
 ## 1. Verificación local previa
 
@@ -83,16 +83,44 @@ Configurar únicamente variables públicas:
 VITE_APP_MODE=supabase
 VITE_SUPABASE_URL=https://PROJECT_REF.supabase.co
 VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_...
-VITE_AI_ENABLED=false
+VITE_AI_ENABLED=true
 ```
 
 Un build de producción sin Supabase muestra una pantalla de configuración pendiente; nunca cae silenciosamente en la demo.
 
-## 6. Hosting: decisión todavía bloqueada
+## 6. Hosting y backend de IA
 
-El repositorio conserva `vercel.json` porque el build es técnicamente compatible con Vercel. Sin embargo, los términos vigentes de Vercel limitan Hobby a uso personal o no comercial. Esta tienda es comercial, por lo que Vercel Hobby es **No-Go**; Vercel Pro contradice el objetivo de costo recurrente cero.
+El hosting elegido es Cloudflare Worker + Static Assets. La fuente de verdad es `wrangler.jsonc` y el destino autorizado es únicamente:
 
-Antes de publicar hay que elegir y volver a verificar un hosting cuyos términos admitan uso comercial gratuito, o autorizar explícitamente un plan pago. La comprobación debe incluir SPA rewrites, variables de entorno, dominio, límites y ausencia de cobro automático.
+```text
+perfil: impulso
+cuenta: app de suplementos
+Worker: impulso
+URL: https://impulso.suplementos.workers.dev
+```
+
+Usar Node `24.20.0` y ejecutar en orden:
+
+```bash
+nvm use
+pnpm worker:deploy:dry
+pnpm worker:deploy
+```
+
+Ambos scripts validan el perfil, directorio, cuenta y nombre de Worker antes de publicar. Static Assets resuelve el SPA; no volver a crear `public/_redirects`, porque la reescritura de Pages produce un bucle con `not_found_handling: "single-page-application"`.
+
+Los secretos de runtime se sincronizan con `pnpm worker:secrets:sync` y son solamente `GROQ_API_KEY`, `SUPABASE_URL` y `SUPABASE_ANON_KEY`. El valor de ningún secreto debe imprimirse ni guardarse en Git. Nunca instalar `SUPABASE_SERVICE_ROLE_KEY`.
+
+La habilitación inicial se completó el 01/09/2026. Si cambia la clave, proyecto u organización de Groq, volver a cerrar los tres flags y repetir, en este orden:
+
+1. iniciar sesión en la organización de Groq asociada a la clave instalada;
+2. activar y comprobar Zero Data Retention en Data Controls;
+3. ejecutar de nuevo la certificación real de ambos modelos;
+4. cambiar `GROQ_ZDR_CONFIRMED` a `true`;
+5. cambiar `AI_ENABLED` y `VITE_AI_ENABLED` a `true`;
+6. publicar y repetir el smoke test remoto.
+
+No activar un solo flag ni reemplazar la comprobación de ZDR por la política de retención predeterminada de Groq.
 
 ## 7. Prueba de aceptación mínima
 

@@ -5,15 +5,23 @@
   "type": "module",
   "packageManager": "pnpm@10.13.1",
   "engines": {
-    "node": ">=20.19.0"
+    "node": ">=24.20.0"
   },
   "scripts": {
     "dev": "vite",
-    "build": "node scripts/validate-pages-env.mjs && tsc -b && vite build",
+    "build": "node scripts/validate-build-env.mjs && tsc -b && vite build",
     "check": "tsc -b",
     "preview": "vite preview",
-    "pages:deploy": "REQUIRE_SUPABASE_ENV=1 pnpm build && wrangler pages deploy dist --project-name impulso-suplementos",
-    "pages:preview": "REQUIRE_SUPABASE_ENV=1 pnpm build && wrangler pages dev dist",
+    "worker:types": "wrangler types",
+    "worker:dev": "REQUIRE_SUPABASE_ENV=1 pnpm build && wrangler --profile impulso dev --name impulso",
+    "worker:secrets:sync": "node scripts/sync-worker-secrets.mjs",
+    "worker:certify:dev": "node scripts/validate-worker-target.mjs && wrangler --profile impulso dev --remote --config wrangler.certification.jsonc",
+    "worker:certify:run": "node scripts/run-ai-certification.mjs",
+    "worker:deploy": "node scripts/validate-worker-target.mjs && REQUIRE_SUPABASE_ENV=1 pnpm build && wrangler --profile impulso deploy --name impulso",
+    "worker:deploy:dry": "node scripts/validate-worker-target.mjs && REQUIRE_SUPABASE_ENV=1 pnpm build && wrangler --profile impulso deploy --name impulso --dry-run",
+    "db:remote:list": "node scripts/run-supabase-linked.mjs list",
+    "db:remote:push:dry": "node scripts/run-supabase-linked.mjs dry-run",
+    "db:remote:push": "node scripts/run-supabase-linked.mjs push",
     "test": "vitest run --maxWorkers=1 --no-file-parallelism",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
@@ -37,7 +45,7 @@
     "zod": "4.4.3"
   },
   "devDependencies": {
-    "@playwright/test": "^1.62.1",
+    "@playwright/test": "1.62.1",
     "@tailwindcss/vite": "4.3.3",
     "@testing-library/jest-dom": "7.0.1",
     "@testing-library/react": "16.3.3",
@@ -49,11 +57,12 @@
     "exceljs": "^4.4.0",
     "fflate": "0.8.2",
     "jsdom": "26.1.0",
+    "supabase": "2.116.0",
     "tailwindcss": "4.3.3",
     "typescript": "7.0.2",
     "vite": "8.2.2",
     "vitest": "4.1.11",
-    "wrangler": "^4.127.1"
+    "wrangler": "4.127.1"
   },
   "pnpm": {
     "overrides": {

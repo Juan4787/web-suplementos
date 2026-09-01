@@ -12,7 +12,8 @@ import type {
   StoreSettings
 } from '@/domain/types';
 import { getSupabaseClient } from '@/lib/supabase';
-import type { BusinessApi, Page } from './business-api';
+import type { AIAnswer, BusinessApi, Page } from './business-api';
+import { requestBusinessAI } from './business-ai-client';
 
 type RpcArgs = Record<string, unknown>;
 
@@ -127,62 +128,22 @@ const rpc = async <T>(name: string, args?: RpcArgs): Promise<T> => {
 const invokeAi = async (
   message: string,
   history: Array<{ role: 'user' | 'assistant'; content: string }>
-): Promise<{ answer: string; model: string; usedTools: string[] }> => {
+): Promise<AIAnswer> => {
   if (appEnv.mode !== 'supabase') throw configurationError();
   if (!appEnv.aiEnabled) {
     throw new AppError('configuration', 'El asistente todavía no está habilitado.', {
-      nextAction: 'Primero hay que elegir y auditar el proveedor y el modelo.'
+      nextAction: 'Falta confirmar que el proveedor principal no conserve las consultas.'
     });
   }
-  const { data, error } = await getSupabaseClient().functions.invoke('business-ai', {
-    body: { message, history }
-  });
-  if (error) {
-    let payload: unknown;
-    try {
-      const context = (error as { context?: { json?: () => Promise<unknown> } }).context;
-      payload = context?.json ? await context.json() : undefined;
-    } catch {
-      payload = undefined;
-    }
-    const code =
-      typeof payload === 'object' && payload !== null && 'code' in payload
-        ? String((payload as { code: unknown }).code)
-        : '';
-    if (code === 'AI_QUOTA_REACHED' || code === 'AI_UNAVAILABLE') {
-      throw new AppError(
-        'temporary',
-        code === 'AI_QUOTA_REACHED'
-          ? 'El asistente alcanzó temporalmente el límite gratuito.'
-          : 'El asistente no está disponible en este momento.',
-        { retryable: true, nextAction: 'Volvé a intentarlo más tarde. El resto de la aplicación sigue disponible.' }
-      );
-    }
-    if (code === 'FORBIDDEN') {
-      throw new AppError('permission', 'El asistente está disponible únicamente para la dueña.');
-    }
-    throw new AppError('temporary', 'No pudimos obtener una respuesta del asistente.', {
+  const client = getSupabaseClient();
+  const { data, error } = await client.auth.getSession();
+  if (error || !data.session?.access_token) {
+    throw new AppError('auth', 'Tu sesión venció.', {
       cause: error,
-      retryable: true,
-      nextAction: 'Volvé a intentarlo. Tus datos no fueron modificados.'
+      nextAction: 'Volvé a ingresar para continuar.'
     });
   }
-  if (
-    typeof data !== 'object' ||
-    data === null ||
-    typeof (data as { answer?: unknown }).answer !== 'string'
-  ) {
-    throw new AppError('unexpected', 'El asistente devolvió una respuesta incompleta.', {
-      nextAction: 'Volvé a intentarlo.'
-    });
-  }
-  return {
-    answer: (data as { answer: string }).answer,
-    model: String((data as { model?: unknown }).model ?? 'Proveedor no informado'),
-    usedTools: Array.isArray((data as { usedTools?: unknown }).usedTools)
-      ? ((data as { usedTools: unknown[] }).usedTools.map(String))
-      : []
-  };
+  return requestBusinessAI({ message, history, accessToken: data.session.access_token });
 };
 
 export const supabaseBusinessApi: BusinessApi = {
@@ -203,6 +164,51 @@ export const supabaseBusinessApi: BusinessApi = {
       p_delta: delta,
       p_reason: reason
     });
+  },
+  updateStockThresholds: async ({ productId, reorderPoint, safetyStock, leadTimeDays }) => {
+    try {
+      await rpc('update_stock_thresholds', {
+        p_product_id: productId,
+        p_reorder_point: reorderPoint,
+        p_safety_stock: safetyStock,
+        p_lead_time_days: leadTimeDays ?? null
+      });
+    } catch (err: unknown) {
+      const diagnostic = err instanceof Error ? err.message : String(err);
+      if (
+        diagnostic.includes('update_stock_thresholds') ||
+        diagnostic.includes('P0001') ||
+        diagnostic.includes('function') ||
+        diagnostic.includes('42883')
+      ) {
+        const products = await rpc<AdminProduct[]>('list_admin_products');
+        const prod = products.find((p) => p.id === productId);
+        if (!prod) throw new AppError('business', 'No encontramos el producto que querías actualizar.');
+        await rpc<AdminProduct>('save_product', {
+          p_product: {
+            id: prod.id,
+            sku: prod.sku,
+            slug: prod.slug,
+            name: prod.name,
+            presentation: prod.presentation,
+            description: prod.description,
+            category: prod.category,
+            priceCents: prod.priceCents,
+            currentCostCents: prod.currentCostCents,
+            reorderPoint,
+            safetyStock,
+            leadTimeDays: leadTimeDays ?? prod.leadTimeDays,
+            imageUrl: prod.imageUrl,
+            imageAlt: prod.imageAlt,
+            published: prod.published,
+            active: prod.active,
+            featured: prod.featured
+          }
+        });
+        return;
+      }
+      throw err;
+    }
   },
   listOrders: (page = 1, pageSize = 20) =>
     rpc<Page<Order>>('list_orders', { p_page: page, p_page_size: pageSize }),

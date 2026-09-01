@@ -53,6 +53,28 @@ export type PurchaseCreateInput = {
   items: Array<{ productId: string; quantity: number; unitCostCents: number }>;
 };
 
+export type AIAnswerEvidence = {
+  label: string;
+  value: string | number | boolean | null;
+  formatted: string;
+};
+
+export type AIAnswer = {
+  answer: string;
+  model: string;
+  provider: string;
+  fallback: boolean;
+  usedTools: string[];
+  evidence: AIAnswerEvidence[];
+};
+
+export type UpdateStockThresholdsInput = {
+  productId: string;
+  reorderPoint: number;
+  safetyStock: number;
+  leadTimeDays?: number;
+};
+
 export interface BusinessApi {
   getSettings(): Promise<StoreSettings>;
   updateSettings(settings: StoreSettings): Promise<StoreSettings>;
@@ -64,6 +86,7 @@ export interface BusinessApi {
   saveProduct(input: ProductUpdate): Promise<AdminProduct>;
   listInventory(): Promise<InventoryItem[]>;
   adjustStock(productId: string, delta: number, reason: string): Promise<void>;
+  updateStockThresholds(input: UpdateStockThresholdsInput): Promise<void>;
   listOrders(page?: number, pageSize?: number): Promise<Page<Order>>;
   listPaidOrders(page?: number, pageSize?: number): Promise<Page<Order>>;
   confirmImportedOrder(input: ImportOrderInput): Promise<Order>;
@@ -79,11 +102,10 @@ export interface BusinessApi {
   getExportDataset(): Promise<ExportDataset>;
   listUsers(): Promise<AppUser[]>;
   updateUserAccess(userId: string, role: 'owner' | 'staff', active: boolean): Promise<AppUser>;
-  askBusinessAi(message: string, history: Array<{ role: 'user' | 'assistant'; content: string }>): Promise<{
-    answer: string;
-    model: string;
-    usedTools: string[];
-  }>;
+  askBusinessAi(
+    message: string,
+    history: Array<{ role: 'user' | 'assistant'; content: string }>
+  ): Promise<AIAnswer>;
 }
 
 let apiPromise: Promise<BusinessApi> | null = null;

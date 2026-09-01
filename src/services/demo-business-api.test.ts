@@ -83,10 +83,33 @@ describe('demoBusinessApi lifecycle and domain guarantees', () => {
 
     // Adjust stock
     await demoBusinessApi.adjustStock(created.id, 20, 'Stock de apertura');
-    const inventory = await demoBusinessApi.listInventory();
-    const item = inventory.find((i) => i.id === created.id);
+    let inventory = await demoBusinessApi.listInventory();
+    let item = inventory.find((i) => i.id === created.id);
     expect(item?.onHand).toBe(20);
     expect(item?.available).toBe(20);
+    expect(item?.status).toBe('ok');
+
+    // Update stock thresholds to make 20 units low stock (e.g. reorderPoint = 25)
+    await demoBusinessApi.updateStockThresholds({
+      productId: created.id,
+      reorderPoint: 25,
+      safetyStock: 5
+    });
+    inventory = await demoBusinessApi.listInventory();
+    item = inventory.find((i) => i.id === created.id);
+    expect(item?.reorderPoint).toBe(25);
+    expect(item?.safetyStock).toBe(5);
+    expect(item?.status).toBe('low');
+
+    // Lower reorderPoint below available units -> returns to ok
+    await demoBusinessApi.updateStockThresholds({
+      productId: created.id,
+      reorderPoint: 10,
+      safetyStock: 2
+    });
+    inventory = await demoBusinessApi.listInventory();
+    item = inventory.find((i) => i.id === created.id);
+    expect(item?.status).toBe('ok');
   });
 
   it('confirms imported WhatsApp order, reserves stock, and rejects duplicate protocol ID', async () => {

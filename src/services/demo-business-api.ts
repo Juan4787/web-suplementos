@@ -273,6 +273,26 @@ export const demoBusinessApi: BusinessApi = {
     await latency(undefined);
   },
 
+  async updateStockThresholds({ productId, reorderPoint, safetyStock, leadTimeDays }) {
+    const product = state.products.find((candidate) => candidate.id === productId);
+    if (!product) throw new AppError('business', 'No encontramos el producto que querías actualizar.');
+    if (!Number.isFinite(reorderPoint) || reorderPoint < 0) {
+      throw new AppError('validation', 'El punto de pedido debe ser un número igual o mayor a 0.');
+    }
+    if (!Number.isFinite(safetyStock) || safetyStock < 0) {
+      throw new AppError('validation', 'El stock de seguridad debe ser un número igual o mayor a 0.');
+    }
+    product.reorderPoint = Math.max(0, Math.round(reorderPoint));
+    product.safetyStock = Math.max(0, Math.round(safetyStock));
+    if (typeof leadTimeDays === 'number' && Number.isFinite(leadTimeDays)) {
+      product.leadTimeDays = Math.max(0, Math.round(leadTimeDays));
+    }
+    refreshProductAvailability(product);
+    product.updatedAt = new Date().toISOString();
+    state.revision += 1;
+    await latency(undefined);
+  },
+
   async listOrders(page = 1, pageSize = 20) {
     return latency(paginate(state.orders, page, pageSize));
   },
@@ -687,7 +707,10 @@ export const demoBusinessApi: BusinessApi = {
       {
         answer,
         model: 'demo-local (sin proveedor externo)',
-        usedTools: ['get_low_stock_products']
+        provider: 'Local',
+        fallback: false,
+        usedTools: ['get_inventory_status'],
+        evidence: []
       },
       650
     );

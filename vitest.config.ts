@@ -12,10 +12,9 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
-    include: ['src/**/*.test.{ts,tsx}'],
+    include: ['src/**/*.test.{ts,tsx}', 'worker/**/*.test.ts'],
     exclude: ['**/node_modules/**', '**/dist/**', 'e2e/**'],
     restoreMocks: true,
     clearMocks: true
   }
 });
-

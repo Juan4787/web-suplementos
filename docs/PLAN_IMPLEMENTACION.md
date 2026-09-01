@@ -8,7 +8,7 @@ Fecha base: 28/08/2026.
 - [x] Cerrar reglas de reserva, venta, estados, stock negativo, permisos y exposición pública.
 - [x] Verificar Supabase, Vercel y candidatos de IA contra documentación vigente.
 - [x] Registrar la incompatibilidad Vercel Hobby/comercio.
-- [ ] Elegir hosting de producción compatible con uso comercial y $0, o autorizar Vercel Pro.
+- [x] Elegir Cloudflare Worker + Static Assets como hosting comercial sin costo recurrente obligatorio.
 
 ## Fase 1 — base frontend
 
@@ -64,27 +64,32 @@ Puerta: rol personal no obtiene datos financieros por API ni UI.
 
 Puerta: conteos, relaciones, Unicode, fechas, importes y cero fórmulas.
 
-## Fase 6 — IA read-only (última fase; proveedor/modelo pendiente)
+## Fase 6 — IA read-only
 
-- [x] Contrato neutral en frontend, ruta restringida, feature flag apagado y núcleo independiente.
-- [ ] Edge Function autenticada y restringida a dueña.
-- [ ] Elegir proveedor, modelo y política de fallback con evidencia vigente.
-- [ ] Implementar el adaptador seleccionado sin filtrar detalles al frontend.
-- [ ] Herramientas RPC cerradas y solo lectura.
-- [ ] Límites por usuario, iteraciones y tamaño.
-- [ ] Errores humanos para cuota/dependencia.
-- [ ] Checklist manual de retención, plan gratuito y modelo permitido.
+- [x] Contrato neutral en frontend, ruta restringida, feature flag fail-closed y núcleo independiente.
+- [x] Migrar toolchain a Node 24 y definir Worker + Static Assets con binding Workers AI.
+- [x] Fijar guard de despliegue a la cuenta, perfil y Worker exclusivos de Impulso.
+- [x] Elegir Groq/GPT-OSS + Workers AI/GLM 4.7 Flash y failover propio sticky, sin AI Gateway crítico.
+- [x] Implementar reclamo atómico, auditoría agregada y herramientas RPC cerradas y solo lectura.
+- [x] Limitar cuota a 4/minuto y 30/día; tools a períodos y resultados acotados.
+- [x] Endpoint Worker autenticado y restringido a dueña mediante JWT reenviado.
+- [x] Implementar adapters, registry versionado, deadline global y circuit breaker.
+- [x] Limitar historial, bytes, dos rondas de tools y una transición de proveedor.
+- [x] Errores humanos para cuota/dependencia.
+- [x] Contratos simulados y certificación real independiente de ambos modelos.
+- [x] Verificar Global ZDR de Groq antes de habilitar datos reales.
+- [x] Habilitar únicamente modo Automático después de certificar ambos modelos.
 
 Puerta: ninguna herramienta ni permiso de escritura; pruebas de rol y fallos 429/5xx.
 
 ## Fase 7 — Go-Live
 
-- [ ] Proyecto Supabase creado, migrado y verificado.
-- [ ] Dueña inicial creada y rol confirmado.
-- [ ] Proveedor de IA elegido: plan gratuito, facturación, retención y modelos verificados.
+- [x] Proyecto Supabase creado, migrado y verificado.
+- [x] Dueña inicial creada y rol confirmado mediante el reclamo autenticado de IA.
+- [x] Proveedor de IA elegido: plan gratuito, retención y modelos verificados.
 - [ ] Datos reales de tienda y WhatsApp configurados.
 - [ ] Imágenes reales optimizadas.
-- [ ] Decisión y despliegue de hosting comercial válido.
+- [x] Decisión y despliegue de hosting comercial válido.
 - [ ] Auditoría responsive, seguridad, accesibilidad, recuperación y backup.
 - [ ] Migración histórica auditada o decisión explícita de comenzar en cero.
 
@@ -107,3 +112,20 @@ Ejecutada secuencialmente el 28/08/2026:
 - XLSX descargado desde el navegador: 13 hojas OOXML; la prueba automatizada además lo abre, regraba y vuelve a inspeccionar con LibreOffice.
 
 Esta evidencia es local. No acredita todavía Supabase remoto, datos reales, dominio ni hosting de producción.
+
+## Evidencia local de infraestructura IA — 01/09/2026
+
+- Node `24.20.0`, Wrangler `4.127.1` y Supabase CLI de proyecto `2.116.0` verificados.
+- El guard confirmó cuenta Cloudflare única `app de suplementos`, perfil/directorio `impulso` y Worker `impulso` antes de permitir despliegues.
+- `supabase db reset --local --no-seed`: migración inicial + `20260901000000_ai_infrastructure.sql` aplicadas desde cero.
+- `supabase db lint --local --level warning`: cero errores y cero advertencias.
+- `supabase test db supabase/tests/database/ai_infrastructure.test.sql`: 23/23 pruebas aprobadas.
+- La migración se aplicó al proyecto remoto vinculado `web-suplementos`; el esquema quedó limpio y los conteos comerciales no cambiaron.
+- Endpoint, adapters, failover sticky, circuit breaker, validación de hechos y UI `Automático` quedaron implementados.
+- Suite web completa: 19 archivos y 117/117 pruebas aprobadas.
+- Suite SQL completa: 3 archivos y 75/75 pruebas aprobadas.
+- Certificación remota: GPT-OSS/Groq 6/6 y GLM 4.7 Flash/Workers AI 6/6. Incluye `¿Qué productos tengo?`, selección de tools, hechos exactos y rechazo de escrituras. Nemotron 3 y GPT-OSS mediante el binding AI quedaron fuera del registry activo por fallos reproducibles de contrato.
+- Secrets remotos presentes por nombre: `GROQ_API_KEY`, `SUPABASE_URL` y `SUPABASE_ANON_KEY`; sus valores no se imprimieron.
+- Worker publicado en `https://impulso.suplementos.workers.dev`, versión `8fedfbd8-7d36-4174-9920-d73a674181d0` activa al 100 %, Preview URLs desactivadas.
+- Smoke test remoto aprobado: raíz, ruta SPA y asset coinciden por SHA-256 con el build local; salud, método inválido, origen cruzado y cierre seguro de IA responden según contrato.
+- Global ZDR fue comprobado en Groq antes de activar juntos `VITE_AI_ENABLED=true`, `AI_ENABLED=true` y `GROQ_ZDR_CONFIRMED=true`.

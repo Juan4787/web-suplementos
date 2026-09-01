@@ -8,12 +8,16 @@ import { Button } from '@/components/ui/Button';
 import { ErrorState } from '@/components/ui/DataState';
 import { Textarea } from '@/components/ui/Field';
 import { getBusinessApi } from '@/services/business-api';
+import type { AIAnswerEvidence } from '@/services/business-api';
 
 type ChatMessage = {
   id: string;
   role: 'user' | 'assistant';
   content: string;
   consulted?: boolean;
+  model?: string;
+  fallback?: boolean;
+  evidence?: AIAnswerEvidence[];
 };
 
 const suggestions = [
@@ -44,7 +48,15 @@ export default function AiPage() {
     onSuccess: (result) => {
       setMessages((current) => [
         ...current,
-        { id: crypto.randomUUID(), role: 'assistant', content: result.answer, consulted: result.usedTools.length > 0 }
+        {
+          id: crypto.randomUUID(),
+          role: 'assistant',
+          content: result.answer,
+          consulted: result.usedTools.length > 0,
+          model: result.model,
+          fallback: result.fallback,
+          evidence: result.evidence
+        }
       ]);
     }
   });
@@ -59,12 +71,12 @@ export default function AiPage() {
     return (
       <RoleGate capability="use_ai">
         <div className="page-enter">
-          <PageHeader title="Asistente pendiente de modelo" description="La frontera de seguridad está reservada, pero no hay proveedor, modelo ni Edge Function habilitados todavía." />
+          <PageHeader title="Asistente pendiente de privacidad" description="Los modelos ya aprobaron las pruebas. El asistente permanece apagado hasta confirmar la protección de las consultas." />
           <section className="max-w-3xl rounded-[2rem] bg-white p-7 shadow-card sm:p-9">
             <span className="grid size-12 place-items-center rounded-2xl bg-brand-100 text-brand-700"><Bot className="size-6" /></span>
             <h2 className="mt-5 font-display text-2xl font-black">El núcleo no depende de la IA</h2>
-            <p className="mt-3 leading-7 text-ink-600">Pedidos, stock, compras, ventas, analíticas y Excel funcionan sin un modelo externo. Esta pantalla se habilitará únicamente después de definir proveedor, límites, retención y degradación segura.</p>
-            <div className="mt-6 flex items-start gap-3 rounded-2xl bg-cream-100 p-4 text-sm font-semibold text-ink-700"><LockKeyhole className="mt-0.5 size-5 shrink-0 text-brand-600" /><p>No se envía ningún dato a un proveedor de IA mientras <code>VITE_AI_ENABLED</code> permanezca en <code>false</code>.</p></div>
+            <p className="mt-3 leading-7 text-ink-600">Pedidos, stock, compras, ventas, analíticas y Excel siguen funcionando de forma independiente. Falta confirmar que el proveedor principal no conserve las consultas antes de enviarle datos comerciales.</p>
+            <div className="mt-6 flex items-start gap-3 rounded-2xl bg-cream-100 p-4 text-sm font-semibold text-ink-700"><LockKeyhole className="mt-0.5 size-5 shrink-0 text-brand-600" /><p>Mientras esta pantalla esté bloqueada no se envía ningún dato comercial a los modelos.</p></div>
           </section>
         </div>
       </RoleGate>
@@ -76,14 +88,16 @@ export default function AiPage() {
         <PageHeader title="Asistente del negocio" description="PostgreSQL calcula. La IA consulta resultados compactos, los relaciona y los explica." />
         <div className="grid gap-6 xl:grid-cols-[1fr_20rem]">
           <section className="flex min-h-[42rem] flex-col overflow-hidden rounded-[2rem] bg-white shadow-card">
-            <div className="flex items-center justify-between border-b border-ink-950/8 px-5 py-4 sm:px-6"><div className="flex items-center gap-3"><span className="grid size-10 place-items-center rounded-2xl bg-brand-100 text-brand-700"><Bot className="size-5" /></span><div><h2 className="font-black">Analista Impulso</h2><p className="text-xs font-semibold text-brand-600">Disponible · sin permisos de escritura</p></div></div><span className="hidden items-center gap-2 rounded-full bg-cream-100 px-3 py-2 text-xs font-black text-ink-600 sm:inline-flex"><Database className="size-3.5" /> Datos de la tienda</span></div>
+            <div className="flex items-center justify-between gap-3 border-b border-ink-950/8 px-5 py-4 sm:px-6"><div className="flex items-center gap-3"><span className="grid size-10 place-items-center rounded-2xl bg-brand-100 text-brand-700"><Bot className="size-5" /></span><div><h2 className="font-black">Analista Impulso</h2><p className="text-xs font-semibold text-brand-600">Disponible · sin permisos de escritura</p></div></div><div className="flex items-center gap-2"><span className="hidden items-center gap-2 rounded-full bg-cream-100 px-3 py-2 text-xs font-black text-ink-600 lg:inline-flex"><Database className="size-3.5" /> Datos de la tienda</span><span className="inline-flex items-center rounded-full border border-ink-950/10 bg-white px-3 py-2 text-xs font-black text-ink-700">Automático</span></div></div>
             <div className="flex-1 space-y-5 overflow-y-auto bg-cream-50 p-4 sm:p-6">
               {messages.map((message) => (
                 <article key={message.id} className={`flex gap-3 ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                   {message.role === 'assistant' ? <span className="grid size-9 shrink-0 place-items-center rounded-full bg-ink-950 text-brand-300"><Bot className="size-4" /></span> : null}
                   <div className={`max-w-[82%] rounded-[1.5rem] px-4 py-3 text-sm leading-6 sm:max-w-[72%] ${message.role === 'user' ? 'rounded-br-md bg-brand-600 text-white' : 'rounded-bl-md border border-ink-950/7 bg-white text-ink-800 shadow-sm'}`}>
                     <p className="whitespace-pre-wrap">{message.content}</p>
+                    {message.evidence?.length ? <details className="mt-3 border-t border-ink-950/8 pt-2"><summary className="cursor-pointer text-[11px] font-black text-ink-600">Datos exactos usados</summary><dl className="mt-2 space-y-1.5">{message.evidence.map((fact) => <div key={`${fact.label}-${fact.formatted}`} className="flex items-start justify-between gap-4 text-xs"><dt className="text-ink-600">{fact.label}</dt><dd className="shrink-0 font-black text-ink-950">{fact.formatted}</dd></div>)}</dl></details> : null}
                     {message.consulted ? <p className="mt-3 flex items-center gap-1.5 border-t border-ink-950/8 pt-2 text-[10px] font-black uppercase tracking-wider text-brand-600"><Database className="size-3" /> Respuesta basada en datos consultados</p> : null}
+                    {message.model ? <p className="mt-1 text-[10px] font-bold text-ink-600">{message.model}{message.fallback ? ' · respaldo' : ''}</p> : null}
                   </div>
                   {message.role === 'user' ? <span className="grid size-9 shrink-0 place-items-center rounded-full bg-brand-100 text-brand-700"><User className="size-4" /></span> : null}
                 </article>

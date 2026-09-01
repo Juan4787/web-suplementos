@@ -21,7 +21,7 @@ import {
   Truck,
   X
 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { queryKeys } from '@/app/query-keys';
 import { useBusinessQuery } from '@/app/use-business-query';
 import { PageHeader } from '@/components/layout/AdminShell';
@@ -30,6 +30,7 @@ import { ErrorState, LoadingState } from '@/components/ui/DataState';
 import { Field, Input, Select, Textarea } from '@/components/ui/Field';
 import { Drawer, Modal } from '@/components/ui/Modal';
 import { StatusChip } from '@/components/ui/StatusChip';
+import { inventoryStatus } from '@/domain/inventory';
 import { formatMoney, pesosToCents } from '@/domain/money';
 import { can } from '@/domain/permissions';
 import { formatProducts, formatUnits } from '@/domain/quantity';
@@ -43,6 +44,13 @@ const statusLabels: Record<InventoryItem['status'], string> = {
   low: 'Stock bajo',
   critical: 'Crítico',
   out: 'Sin stock'
+};
+
+const statusTones: Record<InventoryItem['status'], 'success' | 'warning' | 'danger'> = {
+  ok: 'success',
+  low: 'warning',
+  critical: 'warning',
+  out: 'danger'
 };
 
 const movementKindLabels = {
@@ -128,6 +136,409 @@ function PurchaseFormModal({ onClose }: { onClose: () => void }) {
   );
 }
 
+function StockDetailDrawer({
+  item,
+  onClose,
+  onOpenAdjust,
+  onNavigateToMovements
+}: {
+  item: InventoryItem;
+  onClose: () => void;
+  onOpenAdjust: (item: InventoryItem) => void;
+  onNavigateToMovements: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const [reorderPoint, setReorderPoint] = useState(item.reorderPoint);
+  const [safetyStock, setSafetyStock] = useState(item.safetyStock);
+  const [leadTimeDays, setLeadTimeDays] = useState(item.leadTimeDays);
+  const [showCalculation, setShowCalculation] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
+
+  useEffect(() => {
+    setReorderPoint(item.reorderPoint);
+    setSafetyStock(item.safetyStock);
+    setLeadTimeDays(item.leadTimeDays);
+    setSaveSuccess(false);
+  }, [item.id, item.reorderPoint, item.safetyStock, item.leadTimeDays]);
+
+  const movementsQuery = useBusinessQuery({
+    queryKey: queryKeys.movements(1),
+    queryFn: (api) => api.listMovements(1, 100)
+  });
+
+  const isDirty =
+    reorderPoint !== item.reorderPoint ||
+    safetyStock !== item.safetyStock ||
+    leadTimeDays !== item.leadTimeDays;
+
+  const updateThresholds = useMutation({
+    mutationFn: async () => {
+      await (await getBusinessApi()).updateStockThresholds({
+        productId: item.id,
+        reorderPoint: Number(reorderPoint),
+        safetyStock: Number(safetyStock),
+        leadTimeDays: Number(leadTimeDays)
+      });
+    },
+    onSuccess: async () => {
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 3500);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.inventory }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.products }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.dashboard })
+      ]);
+    }
+  });
+
+  const previewStatus = inventoryStatus(item.available, reorderPoint, safetyStock);
+
+  const recentMovements = (movementsQuery.data?.items ?? [])
+    .filter(
+      (m) =>
+        m.productId === item.id ||
+        m.productName.toLowerCase().includes(item.name.toLowerCase())
+    )
+    .slice(0, 3);
+
+  return (
+    <Drawer isOpen={true} onClose={onClose} ariaLabelledBy="drawer-title">
+      <div className="flex items-start justify-between">
+        <div>
+          <h2 id="drawer-title" className="font-display text-2xl font-black text-ink-950">
+            {item.name}
+          </h2>
+          <div className="mt-1.5 flex items-center gap-2.5">
+            <p className="text-[14px] font-bold text-ink-700">{item.presentation}</p>
+            <StatusChip label={statusLabels[item.status]} tone={statusTones[item.status]} />
+          </div>
+        </div>
+        <button
+          className="grid size-10 place-items-center rounded-full hover:bg-cream-100 text-ink-600 transition"
+          onClick={onClose}
+          aria-label="Cerrar panel"
+        >
+          <X className="size-5" />
+        </button>
+      </div>
+
+      <div className="mt-6 space-y-5 flex-1">
+        {/* Bloque 1 — Diagnóstico claro en lenguaje humano */}
+        <div
+          className={cn(
+            'rounded-2xl p-4 text-[13.5px] border font-medium leading-relaxed shadow-sm',
+            item.status === 'ok' && 'bg-emerald-50 text-emerald-950 border-emerald-200',
+            item.status === 'low' && 'bg-amber-50 text-amber-950 border-amber-200',
+            item.status === 'critical' && 'bg-rose-50 text-rose-950 border-rose-200',
+            item.status === 'out' && 'bg-red-50 text-red-950 border-red-200'
+          )}
+        >
+          {item.status === 'out' && (
+            <div className="flex items-start gap-2.5">
+              <AlertTriangle className="size-5 shrink-0 text-red-700 mt-0.5" />
+              <div>
+                <p className="font-bold text-red-950">Sin stock disponible</p>
+                <p className="text-[12.5px] text-red-800 mt-0.5">No quedan unidades físicas disponibles para la venta.</p>
+              </div>
+            </div>
+          )}
+          {item.status === 'critical' && (
+            <div className="flex items-start gap-2.5">
+              <AlertTriangle className="size-5 shrink-0 text-rose-700 mt-0.5" />
+              <div>
+                <p className="font-bold text-rose-950">Stock crítico</p>
+                <p className="text-[12.5px] text-rose-800 mt-0.5">
+                  Quedan solo <strong>{item.available} u.</strong> disponibles (igual o por debajo del stock de seguridad de <strong>{item.safetyStock} u.</strong>).
+                </p>
+              </div>
+            </div>
+          )}
+          {item.status === 'low' && (
+            <div className="flex items-start gap-2.5">
+              <Info className="size-5 shrink-0 text-amber-700 mt-0.5" />
+              <div>
+                <p className="font-bold text-amber-950">Alerta de stock bajo activada</p>
+                <p className="text-[12.5px] text-amber-900 mt-0.5">
+                  Hay <strong>{item.available} u.</strong> disponibles y el punto de pedido configurado es de <strong>≤ {item.reorderPoint} u.</strong>
+                </p>
+              </div>
+            </div>
+          )}
+          {item.status === 'ok' && (
+            <div className="flex items-start gap-2.5">
+              <CheckCircle2 className="size-5 shrink-0 text-emerald-700 mt-0.5" />
+              <div>
+                <p className="font-bold text-emerald-950">Stock en orden</p>
+                <p className="text-[12.5px] text-emerald-800 mt-0.5">
+                  El stock disponible (<strong>{item.available} u.</strong>) supera el punto de pedido de reposición (<strong>&gt; {item.reorderPoint} u.</strong>).
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Bloque 2 — Existencias */}
+        <div>
+          <h4 className="text-[13px] font-black uppercase tracking-wider text-ink-700 mb-2">Existencias actuales</h4>
+          <div className="grid grid-cols-3 gap-2.5 rounded-2xl bg-cream-50 p-4 border border-ink-950/6">
+            <div>
+              <span className="block text-[12px] font-black uppercase text-ink-600">Stock real</span>
+              <span className="text-2xl font-black text-ink-950">{item.onHand}</span>
+            </div>
+            <div>
+              <span className="block text-[12px] font-black uppercase text-ink-600">Reservado</span>
+              <span className="text-2xl font-black text-ink-950">{item.reserved}</span>
+            </div>
+            <div>
+              <span className="block text-[12px] font-black uppercase text-ink-600">Disponible</span>
+              <span className={cn('text-2xl font-black', item.available <= 0 ? 'text-red-700' : 'text-emerald-700')}>
+                {item.available}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Bloque 3 — Configuración editable de alertas y umbrales */}
+        <div className="rounded-2xl border border-ink-950/10 bg-white p-4 shadow-sm">
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <h4 className="text-[13px] font-black uppercase tracking-wider text-ink-900">
+                Umbrales y alertas de reposición
+              </h4>
+              <p className="text-[12px] font-medium text-ink-600">
+                Ajustá cuándo querés que el sistema catalogue el stock como bajo o crítico.
+              </p>
+            </div>
+            <SlidersHorizontal className="size-4 text-ink-500" />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3.5 pt-1">
+            <div>
+              <label className="block text-[12.5px] font-black text-ink-900 mb-1">
+                Alerta de stock bajo
+              </label>
+              <div className="relative">
+                <Input
+                  type="number"
+                  min="0"
+                  value={reorderPoint}
+                  onChange={(e) => setReorderPoint(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                  className="pr-8 text-[15px] font-black"
+                />
+                <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs font-bold text-ink-500 pointer-events-none">
+                  u.
+                </span>
+              </div>
+              <p className="mt-1 text-[11px] font-medium text-ink-600 leading-tight">
+                Avisa cuando el disponible sea ≤ este número
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-[12.5px] font-black text-ink-900 mb-1">
+                Stock de seguridad
+              </label>
+              <div className="relative">
+                <Input
+                  type="number"
+                  min="0"
+                  value={safetyStock}
+                  onChange={(e) => setSafetyStock(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                  className="pr-8 text-[15px] font-black"
+                />
+                <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs font-bold text-ink-500 pointer-events-none">
+                  u.
+                </span>
+              </div>
+              <p className="mt-1 text-[11px] font-medium text-ink-600 leading-tight">
+                Avisa crítico si el disponible cae a ≤ este número
+              </p>
+            </div>
+          </div>
+
+          {/* Vista previa y botón de guardado si hay cambios */}
+          {isDirty && (
+            <div className="mt-4 rounded-xl bg-amber-50/70 p-3 border border-amber-200/80">
+              <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-ink-800">Pasará a:</span>
+                  <StatusChip
+                    label={statusLabels[previewStatus]}
+                    tone={statusTones[previewStatus]}
+                  />
+                </div>
+                <div className="flex items-center justify-end gap-2">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setReorderPoint(item.reorderPoint);
+                      setSafetyStock(item.safetyStock);
+                    }}
+                  >
+                    Descartar
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="dark"
+                    size="sm"
+                    loading={updateThresholds.isPending}
+                    onClick={() => updateThresholds.mutate()}
+                  >
+                    Guardar umbrales
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {saveSuccess && (
+            <div className="mt-3 flex items-center gap-2 rounded-xl bg-emerald-50 p-2.5 text-xs font-bold text-emerald-800 border border-emerald-200">
+              <Check className="size-4 text-emerald-700" />
+              <span>¡Umbrales actualizados con éxito!</span>
+            </div>
+          )}
+
+          {updateThresholds.error && (
+            <div className="mt-3">
+              <ErrorState error={updateThresholds.error} />
+            </div>
+          )}
+        </div>
+
+        {/* Bloque 4 — Reposición */}
+        <div>
+          <h4 className="text-[13px] font-black uppercase tracking-wider text-ink-700 mb-2">Reposición y proyección</h4>
+          <div className="grid grid-cols-2 gap-3 rounded-2xl bg-cream-50 p-4 border border-ink-950/6">
+            <div>
+              <span className="block text-[12px] font-black uppercase text-ink-600">En camino</span>
+              <span className="text-2xl font-black text-ink-950">{item.incoming}</span>
+            </div>
+            <div>
+              <span className="block text-[12px] font-black uppercase text-ink-600">Stock proyectado</span>
+              <span className="text-2xl font-black text-brand-700">{item.projected}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Bloque 5 — Cálculo avanzado de reposición */}
+        <div className="overflow-hidden rounded-2xl border border-ink-950/8 bg-white p-4">
+          <button
+            type="button"
+            onClick={() => setShowCalculation(!showCalculation)}
+            className="flex w-full items-center justify-between text-[13px] font-black uppercase tracking-wider text-ink-800 hover:text-ink-950"
+          >
+            <span>{showCalculation ? 'Ocultar detalles de reposición ▴' : 'Ver cálculo avanzado de reposición ▾'}</span>
+            <ChevronDown
+              className={cn('size-4 text-ink-600 transition-transform', showCalculation && 'rotate-180')}
+            />
+          </button>
+
+          {showCalculation ? (
+            <div className="mt-4 space-y-3 border-t border-ink-950/6 pt-3">
+              <dl className="grid grid-cols-2 gap-3 text-sm">
+                <div>
+                  <dt className="font-semibold text-ink-700">Venta promedio/día</dt>
+                  <dd className="text-[15px] font-black text-ink-950">
+                    {item.averageDailySales.toFixed(1)} u./día
+                  </dd>
+                </div>
+                <div>
+                  <dt className="font-semibold text-ink-700">Lead time</dt>
+                  <dd className="text-[15px] font-black text-ink-950">{item.leadTimeDays} días</dd>
+                </div>
+                <div>
+                  <dt className="font-semibold text-ink-700">Stock de seguridad</dt>
+                  <dd className="text-[15px] font-black text-ink-950">{item.safetyStock} u.</dd>
+                </div>
+                <div>
+                  <dt className="font-semibold text-ink-700">Punto de pedido</dt>
+                  <dd className="text-[15px] font-black text-ink-950">{item.reorderPoint} u.</dd>
+                </div>
+                <div>
+                  <dt className="font-semibold text-ink-700">Días de cobertura</dt>
+                  <dd className="text-[15px] font-black text-ink-950">
+                    {item.coverageDays ?? '—'} días
+                  </dd>
+                </div>
+                <div>
+                  <dt className="font-semibold text-ink-700">Compra sugerida</dt>
+                  <dd className="text-[15px] font-black text-brand-700">
+                    {item.suggestedPurchase} u.
+                  </dd>
+                </div>
+              </dl>
+            </div>
+          ) : null}
+        </div>
+
+        {/* Bloque 6 — Movimientos recientes */}
+        <div className="rounded-2xl border border-ink-950/8 bg-white p-4">
+          <div className="flex items-center justify-between mb-2.5">
+            <h4 className="text-xs font-black uppercase tracking-wider text-ink-600">Movimientos recientes</h4>
+            <button
+              type="button"
+              onClick={onNavigateToMovements}
+              className="text-xs font-bold text-brand-600 hover:text-brand-700"
+            >
+              Ver historial completo →
+            </button>
+          </div>
+
+          {recentMovements.length === 0 ? (
+            <p className="text-xs text-ink-600 font-medium py-1">Sin movimientos recientes registrados.</p>
+          ) : (
+            <div className="space-y-2">
+              {recentMovements.map((mov) => (
+                <div key={mov.id} className="flex items-center justify-between rounded-xl bg-cream-50 p-2.5 text-xs">
+                  <div>
+                    <p className="font-bold text-ink-950">{movementKindLabels[mov.kind] ?? mov.kind}</p>
+                    <p className="text-[11px] text-ink-600">
+                      {new Intl.DateTimeFormat('es-AR', { dateStyle: 'short', timeStyle: 'short' }).format(
+                        new Date(mov.createdAt)
+                      )}
+                    </p>
+                  </div>
+                  <span
+                    className={cn(
+                      'font-black',
+                      mov.physicalDelta < 0 || mov.reservedDelta < 0 ? 'text-red-700' : 'text-emerald-700'
+                    )}
+                  >
+                    {mov.physicalDelta !== 0
+                      ? `${mov.physicalDelta > 0 ? '+' : ''}${mov.physicalDelta} fís.`
+                      : `${mov.reservedDelta > 0 ? '+' : ''}${mov.reservedDelta} res.`}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Bloque 7 — Más acciones */}
+        <div className="rounded-2xl border border-ink-950/8 bg-cream-50/50 p-4">
+          <h4 className="text-xs font-black uppercase tracking-wider text-ink-600 mb-2">Más acciones</h4>
+          <Button
+            variant="secondary"
+            size="sm"
+            className="w-full justify-start text-xs font-bold"
+            onClick={() => onOpenAdjust(item)}
+          >
+            <SlidersHorizontal className="size-4" /> Registrar ajuste manual
+          </Button>
+        </div>
+      </div>
+
+      <div className="mt-8 flex justify-end border-t border-ink-950/8 pt-4">
+        <Button variant="ghost" size="sm" onClick={onClose}>
+          Cerrar
+        </Button>
+      </div>
+    </Drawer>
+  );
+}
+
 export default function InventoryPage() {
   const searchParams = useSearch({ strict: false }) as { tab?: string };
   const initialTab = searchParams.tab === 'compras' ? 'compras' : searchParams.tab === 'movimientos' ? 'movimientos' : 'stock';
@@ -144,7 +555,6 @@ export default function InventoryPage() {
   const [delta, setDelta] = useState('');
   const [reason, setReason] = useState('');
   const [showPurchaseForm, setShowPurchaseForm] = useState(false);
-  const [showCalculation, setShowCalculation] = useState(false);
 
   // Movements State
   const [movementPage, setMovementPage] = useState(1);
@@ -741,185 +1151,22 @@ export default function InventoryPage() {
         </section>
       ) : null}
 
-      {/* DRAWER: Radiografía de Stock */}
+      {/* DRAWER: Radiografía y Configuración de Stock */}
       {detailItem ? (
-        <Drawer isOpen={true} onClose={() => setDetailItem(null)} ariaLabelledBy="drawer-title">
-          <div className="flex items-start justify-between">
-            <div>
-              <h2 id="drawer-title" className="font-display text-2xl font-black text-ink-950">{detailItem.name}</h2>
-              <p className="mt-1 text-[14.5px] font-bold text-ink-700">{detailItem.presentation}</p>
-            </div>
-            <button
-              className="grid size-10 place-items-center rounded-full hover:bg-cream-100 text-ink-600 transition"
-                onClick={() => setDetailItem(null)}
-                aria-label="Cerrar panel"
-              >
-                <X className="size-5" />
-              </button>
-            </div>
-
-            <div className="mt-6 space-y-5 flex-1">
-              {/* Bloque 1 — Existencias */}
-              <div>
-                <h4 className="text-[13.5px] font-black uppercase tracking-wider text-ink-700 mb-2">Existencias</h4>
-                <div className="grid grid-cols-3 gap-2.5 rounded-2xl bg-cream-50 p-4 border border-ink-950/6">
-                  <div>
-                    <span className="block text-[13px] font-black uppercase text-ink-600">Stock real</span>
-                    <span className="text-2xl font-black text-ink-950">{detailItem.onHand}</span>
-                  </div>
-                  <div>
-                    <span className="block text-[13px] font-black uppercase text-ink-600">Reservado</span>
-                    <span className="text-2xl font-black text-ink-950">{detailItem.reserved}</span>
-                  </div>
-                  <div>
-                    <span className="block text-[13px] font-black uppercase text-ink-600">Disponible</span>
-                    <span className={cn('text-2xl font-black', detailItem.available <= 0 ? 'text-red-700' : 'text-emerald-700')}>
-                      {detailItem.available}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Bloque 2 — Reposición */}
-              <div>
-                <h4 className="text-[13.5px] font-black uppercase tracking-wider text-ink-700 mb-2">Reposición</h4>
-                <div className="grid grid-cols-2 gap-3 rounded-2xl bg-cream-50 p-4 border border-ink-950/6">
-                  <div>
-                    <span className="block text-[13px] font-black uppercase text-ink-600">En camino</span>
-                    <span className="text-2xl font-black text-ink-950">{detailItem.incoming}</span>
-                  </div>
-                  <div>
-                    <span className="block text-[13px] font-black uppercase text-ink-600">Stock proyectado</span>
-                    <span className="text-2xl font-black text-brand-700">{detailItem.projected}</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Bloque 3 — Cálculo de reposición */}
-              <div className="overflow-hidden rounded-2xl border border-ink-950/8 bg-white p-4">
-                <button
-                  type="button"
-                  onClick={() => setShowCalculation(!showCalculation)}
-                  className="flex w-full items-center justify-between text-[13.5px] font-black uppercase tracking-wider text-ink-800 hover:text-ink-950"
-                >
-                  <span>{showCalculation ? 'Ocultar cálculo de reposición ▴' : 'Ver cálculo de reposición ▾'}</span>
-                  <ChevronDown className={cn('size-4 text-ink-600 transition-transform', showCalculation && 'rotate-180')} />
-                </button>
-
-                {showCalculation ? (
-                  <div className="mt-4 space-y-3 border-t border-ink-950/6 pt-3">
-                    <dl className="grid grid-cols-2 gap-3 text-sm">
-                      <div>
-                        <dt className="font-semibold text-ink-700">Venta promedio/día</dt>
-                        <dd className="text-[15px] font-black text-ink-950">{detailItem.averageDailySales.toFixed(1)} u./día</dd>
-                      </div>
-                      <div>
-                        <dt className="font-semibold text-ink-700">Lead time</dt>
-                        <dd className="text-[15px] font-black text-ink-950">{detailItem.leadTimeDays} días</dd>
-                      </div>
-                      <div>
-                        <dt className="font-semibold text-ink-700">Stock de seguridad</dt>
-                        <dd className="text-[15px] font-black text-ink-950">{detailItem.safetyStock} u.</dd>
-                      </div>
-                      <div>
-                        <dt className="font-semibold text-ink-700">Punto de pedido</dt>
-                        <dd className="text-[15px] font-black text-ink-950">{detailItem.reorderPoint} u.</dd>
-                      </div>
-                      <div>
-                        <dt className="font-semibold text-ink-700">Días de cobertura</dt>
-                        <dd className="text-[15px] font-black text-ink-950">{detailItem.coverageDays ?? '—'} días</dd>
-                      </div>
-                      <div>
-                        <dt className="font-semibold text-ink-700">Compra sugerida</dt>
-                        <dd className="text-[15px] font-black text-brand-700">{detailItem.suggestedPurchase} u.</dd>
-                      </div>
-                    </dl>
-                  </div>
-                ) : null}
-              </div>
-
-              {/* Bloque 4 — Movimientos recientes */}
-              {(() => {
-                const recentMovements = (movementsQuery.data?.items ?? [])
-                  .filter(
-                    (m) =>
-                      m.productId === detailItem.id ||
-                      m.productName.toLowerCase().includes(detailItem.name.toLowerCase())
-                  )
-                  .slice(0, 3);
-
-                return (
-                  <div className="rounded-2xl border border-ink-950/8 bg-white p-4">
-                    <div className="flex items-center justify-between mb-2.5">
-                      <h4 className="text-xs font-black uppercase tracking-wider text-ink-600">Movimientos recientes</h4>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setDetailItem(null);
-                          setActiveTab('movimientos');
-                        }}
-                        className="text-xs font-bold text-brand-600 hover:text-brand-700"
-                      >
-                        Ver historial completo →
-                      </button>
-                    </div>
-
-                    {recentMovements.length === 0 ? (
-                      <p className="text-xs text-ink-600 font-medium py-1">Sin movimientos recientes registrados.</p>
-                    ) : (
-                      <div className="space-y-2">
-                        {recentMovements.map((mov) => (
-                          <div key={mov.id} className="flex items-center justify-between rounded-xl bg-cream-50 p-2.5 text-xs">
-                            <div>
-                              <p className="font-bold text-ink-950">{movementKindLabels[mov.kind] ?? mov.kind}</p>
-                              <p className="text-[11px] text-ink-600">
-                                {new Intl.DateTimeFormat('es-AR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(mov.createdAt))}
-                              </p>
-                            </div>
-                            <span
-                              className={cn(
-                                'font-black',
-                                mov.physicalDelta < 0 || mov.reservedDelta < 0 ? 'text-red-700' : 'text-emerald-700'
-                              )}
-                            >
-                              {mov.physicalDelta !== 0
-                                ? `${mov.physicalDelta > 0 ? '+' : ''}${mov.physicalDelta} fís.`
-                                : `${mov.reservedDelta > 0 ? '+' : ''}${mov.reservedDelta} res.`}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                );
-              })()}
-
-              {/* Bloque 5 — Más acciones */}
-              <div className="rounded-2xl border border-ink-950/8 bg-cream-50/50 p-4">
-                <h4 className="text-xs font-black uppercase tracking-wider text-ink-600 mb-2">Más acciones</h4>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  className="w-full justify-start text-xs font-bold"
-                  onClick={() => {
-                    const target = detailItem;
-                    setDetailItem(null);
-                    setAdjustItem(target);
-                    setDelta('');
-                    setReason('');
-                  }}
-                >
-                  <SlidersHorizontal className="size-4" /> Registrar ajuste manual
-                </Button>
-              </div>
-            </div>
-
-            <div className="mt-8 flex justify-end border-t border-ink-950/8 pt-4">
-              <Button variant="ghost" size="sm" onClick={() => setDetailItem(null)}>
-                Cerrar
-              </Button>
-            </div>
-        </Drawer>
+        <StockDetailDrawer
+          item={(inventoryQuery.data ?? []).find((i) => i.id === detailItem.id) ?? detailItem}
+          onClose={() => setDetailItem(null)}
+          onOpenAdjust={(target) => {
+            setDetailItem(null);
+            setAdjustItem(target);
+            setDelta('');
+            setReason('');
+          }}
+          onNavigateToMovements={() => {
+            setDetailItem(null);
+            setActiveTab('movimientos');
+          }}
+        />
       ) : null}
 
       {/* MODAL: Ajuste Manual */}
