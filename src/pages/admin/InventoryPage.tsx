@@ -30,7 +30,7 @@ import { ErrorState, LoadingState } from '@/components/ui/DataState';
 import { Field, Input, Select, Textarea } from '@/components/ui/Field';
 import { Drawer, Modal } from '@/components/ui/Modal';
 import { StatusChip } from '@/components/ui/StatusChip';
-import { inventoryStatus, sanitizeIntegerInput } from '@/domain/inventory';
+import { inventoryStatus, sanitizeDecimalInput, sanitizeIntegerInput } from '@/domain/inventory';
 import { formatMoney, pesosToCents } from '@/domain/money';
 import { can } from '@/domain/permissions';
 import { formatProducts, formatUnits } from '@/domain/quantity';
@@ -117,18 +117,39 @@ function PurchaseFormModal({ onClose }: { onClose: () => void }) {
                   <option value="">Seleccionar…</option>
                   {productsQuery.data?.map((p) => <option key={p.id} value={p.id}>{p.name} ({p.presentation})</option>)}
                 </Select>
-                <Input type="number" min="1" placeholder="Cant." value={line.quantity || ''} onChange={(event) => {
-                  const updated = [...lines];
-                  const item = updated[index];
-                  if (item) item.quantity = parseInt(event.target.value, 10) || 0;
-                  setLines(updated);
-                }} />
-                <Input type="number" min="0" placeholder="$ Costo" value={line.unitCostPesos || ''} onChange={(event) => {
-                  const updated = [...lines];
-                  const item = updated[index];
-                  if (item) item.unitCostPesos = parseFloat(event.target.value) || 0;
-                  setLines(updated);
-                }} />
+                <Input
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  placeholder="Cant."
+                  value={line.quantity || ''}
+                  onFocus={(e) => e.target.select()}
+                  onChange={(event) => {
+                    const updated = [...lines];
+                    const item = updated[index];
+                    if (item) {
+                      const clean = sanitizeIntegerInput(event.target.value, String(item.quantity || ''));
+                      item.quantity = clean === '' ? 0 : parseInt(clean, 10);
+                    }
+                    setLines(updated);
+                  }}
+                />
+                <Input
+                  type="text"
+                  inputMode="decimal"
+                  placeholder="$ Costo"
+                  value={line.unitCostPesos || ''}
+                  onFocus={(e) => e.target.select()}
+                  onChange={(event) => {
+                    const updated = [...lines];
+                    const item = updated[index];
+                    if (item) {
+                      const clean = sanitizeDecimalInput(event.target.value, String(item.unitCostPesos || ''));
+                      item.unitCostPesos = clean === '' ? 0 : parseFloat(clean) || 0;
+                    }
+                    setLines(updated);
+                  }}
+                />
                 <button type="button" className="grid size-9 place-items-center text-ink-400 hover:text-red-600" onClick={() => setLines(lines.filter((_, i) => i !== index))} disabled={lines.length === 1}><X className="size-4" /></button>
               </div>
             ))}
@@ -1305,11 +1326,13 @@ export default function InventoryPage() {
             <Field label="¿Cuántas unidades hay realmente?" hint={`Actualmente figuran ${adjustItem.onHand} unidades en stock.`}>
               <div className="relative">
                 <Input
-                  type="number"
-                  min="0"
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
                   placeholder={`Ej. ${adjustItem.onHand}`}
                   value={targetStock}
-                  onChange={(e) => setTargetStock(e.target.value)}
+                  onFocus={(e) => e.target.select()}
+                  onChange={(e) => setTargetStock(sanitizeIntegerInput(e.target.value, targetStock))}
                   className="text-lg font-black pr-10"
                 />
                 <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm font-bold text-ink-500 pointer-events-none">

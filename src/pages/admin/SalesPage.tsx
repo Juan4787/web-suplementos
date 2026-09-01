@@ -37,7 +37,7 @@ import { PageHeader } from '@/components/layout/AdminShell';
 import { RoleGate } from '@/components/layout/RoleGate';
 import { Button } from '@/components/ui/Button';
 import { ErrorState, LoadingState } from '@/components/ui/DataState';
-import { Input } from '@/components/ui/Field';
+import { Input, Select } from '@/components/ui/Field';
 import { formatMoney } from '@/domain/money';
 import { formatUnits } from '@/domain/quantity';
 import { cn } from '@/lib/cn';
@@ -195,22 +195,22 @@ export default function SalesPage() {
           description="Revisá cuánto vendiste, cómo evolucionaron las ventas y cuánto te dejó cada producto."
           action={
             <div className="flex flex-wrap items-center gap-3">
-              <div className="flex items-center gap-2 rounded-2xl border border-ink-950/15 bg-white p-2 shadow-sm">
-                <CalendarRange className="ml-2 size-5 text-ink-700" />
-                <select
+              <div className="w-56">
+                <Select
                   value={preset}
                   onChange={(e) => handlePresetChange(e.target.value as DatePreset)}
-                  className="rounded-xl border-0 bg-transparent py-1.5 pl-2 pr-8 text-[14.5px] font-black text-ink-950 focus:outline-none focus:ring-0"
-                >
-                  <option value="this_month">Este mes</option>
-                  <option value="today">Hoy</option>
-                  <option value="this_week">Esta semana</option>
-                  <option value="last_month">Mes anterior</option>
-                  <option value="last_30_days">Últimos 30 días</option>
-                  <option value="last_6_months">Últimos 6 meses</option>
-                  <option value="this_year">Este año</option>
-                  <option value="custom">Personalizado…</option>
-                </select>
+                  size="sm"
+                  options={[
+                    { value: 'this_month', label: 'Este mes' },
+                    { value: 'today', label: 'Hoy' },
+                    { value: 'this_week', label: 'Esta semana' },
+                    { value: 'last_month', label: 'Mes anterior' },
+                    { value: 'last_30_days', label: 'Últimos 30 días' },
+                    { value: 'last_6_months', label: 'Últimos 6 meses' },
+                    { value: 'this_year', label: 'Este año' },
+                    { value: 'custom', label: 'Personalizado…' }
+                  ]}
+                />
               </div>
 
               {preset === 'custom' ? (

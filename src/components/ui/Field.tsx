@@ -35,15 +35,7 @@ export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputE
   }
 );
 
-export const Select = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSelectElement>>(
-  function Select({ className, children, ...props }, ref) {
-    return (
-      <select ref={ref} className={cn(controlClass, 'pr-10', className)} {...props}>
-        {children}
-      </select>
-    );
-  }
-);
+export { Select, type SelectOption, type SelectProps } from './Select';
 
 export const Textarea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<HTMLTextAreaElement>>(
   function Textarea({ className, ...props }, ref) {

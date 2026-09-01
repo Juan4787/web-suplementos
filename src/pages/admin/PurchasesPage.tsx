@@ -10,6 +10,7 @@ import { ErrorState, LoadingState } from '@/components/ui/DataState';
 import { Field, Input, Select, Textarea } from '@/components/ui/Field';
 import { Modal } from '@/components/ui/Modal';
 import { StatusChip } from '@/components/ui/StatusChip';
+import { sanitizeDecimalInput, sanitizeIntegerInput } from '@/domain/inventory';
 import { formatMoney, pesosToCents } from '@/domain/money';
 import { formatProducts, formatUnits } from '@/domain/quantity';
 import { getBusinessApi } from '@/services/business-api';
@@ -48,8 +49,33 @@ function PurchaseForm({ onClose }: { onClose: () => void }) {
         <div className="mt-3 space-y-3">{lines.map((line, index) => (
           <div key={index} className="grid gap-3 rounded-2xl bg-cream-100 p-4 sm:grid-cols-[1fr_6rem_9rem_auto] sm:items-end">
             <Field label="Producto"><Select value={line.productId} onChange={(event) => setLines((current) => current.map((entry, position) => position === index ? { ...entry, productId: event.target.value, unitCostPesos: (productsQuery.data?.find((product) => product.id === event.target.value)?.currentCostCents ?? 0) / 100 } : entry))}><option value="">Elegir…</option>{productsQuery.data?.filter((product) => product.active).map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}</Select></Field>
-            <Field label="Cantidad"><Input type="number" min="1" value={line.quantity} onChange={(event) => setLines((current) => current.map((entry, position) => position === index ? { ...entry, quantity: Number(event.target.value) } : entry))} /></Field>
-            <Field label="Costo c/u"><Input type="number" min="0" step="0.01" value={line.unitCostPesos} onChange={(event) => setLines((current) => current.map((entry, position) => position === index ? { ...entry, unitCostPesos: Number(event.target.value) } : entry))} /></Field>
+            <Field label="Cantidad">
+              <Input
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                placeholder="1"
+                value={line.quantity || ''}
+                onFocus={(e) => e.target.select()}
+                onChange={(event) => {
+                  const clean = sanitizeIntegerInput(event.target.value, String(line.quantity || ''));
+                  setLines((current) => current.map((entry, position) => position === index ? { ...entry, quantity: clean === '' ? 0 : parseInt(clean, 10) } : entry));
+                }}
+              />
+            </Field>
+            <Field label="Costo c/u">
+              <Input
+                type="text"
+                inputMode="decimal"
+                placeholder="0"
+                value={line.unitCostPesos || ''}
+                onFocus={(e) => e.target.select()}
+                onChange={(event) => {
+                  const clean = sanitizeDecimalInput(event.target.value, String(line.unitCostPesos || ''));
+                  setLines((current) => current.map((entry, position) => position === index ? { ...entry, unitCostPesos: clean === '' ? 0 : parseFloat(clean) || 0 } : entry));
+                }}
+              />
+            </Field>
             <button className="grid size-10 place-items-center rounded-full text-red-700 hover:bg-red-50" onClick={() => setLines((current) => current.filter((_, position) => position !== index))} aria-label="Quitar línea"><X className="size-4" /></button>
           </div>
         ))}</div>
