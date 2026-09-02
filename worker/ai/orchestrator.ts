@@ -12,6 +12,7 @@ import {
   ToolDependencyFailure,
   UngroundedAnswerFailure
 } from './errors';
+import { FactLedger } from './fact-ledger';
 import {
   addToolFacts,
   prepareToolResultForModel,
@@ -26,15 +27,22 @@ import type {
   CanonicalAIRequest,
   CanonicalMessage,
   CanonicalAIResponse,
+  ExactEvidence,
   ModelDefinition,
   ModelKey,
   OrchestratorResult,
   ProviderKey,
   RequestContext
 } from './types';
-import { TOOL_DEFINITIONS, validateToolCall, type ValidatedToolCall } from './tools/registry';
+import {
+  toCanonicalToolResult,
+  TOOL_DEFINITIONS,
+  validateToolCall,
+  type ValidatedToolCall
+} from './tools/registry';
 
 const MAX_TOOL_ROUNDS = 2;
+const MAX_MODEL_CALLS = 4;
 const GLOBAL_DEADLINE_MS = 30_000;
 const MAX_TRANSCRIPT_BYTES = 48_000;
 const MAX_CONTEXT_HISTORY_MESSAGES = 4;
@@ -165,8 +173,10 @@ export const orchestrate = async (
   let routeIndex = 0;
   let providerTransitions: 0 | 1 = 0;
   let toolRounds = 0;
+  let modelCalls = 0;
   const usedTools = new Set<string>();
   const factCatalog: FactCatalog = new Map();
+  const factLedger = new FactLedger();
   let deterministicFallbackTemplate: string | null = null;
 
   const currentModel = (): ModelDefinition => MODEL_REGISTRY[route[routeIndex]!];
@@ -250,6 +260,16 @@ export const orchestrate = async (
   };
 
   while (true) {
+    if (modelCalls >= MAX_MODEL_CALLS) {
+      const failure = asProviderOutputFailure(currentModel().provider, new AgentLoopLimitFailure());
+      breaker.recordFailure(failure);
+      if (transitionToFallback(failure)) continue;
+      const rescued = deterministicFallbackResult();
+      if (rescued) return rescued;
+      throw failure;
+    }
+    modelCalls += 1;
+
     let response: CanonicalAIResponse;
     try {
       response = await callCurrentProvider();
@@ -314,6 +334,13 @@ export const orchestrate = async (
       try {
         const rawResult = await dependencies.executeTool(validated, deadline);
         safeResult = sanitizeToolResult(rawResult, validated.call.name);
+        const canonicalResult = toCanonicalToolResult(
+          validated.call.name,
+          rawResult,
+          safeResult,
+          validated.spec.interpretationRules
+        );
+        factLedger.addAll(canonicalResult.facts);
       } catch (error) {
         if (error instanceof ToolDependencyFailure) throw error;
         throw new ToolDependencyFailure('temporary', error);
