@@ -28,6 +28,7 @@ export interface DatePickerProps {
   minDate?: string | undefined;
   maxDate?: string | undefined;
   showShortcuts?: boolean | undefined;
+  align?: 'left' | 'right' | undefined;
 }
 
 export function DatePicker({
@@ -39,7 +40,8 @@ export function DatePicker({
   id,
   minDate,
   maxDate,
-  showShortcuts = true
+  showShortcuts = true,
+  align = 'left'
 }: DatePickerProps) {
   const generatedId = useId();
   const inputId = id || generatedId;
@@ -181,7 +183,9 @@ export function DatePicker({
       {/* Floating Calendar Popover */}
       {isOpen && (
         <div
-          className="absolute left-0 top-full z-50 mt-2 w-full max-w-[340px] rounded-[1.75rem] border border-ink-950/10 bg-white p-4 shadow-[0_20px_50px_rgba(15,23,42,0.18)] transition-all animate-in fade-in zoom-in-95 duration-150 select-none"
+          className={`absolute top-full z-50 mt-2 w-[19.5rem] min-w-[19.5rem] rounded-[1.75rem] border border-ink-950/10 bg-white p-4 shadow-[0_20px_50px_rgba(15,23,42,0.18)] transition-all animate-in fade-in zoom-in-95 duration-150 select-none ${
+            align === 'right' ? 'right-0' : 'left-0'
+          }`}
           style={{ isolation: 'isolate' }}
         >
           {/* Quick Shortcuts */}
@@ -232,7 +236,7 @@ export function DatePicker({
 
           {/* Month & Year Navigation Header */}
           <div className="mb-3 flex items-center justify-between px-1">
-            <h4 className="font-display text-[16px] font-black capitalize text-ink-950">
+            <h4 className="font-display text-[15px] font-black capitalize text-ink-950">
               {format(viewDate, 'MMMM yyyy', { locale: es })}
             </h4>
             <div className="flex items-center gap-1">
@@ -242,7 +246,7 @@ export function DatePicker({
                 className="grid size-8 place-items-center rounded-xl text-ink-600 hover:bg-cream-100 hover:text-ink-950 transition active:scale-90"
                 aria-label="Mes anterior"
               >
-                <ChevronLeft className="size-4.5" />
+                <ChevronLeft className="size-4" />
               </button>
               <button
                 type="button"
@@ -250,15 +254,15 @@ export function DatePicker({
                 className="grid size-8 place-items-center rounded-xl text-ink-600 hover:bg-cream-100 hover:text-ink-950 transition active:scale-90"
                 aria-label="Mes siguiente"
               >
-                <ChevronRight className="size-4.5" />
+                <ChevronRight className="size-4" />
               </button>
             </div>
           </div>
 
           {/* Weekday headers */}
-          <div className="mb-1.5 grid grid-cols-7 text-center">
+          <div className="mb-2 grid grid-cols-7 gap-1 text-center">
             {weekDayLabels.map((dayLabel, idx) => (
-              <span key={idx} className="text-[11px] font-black uppercase tracking-wider text-ink-400">
+              <span key={idx} className="text-[11px] font-black uppercase tracking-wider text-ink-400 py-0.5">
                 {dayLabel}
               </span>
             ))}
@@ -279,7 +283,7 @@ export function DatePicker({
                     e.stopPropagation();
                     handleSelectDate(day);
                   }}
-                  className={`relative grid size-9.5 place-items-center rounded-xl text-[13.5px] font-bold transition ${
+                  className={`relative grid h-9 w-full place-items-center rounded-xl text-[13px] font-bold tabular-nums transition select-none ${
                     isSelected
                       ? 'bg-ink-950 text-white font-black shadow-sm scale-105 z-10'
                       : isCurrentDay

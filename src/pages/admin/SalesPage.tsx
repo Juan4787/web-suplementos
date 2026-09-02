@@ -210,22 +210,26 @@ export default function SalesPage() {
 
               {preset === 'custom' ? (
                 <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 rounded-2xl border border-ink-950/15 bg-white p-2 shadow-sm">
-                  <div className="w-40">
+                  <div className="w-full sm:w-44">
                     <span className="text-[11px] font-black uppercase tracking-wider text-ink-600 block px-1">Desde</span>
                     <DatePicker
                       className="mt-0.5"
                       value={from}
                       onChange={(val) => setFrom(val)}
                       placeholder="Desde…"
+                      showShortcuts={false}
+                      align="left"
                     />
                   </div>
-                  <div className="w-40">
+                  <div className="w-full sm:w-44">
                     <span className="text-[11px] font-black uppercase tracking-wider text-ink-600 block px-1">Hasta</span>
                     <DatePicker
                       className="mt-0.5"
                       value={to}
                       onChange={(val) => setTo(val)}
                       placeholder="Hasta…"
+                      showShortcuts={false}
+                      align="right"
                     />
                   </div>
                 </div>
