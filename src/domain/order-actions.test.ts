@@ -35,51 +35,51 @@ describe('order actions state machine', () => {
     expect(availableOrderActions(order)).toEqual([]);
   });
 
-  it('allows mark_paid, start_preparing, and cancel for a new pending pickup order', () => {
+  it('allows mark_paid, mark_delivered, and cancel for a new pending pickup order', () => {
     const order: Order = { ...baseOrder };
     const actions = availableOrderActions(order);
     expect(actions).toContain('mark_paid');
-    expect(actions).toContain('start_preparing');
+    expect(actions).toContain('mark_delivered');
     expect(actions).toContain('cancel');
-    expect(actions).not.toContain('mark_delivered');
   });
 
-  it('allows mark_ready when order is preparing', () => {
-    const order: Order = { ...baseOrder, preparationState: 'preparing' };
+  it('allows mark_delivered, mark_shipped, mark_paid, and cancel for a new shipping order', () => {
+    const order: Order = {
+      ...baseOrder,
+      deliveryMethod: 'shipping',
+      shippingType: 'express',
+      shippingAddress: 'Av. Corrientes 1234'
+    };
     const actions = availableOrderActions(order);
-    expect(actions).toContain('mark_ready');
-    expect(actions).not.toContain('start_preparing');
+    expect(actions).toContain('mark_paid');
+    expect(actions).toContain('mark_delivered');
+    expect(actions).toContain('mark_shipped');
+    expect(actions).toContain('cancel');
   });
 
-  it('allows mark_delivered when pickup order is ready, paid, and fulfillment pending', () => {
+  it('allows mark_delivered and mark_refunded when order is paid and pending delivery', () => {
     const order: Order = {
       ...baseOrder,
       deliveryMethod: 'pickup',
       paymentState: 'paid',
-      preparationState: 'ready',
       fulfillmentState: 'pending'
     };
     const actions = availableOrderActions(order);
     expect(actions).toContain('mark_delivered');
     expect(actions).toContain('mark_refunded');
-    expect(actions).not.toContain('mark_shipped');
+    expect(actions).not.toContain('mark_paid');
     expect(actions).not.toContain('cancel');
   });
 
-  it('allows mark_shipped when shipping order is ready, paid, and fulfillment pending', () => {
+  it('allows mark_paid when order was delivered first but payment is pending', () => {
     const order: Order = {
       ...baseOrder,
-      deliveryMethod: 'shipping',
-      shippingType: 'express',
-      shippingAddress: 'Av. Corrientes 1234',
-      paymentState: 'paid',
-      preparationState: 'ready',
-      fulfillmentState: 'pending'
+      deliveryMethod: 'pickup',
+      paymentState: 'pending',
+      fulfillmentState: 'delivered'
     };
     const actions = availableOrderActions(order);
-    expect(actions).toContain('mark_shipped');
-    expect(actions).toContain('mark_refunded');
-    expect(actions).not.toContain('mark_delivered');
+    expect(actions).toEqual(['mark_paid']);
   });
 
   it('allows mark_delivered when shipping order has been shipped', () => {
@@ -89,12 +89,20 @@ describe('order actions state machine', () => {
       shippingType: 'express',
       shippingAddress: 'Av. Corrientes 1234',
       paymentState: 'paid',
-      preparationState: 'ready',
       fulfillmentState: 'shipped'
     };
     const actions = availableOrderActions(order);
     expect(actions).toContain('mark_delivered');
     expect(actions).not.toContain('mark_shipped');
+  });
+
+  it('returns no actions when order is both paid and delivered', () => {
+    const order: Order = {
+      ...baseOrder,
+      paymentState: 'paid',
+      fulfillmentState: 'delivered'
+    };
+    expect(availableOrderActions(order)).toEqual([]);
   });
 
   it('allows cancel if order payment was refunded while fulfillment was pending', () => {

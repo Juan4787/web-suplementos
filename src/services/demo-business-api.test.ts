@@ -323,12 +323,11 @@ describe('demoBusinessApi lifecycle and domain guarantees', () => {
       ]
     });
 
-    // Move to paid -> start_preparing -> ready -> deliver
+    // Flujo directo simplificado: cobrado y entregado
     await demoBusinessApi.transitionOrder(order.id, 'mark_paid');
-    await demoBusinessApi.transitionOrder(order.id, 'start_preparing');
-    await demoBusinessApi.transitionOrder(order.id, 'mark_ready');
     const delivered = await demoBusinessApi.transitionOrder(order.id, 'mark_delivered');
     expect(delivered.fulfillmentState).toBe('delivered');
+    expect(delivered.paymentState).toBe('paid');
 
     // Verify onHand decreased and reserved returned to initial
     const afterProducts = await demoBusinessApi.listAdminProducts();

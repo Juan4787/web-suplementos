@@ -18,33 +18,22 @@ export function OrderStatus({ order, compact = false }: { order: Order; compact?
 
   const chips = [];
 
-  // Dimensión operativa prioritaria
+  // 1. Estado de Entrega
   if (order.fulfillmentState === 'delivered') {
     chips.push(<StatusChip key="deliv" label="Entregado" tone="success" />);
   } else if (order.fulfillmentState === 'shipped') {
     chips.push(<StatusChip key="ship" label="Enviado" tone="info" />);
-  } else if (order.preparationState === 'ready') {
-    chips.push(<StatusChip key="ready" label="Listo para entrega" tone="success" />);
-  } else if (order.preparationState === 'preparing') {
-    chips.push(<StatusChip key="prep" label="En preparación" tone="info" />);
   } else {
-    chips.push(<StatusChip key="pending-prep" label="Falta preparar" tone="warning" />);
+    chips.push(<StatusChip key="deliv-pend" label="Falta entregar" tone="warning" />);
   }
 
-  // Dimensión económica visible
-  if (order.paymentState === 'pending') {
-    chips.push(<StatusChip key="pay" label="Pago pendiente" tone="warning" />);
+  // 2. Estado de Cobro
+  if (order.paymentState === 'paid') {
+    chips.push(<StatusChip key="paid" label="Cobrado" tone="success" />);
   } else if (order.paymentState === 'refunded') {
     chips.push(<StatusChip key="ref" label="Reintegrado" tone="neutral" />);
-  } else if (order.paymentState === 'paid') {
-    chips.push(
-      <span
-        key="paid"
-        className="inline-flex items-center gap-1 rounded-full bg-slate-100 border border-slate-300 px-3 py-1 text-[13px] font-black text-slate-800 select-none"
-      >
-        Pagado
-      </span>
-    );
+  } else {
+    chips.push(<StatusChip key="pay" label="Pago pendiente" tone="warning" />);
   }
 
   return <div className="flex flex-wrap items-center gap-2">{chips}</div>;

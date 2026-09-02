@@ -354,7 +354,7 @@ export const demoBusinessApi: BusinessApi = {
           : null,
       orderState: 'confirmed',
       paymentState: 'pending',
-      preparationState: 'pending',
+      preparationState: 'ready',
       fulfillmentState: 'pending',
       subtotalCents,
       shippingFeeCents: input.shippingFeeCents,
@@ -429,6 +429,7 @@ export const demoBusinessApi: BusinessApi = {
     if (action === 'start_preparing') order.preparationState = 'preparing';
     if (action === 'mark_ready') order.preparationState = 'ready';
     if (action === 'mark_shipped' || action === 'mark_delivered') {
+      order.preparationState = 'ready';
       const inventoryLeaves =
         action === 'mark_shipped' ||
         (action === 'mark_delivered' && order.fulfillmentState !== 'shipped');

@@ -1,5 +1,6 @@
-import { Link } from '@tanstack/react-router';
+import { Link, useSearch } from '@tanstack/react-router';
 import {
+  Check,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -26,46 +27,58 @@ import { cn } from '@/lib/cn';
 import { buildWhatsAppUrl } from '@/lib/whatsapp-url';
 import { getBusinessApi } from '@/services/business-api';
 
+function cleanSearchTerm(val: string | null | undefined): string {
+  if (!val) return '';
+  return val.replace(/^["']|["']$/g, '').trim();
+}
+
 function OrderTimeline({ order }: { order: Order }) {
   const steps = [
-    { label: 'Confirmado', done: true },
-    {
-      label: 'En preparación',
-      done:
-        order.preparationState === 'preparing' ||
-        order.preparationState === 'ready' ||
-        order.fulfillmentState === 'shipped' ||
-        order.fulfillmentState === 'delivered'
-    },
-    {
-      label: order.fulfillmentState === 'delivered' ? 'Entregado' : 'Listo / Envío',
-      done:
-        order.preparationState === 'ready' ||
-        order.fulfillmentState === 'shipped' ||
-        order.fulfillmentState === 'delivered'
-    },
     {
       label: 'Cobrado',
+      status: order.paymentState === 'paid' ? 'Cobrado' : 'Pendiente de cobro',
       done: order.paymentState === 'paid'
+    },
+    {
+      label: 'Entregado',
+      status:
+        order.fulfillmentState === 'delivered'
+          ? 'Entregado'
+          : order.fulfillmentState === 'shipped'
+            ? 'Enviado'
+            : 'Pendiente de entrega',
+      done: order.fulfillmentState === 'delivered'
     }
   ];
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3">
+    <div className="flex flex-wrap items-center justify-between gap-4">
       {steps.map((step, idx) => (
-        <div key={step.label} className="flex items-center gap-2 text-[14px] font-bold">
+        <div key={step.label} className="flex items-center gap-2.5 text-[14px] font-bold">
           <span
             className={cn(
-              'grid size-7 place-items-center rounded-full text-xs font-black',
+              'grid size-7 place-items-center rounded-full text-xs font-black transition-colors',
               step.done ? 'bg-emerald-600 text-white shadow-sm' : 'bg-cream-200 text-ink-600'
             )}
           >
             {step.done ? '✓' : idx + 1}
           </span>
-          <span className={step.done ? 'text-ink-950 font-black' : 'text-ink-600'}>
-            {step.label}
-          </span>
-          {idx < steps.length - 1 ? <span className="text-ink-300 mx-2 hidden sm:inline">→</span> : null}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:gap-1.5">
+            <span className={step.done ? 'text-ink-950 font-black' : 'text-ink-700 font-bold'}>
+              {step.label}
+            </span>
+            <span
+              className={cn(
+                'text-xs font-semibold',
+                step.done ? 'text-emerald-700' : 'text-ink-600'
+              )}
+            >
+              · {step.status}
+            </span>
+          </div>
+          {idx < steps.length - 1 ? (
+            <span className="text-ink-300 mx-3 hidden sm:inline">→</span>
+          ) : null}
         </div>
       ))}
     </div>
@@ -76,13 +89,21 @@ export default function OrdersPage() {
   const queryClient = useQueryClient();
   const [page, setPage] = useState(1);
   const [filter, setFilter] = useState<'pending' | 'completed' | 'all'>('pending');
+  const routeSearchParams = useSearch({ strict: false }) as { search?: string } | undefined;
   const [search, setSearch] = useState(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
-      return params.get('search') ?? '';
+      return cleanSearchTerm(params.get('search'));
     }
     return '';
   });
+
+  useEffect(() => {
+    if (routeSearchParams?.search) {
+      const cleaned = cleanSearchTerm(routeSearchParams.search);
+      if (cleaned) setSearch(cleaned);
+    }
+  }, [routeSearchParams?.search]);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [mutationError, setMutationError] = useState<Error | null>(null);
   const [showSecondaryActions, setShowSecondaryActions] = useState<Record<string, boolean>>({});
@@ -122,9 +143,9 @@ export default function OrdersPage() {
 
   const filteredOrders = useMemo(() => {
     return items.filter((order) => {
-      const term = search.toLowerCase();
+      const term = cleanSearchTerm(search).toLowerCase();
       const matchesSearch =
-        !search ||
+        !term ||
         order.customerName.toLowerCase().includes(term) ||
         (order.customerPhone ?? '').includes(term) ||
         order.number.toString().includes(term);
@@ -207,7 +228,7 @@ export default function OrdersPage() {
             type="search"
             placeholder="Buscar pedido, cliente, tel…"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => setSearch(cleanSearchTerm(e.target.value))}
             className="h-11 w-full rounded-full border border-ink-950/15 bg-white pl-10 pr-4 text-[14.5px] font-semibold text-ink-950 placeholder:text-ink-600/70 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
           />
         </div>
@@ -371,78 +392,110 @@ export default function OrdersPage() {
                           </div>
                         </div>
 
-                        {/* Botones de acción contextuales */}
-                        <div className="flex flex-col justify-center gap-2.5 rounded-2xl bg-white p-6 border border-ink-950/8 shadow-sm h-fit">
+                        {/* Botones de acción contextuales simplificados: Cobrado y Entregado */}
+                        <div className="flex flex-col justify-center gap-3 rounded-2xl bg-white p-6 border border-ink-950/8 shadow-sm h-fit">
                           <p className="text-[13.5px] font-black uppercase tracking-wider text-ink-700 mb-1">
                             Acción operativa
                           </p>
 
-                          {actions.length === 0 ? (
-                            <p className="text-[14px] font-semibold text-ink-700 py-2">
-                              No hay acciones pendientes para este pedido.
+                          {/* 1. Paso Cobrado */}
+                          {order.paymentState === 'paid' ? (
+                            <div className="flex items-center gap-2 rounded-xl bg-emerald-50 border border-emerald-200 px-3.5 py-2.5 text-[14px] font-black text-emerald-800">
+                              <Check className="size-4 shrink-0 text-emerald-600" />
+                              <span>Cobrado</span>
+                            </div>
+                          ) : actions.includes('mark_paid') ? (
+                            <Button
+                              variant="dark"
+                              size="md"
+                              className="w-full"
+                              loading={
+                                transition.isPending &&
+                                transition.variables?.action === 'mark_paid'
+                              }
+                              onClick={() =>
+                                transition.mutate({ orderId: order.id, action: 'mark_paid' })
+                              }
+                            >
+                              Marcar como cobrado
+                            </Button>
+                          ) : null}
+
+                          {/* 2. Paso Entregado */}
+                          {order.fulfillmentState === 'delivered' ? (
+                            <div className="flex items-center gap-2 rounded-xl bg-emerald-50 border border-emerald-200 px-3.5 py-2.5 text-[14px] font-black text-emerald-800">
+                              <Check className="size-4 shrink-0 text-emerald-600" />
+                              <span>Entregado</span>
+                            </div>
+                          ) : actions.includes('mark_delivered') ? (
+                            <Button
+                              variant={order.paymentState === 'paid' ? 'dark' : 'secondary'}
+                              size="md"
+                              className="w-full"
+                              loading={
+                                transition.isPending &&
+                                transition.variables?.action === 'mark_delivered'
+                              }
+                              onClick={() =>
+                                transition.mutate({ orderId: order.id, action: 'mark_delivered' })
+                              }
+                            >
+                              Marcar como entregado
+                            </Button>
+                          ) : null}
+
+                          {/* Estado si ya fue completado */}
+                          {order.paymentState === 'paid' && order.fulfillmentState === 'delivered' ? (
+                            <p className="text-[13.5px] font-semibold text-emerald-700 py-1 text-center">
+                              Pedido completado y stock actualizado.
                             </p>
-                          ) : (
-                            <>
-                              {primaryAction ? (
-                                <Button
-                                  variant="dark"
-                                  size="md"
-                                  loading={
-                                    transition.isPending &&
-                                    transition.variables?.action === primaryAction
-                                  }
-                                  onClick={() =>
-                                    transition.mutate({ orderId: order.id, action: primaryAction })
-                                  }
-                                >
-                                  {ORDER_ACTION_LABELS[primaryAction]}
-                                </Button>
-                              ) : null}
+                          ) : null}
 
-                              {secondaryActions.length > 0 ? (
-                                <div>
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      setShowSecondaryActions((prev) => ({
-                                        ...prev,
-                                        [order.id]: !prev[order.id]
-                                      }))
-                                    }
-                                    className="mt-2 flex min-h-10 items-center justify-center gap-1 text-[14px] font-bold text-ink-700 hover:text-ink-950 w-full py-1.5"
-                                  >
-                                    <MoreHorizontal className="size-4" />
-                                    {showMore ? 'Menos opciones' : 'Más opciones'}
-                                  </button>
+                          {/* Acciones secundarias (cancelar, envío intermedio, reintegro) */}
+                          {actions.filter((a) => a !== 'mark_paid' && a !== 'mark_delivered').length > 0 ? (
+                            <div>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setShowSecondaryActions((prev) => ({
+                                    ...prev,
+                                    [order.id]: !prev[order.id]
+                                  }))
+                                }
+                                className="mt-1 flex min-h-10 items-center justify-center gap-1 text-[13.5px] font-bold text-ink-700 hover:text-ink-950 w-full py-1"
+                              >
+                                <MoreHorizontal className="size-4" />
+                                {showMore ? 'Menos opciones' : 'Más opciones'}
+                              </button>
 
-                                  {showMore ? (
-                                    <div className="mt-2 space-y-2 border-t border-ink-950/8 pt-2">
-                                      {secondaryActions.map((secAction) => (
-                                        <Button
-                                          key={secAction}
-                                          variant="ghost"
-                                          size="sm"
-                                          className="w-full text-[14px] font-bold text-ink-800 hover:text-red-700"
-                                          loading={
-                                            transition.isPending &&
-                                            transition.variables?.action === secAction
-                                          }
-                                          onClick={() =>
-                                            transition.mutate({
-                                              orderId: order.id,
-                                              action: secAction
-                                            })
-                                          }
-                                        >
-                                          {ORDER_ACTION_LABELS[secAction]}
-                                        </Button>
-                                      ))}
-                                    </div>
-                                  ) : null}
+                              {showMore ? (
+                                <div className="mt-2 space-y-2 border-t border-ink-950/8 pt-2">
+                                  {actions
+                                    .filter((a) => a !== 'mark_paid' && a !== 'mark_delivered')
+                                    .map((secAction) => (
+                                      <Button
+                                        key={secAction}
+                                        variant="ghost"
+                                        size="sm"
+                                        className="w-full text-[13.5px] font-bold text-ink-800 hover:text-red-700"
+                                        loading={
+                                          transition.isPending &&
+                                          transition.variables?.action === secAction
+                                        }
+                                        onClick={() =>
+                                          transition.mutate({
+                                            orderId: order.id,
+                                            action: secAction
+                                          })
+                                        }
+                                      >
+                                        {ORDER_ACTION_LABELS[secAction]}
+                                      </Button>
+                                    ))}
                                 </div>
                               ) : null}
-                            </>
-                          )}
+                            </div>
+                          ) : null}
                         </div>
                       </div>
                     </div>
