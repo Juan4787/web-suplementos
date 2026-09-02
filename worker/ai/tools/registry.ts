@@ -60,14 +60,39 @@ const topSellingProductsSchema = z
   .strict()
   .refine(({ from, to }) => boundedPeriod(from, to));
 
-type ToolSpec = {
+import type { BusinessFact } from '../fact-ledger';
+import { collectFactsFromToolResult } from '../fact-ledger';
+import { formatFact, humanizeFactId, type SafeToolResult } from '../facts';
+
+export interface ToolResult<T = unknown> {
+  data: T;
+  facts: BusinessFact[];
+  interpretationRules?: string[];
+}
+
+export type ToolSpec<Input = Record<string, unknown>, Output = unknown> = {
   definition: CanonicalTool;
-  schema: z.ZodType<Record<string, unknown>>;
+  schema: z.ZodType<Input>;
   rpcName: string;
-  toRpcArgs: (args: Record<string, unknown>) => Record<string, unknown>;
+  toRpcArgs: (args: Input) => Record<string, unknown>;
+  interpretationRules?: string[];
 };
 
-export const TOOL_REGISTRY: Record<string, ToolSpec> = {
+export const toCanonicalToolResult = <T = unknown>(
+  toolName: string,
+  rawResult: unknown,
+  safeResult: SafeToolResult,
+  interpretationRules?: string[]
+): ToolResult<T> => ({
+  data: rawResult as T,
+  facts: collectFactsFromToolResult(toolName, safeResult, {
+    humanizeFactId,
+    formatFact
+  }),
+  ...(interpretationRules && interpretationRules.length > 0 ? { interpretationRules } : {})
+});
+
+export const TOOL_REGISTRY: Record<string, ToolSpec<any, any>> = {
   get_sales_summary: {
     definition: {
       name: 'get_sales_summary',
@@ -84,7 +109,11 @@ export const TOOL_REGISTRY: Record<string, ToolSpec> = {
     },
     schema: salesSummarySchema,
     rpcName: 'ai_get_sales_summary',
-    toRpcArgs: (args) => ({ p_from: args.from, p_to: args.to })
+    toRpcArgs: (args) => ({ p_from: args.from, p_to: args.to }),
+    interpretationRules: [
+      'Ventas, margen y costos corresponden únicamente a pedidos cobrados.',
+      'El margen estimado ya deduce los costos unitarios registrados.'
+    ]
   },
   compare_sales_periods: {
     definition: {
@@ -109,7 +138,11 @@ export const TOOL_REGISTRY: Record<string, ToolSpec> = {
       p_first_to: args.firstTo,
       p_second_from: args.secondFrom,
       p_second_to: args.secondTo
-    })
+    }),
+    interpretationRules: [
+      'Las facts change.* representan el segundo período menos el primero.',
+      'Los importes y porcentajes de variación ya vienen calculados con signo exacto.'
+    ]
   },
   get_product_catalog: {
     definition: {
@@ -123,7 +156,11 @@ export const TOOL_REGISTRY: Record<string, ToolSpec> = {
     },
     schema: productCatalogSchema,
     rpcName: 'ai_get_product_catalog',
-    toRpcArgs: () => ({})
+    toRpcArgs: () => ({}),
+    interpretationRules: [
+      'catalog.price_rank: la posición 1 corresponde al producto de mayor precio.',
+      'catalog.price_cents es el precio de lista exacto en centavos de ARS.'
+    ]
   },
   get_inventory_status: {
     definition: {
@@ -140,7 +177,11 @@ export const TOOL_REGISTRY: Record<string, ToolSpec> = {
     },
     schema: inventorySchema,
     rpcName: 'ai_get_inventory_status',
-    toRpcArgs: (args) => ({ p_only_attention: args.onlyAttention, p_limit: args.limit })
+    toRpcArgs: (args) => ({ p_only_attention: args.onlyAttention, p_limit: args.limit }),
+    interpretationRules: [
+      'disponible = on_hand - reserved.',
+      'compra sugerida considera stock de seguridad y punto de pedido.'
+    ]
   },
   get_product_performance: {
     definition: {
@@ -165,7 +206,11 @@ export const TOOL_REGISTRY: Record<string, ToolSpec> = {
       p_to: args.to,
       p_query: args.query ?? null,
       p_limit: args.limit
-    })
+    }),
+    interpretationRules: [
+      'Devuelve rendimiento únicamente para pedidos cobrados en el período.',
+      'Si un producto no tuvo ventas en ese lapso, units y revenue serán 0.'
+    ]
   },
   get_top_selling_products: {
     definition: {
@@ -188,7 +233,11 @@ export const TOOL_REGISTRY: Record<string, ToolSpec> = {
       p_from: args.from,
       p_to: args.to,
       p_limit: args.limit
-    })
+    }),
+    interpretationRules: [
+      'El ranking ordena de mayor a menor según unidades cobradas.',
+      'Si ningún producto tuvo ventas en el rango, la lista estará vacía.'
+    ]
   }
 };
 
