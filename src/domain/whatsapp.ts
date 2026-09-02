@@ -25,7 +25,16 @@ const fnv1a = (value: string): string => {
   return (hash >>> 0).toString(16).padStart(8, '0').toUpperCase();
 };
 
-const normalizeProtocolText = (value: string): string => value.replace(/\r\n/g, '\n').trim();
+const normalizeProtocolText = (value: string): string =>
+  value
+    .trim()
+    .replace(/^["'“`]+|["'”`]+$/g, '')
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .replace(/^[ \t]*[•\*\–\—][ \t]+\[/gm, '- [')
+    .replace(/\$[\u00a0\u202f\u200b\s]+(\d)/g, '$\u00a0$1')
+    .replace(/[ \t]+$/gm, '')
+    .trim();
 
 const productLine = (line: CartLine): string =>
   `- [${line.sku}] ${line.name} | ${line.presentation} | ${line.quantity} x ${formatMoney(line.unitPriceCents)} = ${formatMoney(line.unitPriceCents * line.quantity)}`;
@@ -138,7 +147,7 @@ export const buildWhatsAppProtocol = (
 };
 
 const productPattern =
-  /^- \[([^\]]+)] (.+?) \| (.+?) \| (\d+) x \$\s?([\d.]+(?:,\d{1,2})?) = \$\s?([\d.]+(?:,\d{1,2})?)$/;
+  /^[ \t]*[-•\*][ \t]+\[([^\]]+)\][ \t]+(.+?)[ \t]+\|[ \t]+(.+?)[ \t]+\|[ \t]+(\d+)[ \t]+x[ \t]+\$[\u00a0\s]?([\d.]+(?:,\d{1,2})?)[ \t]+=[ \t]+\$[\u00a0\s]?([\d.]+(?:,\d{1,2})?)$/;
 
 const parseArs = (value: string): number => {
   const currencyValue = value.trim().replace(/^\$\s*/u, '').replace(/\s/gu, '');

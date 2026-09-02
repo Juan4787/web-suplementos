@@ -159,4 +159,97 @@ describe('WhatsApp order protocol', () => {
     const parsed = parseWhatsAppProtocol(protocol.message);
     expect(parsed.protocolOrderId).toBe(existingId);
   });
+
+  it('parses real pasted WhatsApp message with bullets or asterisks and quotes', () => {
+    const userMessage = `"*PEDIDO IMPULSO*
+
+*Código de pedido*
+95abcf6b-0560-43a0-9862-e8318be10672
+
+*Nombre*
+Juan Pablo
+
+*Productos*
+* [CREATINA] CREATINA | 300 GRS | 1 x $ 30.000 = $ 30.000
+* [OMEGA_3] OMEGA 3 | 120 CAPS | 1 x $ 102.000 = $ 102.000
+
+*Subtotal*
+$ 132.000
+
+*Medio de pago*
+Transferencia
+
+*Entrega*
+Retiro
+
+*Envío*
+$ 0
+
+*Total*
+$ 132.000
+
+*Código de control*
+DCE085E3"`;
+
+    const parsed = parseWhatsAppProtocol(userMessage);
+    expect(parsed.customerName).toBe('Juan Pablo');
+    expect(parsed.protocolOrderId).toBe('95abcf6b-0560-43a0-9862-e8318be10672');
+    expect(parsed.lines).toHaveLength(2);
+    expect(parsed.lines[0]).toEqual({
+      sku: 'CREATINA',
+      name: 'CREATINA',
+      presentation: '300 GRS',
+      quantity: 1,
+      unitPriceCents: 3_000_000,
+      lineTotalCents: 3_000_000
+    });
+    expect(parsed.lines[1]).toEqual({
+      sku: 'OMEGA_3',
+      name: 'OMEGA 3',
+      presentation: '120 CAPS',
+      quantity: 1,
+      unitPriceCents: 10_200_000,
+      lineTotalCents: 10_200_000
+    });
+    expect(parsed.quotedSubtotalCents).toBe(13_200_000);
+    expect(parsed.quotedTotalCents).toBe(13_200_000);
+    expect(parsed.deliveryMethod).toBe('pickup');
+    expect(parsed.paymentMethod).toBe('transfer');
+  });
+
+  it('parses WhatsApp messages when copied with standard spaces instead of NBSP', () => {
+    const standardSpaceMessage = `*PEDIDO IMPULSO*
+
+*Código de pedido*
+95abcf6b-0560-43a0-9862-e8318be10672
+
+*Nombre*
+Juan Pablo
+
+*Productos*
+• [CREATINA] CREATINA | 300 GRS | 1 x $ 30.000 = $ 30.000
+• [OMEGA_3] OMEGA 3 | 120 CAPS | 1 x $ 102.000 = $ 102.000
+
+*Subtotal*
+$ 132.000
+
+*Medio de pago*
+Transferencia
+
+*Entrega*
+Retiro
+
+*Envío*
+$ 0
+
+*Total*
+$ 132.000
+
+*Código de control*
+DCE085E3`;
+
+    const parsed = parseWhatsAppProtocol(standardSpaceMessage);
+    expect(parsed.customerName).toBe('Juan Pablo');
+    expect(parsed.lines).toHaveLength(2);
+  });
 });
