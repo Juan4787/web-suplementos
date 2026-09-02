@@ -24,7 +24,8 @@ describe('AI tool registry', () => {
     expect(validated.args).toEqual({ onlyAttention: false, limit: 12 });
     expect(validated.spec.toRpcArgs(validated.args)).toEqual({
       p_only_attention: false,
-      p_limit: 12
+      p_limit: 12,
+      p_query: null
     });
   });
 

@@ -36,8 +36,9 @@ const productCatalogSchema = z.object({}).strict();
 
 const inventorySchema = z
   .object({
+    query: z.string().trim().min(1).max(80).optional(),
     onlyAttention: z.boolean().default(false),
-    limit: z.number().int().min(1).max(20).default(12)
+    limit: z.number().int().min(1).max(50).default(12)
   })
   .strict();
 
@@ -165,19 +166,24 @@ export const TOOL_REGISTRY: Record<string, ToolSpec<any, any>> = {
   get_inventory_status: {
     definition: {
       name: 'get_inventory_status',
-      description: 'Devuelve inventario agregado y una lista acotada de productos, incluyendo disponible, reservado, en camino y compra sugerida. Usá esta herramienta para stock, reposición, faltantes, alertas o preguntas sobre qué comprar/priorizar; para listar el catálogo usá get_product_catalog.',
+      description: 'Devuelve stock disponible, físico, reservado, en camino y compra sugerida. Si la persona pregunta por un producto específico (ej: creatina, omega, glutamina), pasá ese término en query para obtener su stock exacto. Para preguntas generales sobre qué comprar, qué falta o alertas, dejá query vacío.',
       parameters: {
         type: 'object',
         properties: {
-          onlyAttention: { type: 'boolean', description: 'false incluye stock sin alertas; true devuelve solo productos que requieren atención.' },
-          limit: { type: 'integer', minimum: 1, maximum: 20 }
+          query: { type: 'string', minLength: 1, maxLength: 80, description: 'Opcional. Nombre, presentación o SKU del producto para consultar su stock específico (ej: "creatina", "omega 3", "glutamina"). Devuelve todas las presentaciones coincidentes.' },
+          onlyAttention: { type: 'boolean', description: 'false incluye stock normal y con alertas; true devuelve solo productos que requieren atención.' },
+          limit: { type: 'integer', minimum: 1, maximum: 50 }
         },
         additionalProperties: false
       }
     },
     schema: inventorySchema,
     rpcName: 'ai_get_inventory_status',
-    toRpcArgs: (args) => ({ p_only_attention: args.onlyAttention, p_limit: args.limit }),
+    toRpcArgs: (args) => ({
+      p_only_attention: args.onlyAttention ?? (args.query ? false : true),
+      p_limit: args.limit ?? 50,
+      p_query: args.query ?? null
+    }),
     interpretationRules: [
       'disponible = on_hand - reserved.',
       'compra sugerida considera stock de seguridad y punto de pedido.'

@@ -19,9 +19,9 @@ const WRITE_INTENT_PATTERN =
 // read tool. It is intentionally based on broad business concepts, not on
 // answer templates or individual colloquialisms.
 const BUSINESS_DATA_PATTERN =
-  /\b(?:stock|inventario|reposici[oó]n|rotaci[oó]n|precio|precios|caro|costos?|m[aá]rgenes?|facturaci[oó]n|pedidos?|ventas?|vendido|vendi[oó]|producto(?:s)?|cat[aá]logo|compras?|cu[aá]nto|sale|cuesta|vale|valor)\b/u;
+  /\b(?:stock|inventario|reposici[oó]n|rotaci[oó]n|precio|precios|caro|costos?|m[aá]rgenes?|facturaci[oó]n|pedidos?|ventas?|vendido|vendi[oó]|producto(?:s)?|cat[aá]logo|compras?|cu[aá]nt[oa]s?|sale|cuesta|vale|valor|creatina|glutamina|omega|magnesio|prote[ií]na|col[aá]geno)\b/u;
 const BUSINESS_CONTEXT_PATTERN =
-  /\b(?:mi|mis|tengo|hay|queda|quedan|disponible|disponibles|deber[ií]a|prioriz|compar|per[ií]odo|mes|semana|a[nñ]o|fecha|rindi[oó]|rendimiento|m[aá]s|cu[aá]l|qu[eé]|cu[aá]nt)\b/u;
+  /\b(?:mi|mis|tengo|hay|queda|quedan|disponible|disponibles|deber[ií]a|prioriz|compar|per[ií]odo|mes|semana|a[nñ]o|fecha|rindi[oó]|rendimiento|m[aá]s|cu[aá]l|qu[eé]|cu[aá]nt[oa]s?)\b/u;
 const GENERAL_ADVICE_PATTERN =
   /\b(?:t[eé]cnica(?:s)?|estrategia(?:s)?|consejo(?:s)?|idea(?:s)?|mejorar|vender m[aá]s|venta consultiva|promoci[oó]n|opina(?:s)?|opini[oó]n|recomendaci[oó]n|recomenda(?:s)?|suelen funcionar)\b/u;
 const SPECIFIC_DATA_CUE_PATTERN =

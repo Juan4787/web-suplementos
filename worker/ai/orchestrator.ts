@@ -68,7 +68,7 @@ const toolsForMessage = (message: string): typeof TOOL_DEFINITIONS => {
     add('get_product_catalog');
   }
   if (
-    /\b(?:stock|inventario|reponer|reposicion|comprar|compra|priorizar|rotacion|cobertura|disponible|faltante|faltan)\b/u.test(
+    /\b(?:stock|inventario|reponer|reposicion|comprar|compra|priorizar|rotacion|cobertura|disponible|faltante|faltan|cuant[oa]s?|creatina|glutamina|omega|magnesio|colageno|proteina)\b/u.test(
       text
     )
   ) {
