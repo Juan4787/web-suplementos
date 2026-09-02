@@ -24,6 +24,8 @@ export type SafeToolResult = {
 export type FactCatalogEntry = ExactEvidence & { rawValue: PrimitiveFact };
 export type FactCatalog = Map<string, FactCatalogEntry>;
 
+export * from './fact-ledger';
+
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
@@ -254,7 +256,7 @@ const FACT_LABELS: Record<string, string> = {
   'period.second.to_year': 'Año final del segundo período'
 };
 
-const humanizeFactId = (id: string): string => {
+export const humanizeFactId = (id: string): string => {
   const exact = FACT_LABELS[id];
   if (exact) return exact;
   if (id.startsWith('first.')) return `Primer período: ${humanizeFactId(id.slice(6))}`;
@@ -263,7 +265,7 @@ const humanizeFactId = (id: string): string => {
   return id.replaceAll('.', ' ').replaceAll('_', ' ');
 };
 
-const formatFact = (id: string, value: PrimitiveFact): string => {
+export const formatFact = (id: string, value: PrimitiveFact): string => {
   if (value === null) return 'Sin dato';
   if (typeof value === 'boolean') return value ? 'Sí' : 'No';
   if (typeof value === 'string') {
