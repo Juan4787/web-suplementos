@@ -1,11 +1,26 @@
 import { z } from 'zod';
 
-const historyMessageSchema = z
+const historyUserMessageSchema = z
   .object({
-    role: z.enum(['user', 'assistant']),
+    role: z.literal('user'),
     content: z.string().trim().min(1).max(1200)
   })
   .strict();
+
+// Assistant answers can be longer than a user's question. They are still
+// untrusted context, so they remain bounded and can never introduce a new
+// role or privileged field.
+const historyAssistantMessageSchema = z
+  .object({
+    role: z.literal('assistant'),
+    content: z.string().trim().min(1).max(4000)
+  })
+  .strict();
+
+const historyMessageSchema = z.discriminatedUnion('role', [
+  historyUserMessageSchema,
+  historyAssistantMessageSchema
+]);
 
 const aiRequestSchema = z
   .object({
@@ -17,7 +32,7 @@ const aiRequestSchema = z
 
 export type ValidatedAIRequest = z.infer<typeof aiRequestSchema>;
 
-const MAX_REQUEST_BYTES = 16_000;
+const MAX_REQUEST_BYTES = 24_000;
 
 const readLimitedBody = async (request: Request): Promise<string> => {
   const declaredLength = Number.parseInt(request.headers.get('Content-Length') ?? '', 10);

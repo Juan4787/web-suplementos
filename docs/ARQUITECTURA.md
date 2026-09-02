@@ -74,7 +74,7 @@ Los secretos remotos requeridos son `GROQ_API_KEY`, `SUPABASE_URL` y `SUPABASE_A
 - No se activa Realtime global.
 - Imágenes: dimensionado y compresión WebP en cliente antes de Storage; `loading=lazy` fuera del primer viewport.
 - XLSX: dataset autorizado, revisión inicial/final, Web Worker y dependencia lazy.
-- IA: entrada e historial acotados, cuatro herramientas agregadas, resultados compactos, deadline global de 30 segundos y máximo dos rondas.
+- IA: entrada e historial acotados, seis herramientas read-only agregadas, resultados compactos, deadline global de 30 segundos y máximo dos rondas.
 
 ## Adaptadores de datos
 

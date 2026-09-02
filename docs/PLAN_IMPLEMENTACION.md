@@ -71,7 +71,7 @@ Puerta: conteos, relaciones, Unicode, fechas, importes y cero fórmulas.
 - [x] Fijar guard de despliegue a la cuenta, perfil y Worker exclusivos de Impulso.
 - [x] Elegir Groq/GPT-OSS + Workers AI/GLM 4.7 Flash y failover propio sticky, sin AI Gateway crítico.
 - [x] Implementar reclamo atómico, auditoría agregada y herramientas RPC cerradas y solo lectura.
-- [x] Limitar cuota a 4/minuto y 30/día; tools a períodos y resultados acotados.
+- [x] Limitar cuota a 20/minuto y 100/día; tools a períodos y resultados acotados.
 - [x] Endpoint Worker autenticado y restringido a dueña mediante JWT reenviado.
 - [x] Implementar adapters, registry versionado, deadline global y circuit breaker.
 - [x] Limitar historial, bytes, dos rondas de tools y una transición de proveedor.

@@ -5,6 +5,7 @@ import {
   requiresBusinessEvidence
 } from './deterministic-answer';
 import {
+  AgentDeadlineFailure,
   AgentLoopLimitFailure,
   InvalidToolCallFailure,
   ProviderFailure,
@@ -36,6 +37,53 @@ import { TOOL_DEFINITIONS, validateToolCall, type ValidatedToolCall } from './to
 const MAX_TOOL_ROUNDS = 2;
 const GLOBAL_DEADLINE_MS = 30_000;
 const MAX_TRANSCRIPT_BYTES = 48_000;
+const MAX_CONTEXT_HISTORY_MESSAGES = 4;
+
+const normalizeIntentText = (value: string): string =>
+  value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('es-AR');
+
+/**
+ * Keep the model's tool choice open for unfamiliar wording, but avoid sending
+ * every schema for the common, unambiguous cases. This is a transport-size
+ * optimization only: the model still writes the answer and the server still
+ * validates the selected call against the authoritative registry.
+ */
+const toolsForMessage = (message: string): typeof TOOL_DEFINITIONS => {
+  const text = normalizeIntentText(message);
+  const selected = new Set<string>();
+  const add = (...names: string[]) => names.forEach((name) => selected.add(name));
+
+  if (
+    /\b(?:precio|precios|caro|barato|catalogo|sale|cuesta|vale|valor|presentacion)\b/u.test(text) ||
+    /\bproductos?\s+(?:tengo|hay|existen|ofrezco|vendo)\b/u.test(text)
+  ) {
+    add('get_product_catalog');
+  }
+  if (
+    /\b(?:stock|inventario|reponer|reposicion|comprar|compra|priorizar|rotacion|cobertura|disponible|faltante|faltan)\b/u.test(
+      text
+    )
+  ) {
+    add('get_inventory_status');
+  }
+  if (/\b(?:compara|comparar|comparame|versus|contra|periodo|mes anterior|semana anterior)\b/u.test(text)) {
+    add('compare_sales_periods');
+  }
+  if (/\b(?:vendio mas|mas vendido|ranking|top)\b/u.test(text)) {
+    add('get_top_selling_products');
+  }
+  if (/\b(?:rindio|rendimiento|desempeno|performance|unidades?)\b/u.test(text)) {
+    add('get_product_performance');
+  }
+  if (/\b(?:ventas?|facturacion|margen|costos?|impuestos?|pedidos?|ticket|ganancia)\b/u.test(text)) {
+    add('get_sales_summary');
+  }
+
+  // An unfamiliar business formulation keeps the full registry available;
+  // recognized topics get only the relevant schemas and descriptions.
+  if (selected.size === 0) return TOOL_DEFINITIONS;
+  return TOOL_DEFINITIONS.filter((tool) => selected.has(tool.name));
+};
 
 export type UntrustedHistoryMessage = { role: 'user' | 'assistant'; content: string };
 
@@ -65,11 +113,19 @@ const assertTranscriptSize = (messages: CanonicalMessage[]): void => {
   if (size > MAX_TRANSCRIPT_BYTES) throw new ToolDependencyFailure('temporary');
 };
 
-const createCanonicalRequest = (messages: CanonicalMessage[]): CanonicalAIRequest => ({
+const createCanonicalRequest = (
+  model: ModelDefinition,
+  messages: CanonicalMessage[],
+  toolDefinitions: typeof TOOL_DEFINITIONS | undefined
+): CanonicalAIRequest => ({
   messages,
-  tools: TOOL_DEFINITIONS,
+  // General conversation does not need the business tool catalog. Omitting it
+  // saves a large input-token budget and prevents a simple greeting from
+  // consuming the same quota as a data analysis. Once a tool is used, the
+  // definitions remain available for a possible second read in the loop.
+  tools: toolDefinitions ?? [],
   reasoning: 'low',
-  maxCompletionTokens: 700
+  maxCompletionTokens: model.maxCompletionTokens
 });
 
 const asProviderOutputFailure = (
@@ -97,7 +153,7 @@ export const orchestrate = async (
 
   const messages: CanonicalMessage[] = [
     buildSystemMessage(input.context),
-    ...input.history.map((message): CanonicalMessage =>
+    ...input.history.slice(-MAX_CONTEXT_HISTORY_MESSAGES).map((message): CanonicalMessage =>
       message.role === 'assistant'
         ? { role: 'assistant', content: message.content, toolCalls: [] }
         : { role: 'user', content: message.content }
@@ -111,8 +167,30 @@ export const orchestrate = async (
   let toolRounds = 0;
   const usedTools = new Set<string>();
   const factCatalog: FactCatalog = new Map();
+  let deterministicFallbackTemplate: string | null = null;
 
   const currentModel = (): ModelDefinition => MODEL_REGISTRY[route[routeIndex]!];
+
+  const shouldExposeTools = (): boolean =>
+    toolRounds > 0 || requiresBusinessEvidence(input.message);
+  const selectedTools = toolsForMessage(input.message);
+
+  const deterministicFallbackResult = (): OrchestratorResult | null => {
+    if (!deterministicFallbackTemplate) return null;
+    const grounded = renderGroundedAnswer(deterministicFallbackTemplate, factCatalog);
+    const model = currentModel();
+    return {
+      answer: grounded.answer,
+      modelKey: model.key,
+      modelLabel: model.label,
+      provider: model.provider,
+      providerLabel: model.providerLabel,
+      usedTools: [...usedTools],
+      evidence: grounded.evidence,
+      providerTransitions,
+      fallbackUsed: routeIndex > 0
+    };
+  };
 
   const transitionToFallback = (failure: ProviderFailure): boolean => {
     if (!failure.options.fallbackEligible || providerTransitions >= 1 || routeIndex >= route.length - 1) {
@@ -135,10 +213,14 @@ export const orchestrate = async (
     let retryUsed = false;
 
     while (true) {
-      deadline.assertRemaining(250);
-      breaker.assertClosed(model.provider);
       try {
-        const response = await provider.generate(model, createCanonicalRequest(messages), deadline);
+        deadline.assertRemaining(250);
+        breaker.assertClosed(model.provider);
+        const response = await provider.generate(
+          model,
+          createCanonicalRequest(model, messages, shouldExposeTools() ? selectedTools : undefined),
+          deadline
+        );
         if (response.modelKey !== model.key || response.provider !== model.provider) {
           throw new ProviderFailure(model.provider, 'invalid_model_output', {
             retrySameProvider: false,
@@ -173,25 +255,43 @@ export const orchestrate = async (
       response = await callCurrentProvider();
     } catch (error) {
       if (error instanceof ProviderFailure && transitionToFallback(error)) continue;
+      if (error instanceof ProviderFailure || error instanceof AgentDeadlineFailure) {
+        const rescued = deterministicFallbackResult();
+        if (rescued) return rescued;
+      }
       throw error;
     }
 
     if (response.finishReason === 'max_tokens') {
+      console.warn(JSON.stringify({
+        event: 'ai_provider_output_rejected',
+        provider: response.provider,
+        reason: 'max_tokens'
+      }));
       const failure = asProviderOutputFailure(
         response.provider,
         new UngroundedAnswerFailure('empty_answer')
       );
       breaker.recordFailure(failure);
       if (transitionToFallback(failure)) continue;
+      const rescued = deterministicFallbackResult();
+      if (rescued) return rescued;
       throw failure;
     }
 
     if (response.toolCalls.length > 0) {
       if (toolRounds >= MAX_TOOL_ROUNDS) {
+        console.warn(JSON.stringify({
+          event: 'ai_provider_output_rejected',
+          provider: response.provider,
+          reason: 'tool_loop_limit'
+        }));
         const loopFailure = new AgentLoopLimitFailure();
         const failure = asProviderOutputFailure(response.provider, loopFailure);
         breaker.recordFailure(failure);
         if (transitionToFallback(failure)) continue;
+        const rescued = deterministicFallbackResult();
+        if (rescued) return rescued;
         throw loopFailure;
       }
 
@@ -200,6 +300,10 @@ export const orchestrate = async (
         validated = validateToolCall(response.toolCalls[0]!);
       } catch (error) {
         if (!(error instanceof InvalidToolCallFailure)) throw error;
+        console.warn(JSON.stringify({
+          event: 'ai_tool_call_rejected',
+          provider: response.provider
+        }));
         const failure = asProviderOutputFailure(response.provider, error);
         breaker.recordFailure(failure);
         if (transitionToFallback(failure)) continue;
@@ -217,22 +321,7 @@ export const orchestrate = async (
 
       addToolFacts(factCatalog, safeResult);
       usedTools.add(validated.call.name);
-      const deterministicTemplate = buildDeterministicAnswerTemplate(input.message, safeResult);
-      if (deterministicTemplate) {
-        const grounded = renderGroundedAnswer(deterministicTemplate, factCatalog);
-        const model = currentModel();
-        return {
-          answer: grounded.answer,
-          modelKey: model.key,
-          modelLabel: model.label,
-          provider: model.provider,
-          providerLabel: model.providerLabel,
-          usedTools: [...usedTools],
-          evidence: grounded.evidence,
-          providerTransitions,
-          fallbackUsed: routeIndex > 0
-        };
-      }
+      deterministicFallbackTemplate = buildDeterministicAnswerTemplate(safeResult);
       const resultJson = JSON.stringify(prepareToolResultForModel(safeResult));
       messages.push({ role: 'assistant', content: response.text, toolCalls: response.toolCalls });
       messages.push({
@@ -250,7 +339,9 @@ export const orchestrate = async (
       if (usedTools.size === 0 && requiresBusinessEvidence(input.message)) {
         throw new UngroundedAnswerFailure('missing_evidence');
       }
-      const grounded = renderGroundedAnswer(response.text, factCatalog);
+      const grounded = renderGroundedAnswer(response.text, factCatalog, {
+        allowLiteralNumbers: usedTools.size === 0 && !requiresBusinessEvidence(input.message)
+      });
       if (usedTools.size > 0 && grounded.evidence.length === 0) {
         throw new UngroundedAnswerFailure('missing_evidence');
       }
@@ -268,9 +359,16 @@ export const orchestrate = async (
       };
     } catch (error) {
       if (!(error instanceof UngroundedAnswerFailure)) throw error;
+      console.warn(JSON.stringify({
+        event: 'ai_provider_output_rejected',
+        provider: response.provider,
+        reason: error.reason
+      }));
       const failure = asProviderOutputFailure(response.provider, error);
       breaker.recordFailure(failure);
       if (transitionToFallback(failure)) continue;
+      const rescued = deterministicFallbackResult();
+      if (rescued) return rescued;
       throw failure;
     }
   }

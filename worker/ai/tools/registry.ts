@@ -128,7 +128,7 @@ export const TOOL_REGISTRY: Record<string, ToolSpec> = {
   get_inventory_status: {
     definition: {
       name: 'get_inventory_status',
-      description: 'Devuelve inventario agregado y una lista acotada de productos, incluyendo disponible, reservado, en camino y compra sugerida. Usá esta herramienta para stock, reposición, faltantes o alertas; para listar el catálogo usá get_product_catalog.',
+      description: 'Devuelve inventario agregado y una lista acotada de productos, incluyendo disponible, reservado, en camino y compra sugerida. Usá esta herramienta para stock, reposición, faltantes, alertas o preguntas sobre qué comprar/priorizar; para listar el catálogo usá get_product_catalog.',
       parameters: {
         type: 'object',
         properties: {

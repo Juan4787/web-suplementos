@@ -13,6 +13,7 @@ export const MODEL_REGISTRY: Record<ModelKey, ModelDefinition> = {
     enabled: true,
     certificationSuite: CERTIFICATION_SUITE_VERSION,
     timeoutMs: 10_000,
+    maxCompletionTokens: 420,
     capabilities: { tools: true, reasoning: true, json: true }
   },
   glm_4_7_flash_cf_v1: {
@@ -24,7 +25,8 @@ export const MODEL_REGISTRY: Record<ModelKey, ModelDefinition> = {
     certified: true,
     enabled: true,
     certificationSuite: CERTIFICATION_SUITE_VERSION,
-    timeoutMs: 12_000,
+    timeoutMs: 20_000,
+    maxCompletionTokens: 512,
     capabilities: { tools: true, reasoning: true, json: true }
   }
 };

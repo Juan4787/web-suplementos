@@ -57,6 +57,7 @@ export type ModelDefinition = {
   enabled: boolean;
   certificationSuite: string;
   timeoutMs: number;
+  maxCompletionTokens: number;
   capabilities: {
     tools: true;
     reasoning: true;

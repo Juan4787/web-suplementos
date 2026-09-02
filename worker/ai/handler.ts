@@ -56,6 +56,28 @@ const publicErrorFor = (error: unknown): Response => {
     error instanceof AgentLoopLimitFailure ||
     error instanceof ToolDependencyFailure
   ) {
+    if (error instanceof ProviderFailure && error.kind === 'quota') {
+      return errorResponse(
+        {
+          kind: 'temporary',
+          message: 'El cupo gratuito diario del asistente se agotó por hoy.',
+          nextAction: 'Volvé a intentarlo mañana. El resto de la aplicación sigue disponible.',
+          retryable: true
+        },
+        503
+      );
+    }
+    if (error instanceof ProviderFailure && error.kind === 'rate_limit') {
+      return errorResponse(
+        {
+          kind: 'temporary',
+          message: 'El asistente está procesando muchas consultas en este momento.',
+          nextAction: 'Esperá unos minutos y volvé a intentarlo. El resto de la aplicación sigue disponible.',
+          retryable: true
+        },
+        503
+      );
+    }
     return errorResponse(
       {
         kind: 'temporary',
@@ -165,17 +187,27 @@ export const handleAIRequest = async (request: Request, env: Env): Promise<Respo
       }
     );
 
-    await client.completeAudit(
-      requestId,
-      {
-        status: 'success',
-        modelUsed: result.modelKey,
-        toolNames: result.usedTools,
-        providerTransitions: result.providerTransitions,
-        durationMs: Date.now() - startedAt
-      },
-      new Deadline(3_000)
-    );
+    // Audit completion is observability, not a prerequisite for returning an
+    // already grounded read-only answer. A transient failure here must not
+    // turn a successful assistant response into a misleading 503.
+    try {
+      await client.completeAudit(
+        requestId,
+        {
+          status: 'success',
+          modelUsed: result.modelKey,
+          toolNames: result.usedTools,
+          providerTransitions: result.providerTransitions,
+          durationMs: Date.now() - startedAt
+        },
+        new Deadline(3_000)
+      );
+    } catch (error) {
+      console.warn(JSON.stringify({
+        event: 'ai_audit_completion_failed',
+        errorType: error instanceof Error ? error.name : 'unknown'
+      }));
+    }
 
     return jsonResponse({
       answer: result.answer,
@@ -186,6 +218,11 @@ export const handleAIRequest = async (request: Request, env: Env): Promise<Respo
       evidence: result.evidence.map(({ id: _id, ...evidence }) => evidence)
     });
   } catch (error) {
+    if (error instanceof ToolDependencyFailure) {
+      console.warn(JSON.stringify({ event: 'ai_tool_dependency_failure', kind: error.kind }));
+    } else if (error instanceof AgentDeadlineFailure) {
+      console.warn(JSON.stringify({ event: 'ai_deadline_failure' }));
+    }
     if (requestId && supabase) {
       try {
         await supabase.completeAudit(

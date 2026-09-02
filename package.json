@@ -19,6 +19,7 @@
     "worker:certify:run": "node scripts/run-ai-certification.mjs",
     "worker:deploy": "node scripts/validate-worker-target.mjs && REQUIRE_SUPABASE_ENV=1 pnpm build && wrangler --profile impulso deploy --name impulso",
     "worker:deploy:dry": "node scripts/validate-worker-target.mjs && REQUIRE_SUPABASE_ENV=1 pnpm build && wrangler --profile impulso deploy --name impulso --dry-run",
+    "worker:smoke:ai": "node scripts/run-ai-production-smoke.mjs",
     "db:remote:list": "node scripts/run-supabase-linked.mjs list",
     "db:remote:push:dry": "node scripts/run-supabase-linked.mjs dry-run",
     "db:remote:push": "node scripts/run-supabase-linked.mjs push",

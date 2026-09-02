@@ -57,7 +57,7 @@ export class SupabaseAIClient {
     deadline: Deadline,
     maxResponseBytes: number
   ): Promise<unknown> {
-    const timeout = deadline.signal(Math.min(5_000, deadline.remainingMs()));
+    const timeout = deadline.signal(Math.min(8_000, deadline.remainingMs()));
     const fetchImpl = this.fetchImpl;
     let response: Response;
     try {
@@ -73,6 +73,11 @@ export class SupabaseAIClient {
         signal: timeout.signal
       });
     } catch (error) {
+      console.warn(JSON.stringify({
+        event: 'ai_rpc_transport_failure',
+        operation: name,
+        errorType: error instanceof Error ? error.name : 'unknown'
+      }));
       throw new ToolDependencyFailure('temporary', error);
     } finally {
       timeout.cleanup();
@@ -86,6 +91,11 @@ export class SupabaseAIClient {
     }
 
     if (!response.ok) {
+      console.warn(JSON.stringify({
+        event: 'ai_rpc_failure',
+        operation: name,
+        status: response.status
+      }));
       if (response.status === 401) throw new ToolDependencyFailure('auth');
       if (response.status === 403 || /FORBIDDEN/i.test(text)) {
         throw new ToolDependencyFailure('permission');
@@ -107,12 +117,29 @@ export class SupabaseAIClient {
   }
 
   async executeTool(validated: ValidatedToolCall, deadline: Deadline): Promise<unknown> {
-    return this.rpc(
-      validated.spec.rpcName,
-      validated.spec.toRpcArgs(validated.args),
-      deadline,
-      32_000
-    );
+    const args = validated.spec.toRpcArgs(validated.args);
+    let lastError: unknown;
+
+    // All registered tools are read-only. A single retry is therefore safe
+    // when the response was lost or the Supabase transport failed transiently.
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        return await this.rpc(validated.spec.rpcName, args, deadline, 32_000);
+      } catch (error) {
+        lastError = error;
+        if (
+          !(error instanceof ToolDependencyFailure) ||
+          error.kind !== 'temporary' ||
+          attempt === 1 ||
+          deadline.remainingMs() <= 1_000
+        ) {
+          throw error;
+        }
+        await new Promise<void>((resolve) => setTimeout(resolve, 80));
+      }
+    }
+
+    throw lastError;
   }
 
   async completeAudit(

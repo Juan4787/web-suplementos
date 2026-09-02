@@ -55,21 +55,24 @@ describe('exact facts contract', () => {
     );
   });
 
-  it('rechaza cantidades de negocio escritas con palabras después de consultar facts', () => {
+  it('verifica cantidades de negocio escritas con palabras contra los facts', () => {
     const safe = sanitizeToolResult(
       {
         schemaVersion: 'ai-facts/v1',
         tool: 'get_sales_summary',
-        facts: { 'sales.units': 10 }
+        facts: { 'sales.units': 10, 'sales.units_total': 34 }
       },
       'get_sales_summary'
     );
     const catalog: FactCatalog = new Map();
     addToolFacts(catalog, safe);
 
-    expect(() => renderGroundedAnswer('Vendiste diez unidades.', catalog)).toThrow(
-      UngroundedAnswerFailure
-    );
+    const spelled = renderGroundedAnswer('Vendiste diez unidades.', catalog);
+    expect(spelled.answer).toBe('Vendiste diez unidades.');
+    expect(spelled.evidence).toHaveLength(1);
+    const composite = renderGroundedAnswer('Vendiste treinta y cuatro unidades.', catalog);
+    expect(composite.answer).toBe('Vendiste treinta y cuatro unidades.');
+    expect(composite.evidence).toHaveLength(1);
     expect(() => renderGroundedAnswer('Vendiste una unidad.', catalog)).toThrow(
       UngroundedAnswerFailure
     );
@@ -107,7 +110,7 @@ describe('exact facts contract', () => {
     );
   });
 
-  it('oculta etiquetas numéricas al modelo y las renderiza como facts exactas', () => {
+  it('entrega etiquetas legibles al modelo y conserva su grounding', () => {
     const safe = sanitizeToolResult(
       {
         schemaVersion: 'ai-facts/v1',
@@ -126,9 +129,7 @@ describe('exact facts contract', () => {
     const catalog: FactCatalog = new Map();
     addToolFacts(catalog, safe);
 
-    expect(prepareToolResultForModel(safe).products?.[0]?.label).toBe(
-      '{{fact:product:CREA300.label}}'
-    );
+    expect(prepareToolResultForModel(safe).products?.[0]?.label).toBe('Creatina monohidrato · 300 g');
     expect(
       renderGroundedAnswer('Tenés {{fact:product:CREA300.label}}.', catalog).answer
     ).toBe('Tenés Creatina monohidrato · 300 g.');
@@ -193,6 +194,22 @@ describe('exact facts contract', () => {
     expect(renderGroundedAnswer('{{fact:change.revenue_percent}} puntos básicos', catalog).answer).toBe(
       '12,5 %'
     );
+  });
+
+  it('conserva como sin dato un porcentaje no calculable por falta de ventas', () => {
+    const safe = sanitizeToolResult(
+      {
+        schemaVersion: 'ai-facts/v1',
+        tool: 'compare_sales_periods',
+        facts: { 'change.revenue_basis_points': null }
+      },
+      'compare_sales_periods'
+    );
+    expect(safe.facts).toEqual({ 'change.revenue_percent': null });
+
+    const catalog: FactCatalog = new Map();
+    addToolFacts(catalog, safe);
+    expect(renderGroundedAnswer('{{fact:change.revenue_percent}}', catalog).answer).toBe('Sin dato');
   });
 
   it('fundamenta un año unido a un mes solo cuando coincide con el período consultado', () => {

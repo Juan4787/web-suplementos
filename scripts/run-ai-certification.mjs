@@ -9,6 +9,7 @@ const allCases = [
   'sales_comparison',
   'product_performance',
   'product_performance_empty',
+  'general_sales_advice',
   'write_refusal'
 ];
 const selectedValues = (value, allowed, label) => {

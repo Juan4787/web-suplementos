@@ -60,6 +60,8 @@ const normalizeFacts = (value: unknown, maxFacts: number): Record<string, Primit
     const normalizedValue = key.endsWith('_basis_points')
       ? typeof factValue === 'number'
         ? factValue / 100
+        : factValue === null
+          ? null
         : undefined
       : factValue;
     if (normalizedValue === undefined || normalizedKey in normalized) {
@@ -323,13 +325,18 @@ export const addToolFacts = (catalog: FactCatalog, result: SafeToolResult): void
   }
 };
 
+/**
+ * The model receives the sanitized labels as ordinary data so it can speak
+ * naturally. The server still treats every label as untrusted text and never
+ * executes it as an instruction.
+ */
 export const prepareToolResultForModel = (result: SafeToolResult): SafeToolResult => ({
   ...result,
   ...(result.products
     ? {
         products: result.products.map((product) => ({
           ...product,
-          label: `{{fact:${product.ref}.label}}`
+          label: product.label
         }))
       }
     : {})
@@ -338,16 +345,92 @@ export const prepareToolResultForModel = (result: SafeToolResult): SafeToolResul
 const PLACEHOLDER_PATTERN = /\{\{fact:([a-zA-Z0-9_.:-]{2,180})\}\}/g;
 const BARE_PLACEHOLDER_PATTERN = /\{\{(?!fact:)([a-zA-Z0-9_.:-]{2,180})\}\}/g;
 const UNRESOLVED_PLACEHOLDER_PATTERN = /\{\{[^{}\n]{1,200}\}\}/u;
+const NUMERIC_TOKEN_PATTERN = /[-+]?\d(?:[\d.,\u00a0]*\d)?/gu;
 const PLACEHOLDER_WITH_SUFFIX_PATTERN =
   /\{\{fact:([a-zA-Z0-9_.:-]{2,180})\}\}(\s*(?:%|por ciento|puntos b[aá]sicos|bps|pb|centavos|pesos|ARS))?/giu;
 const MONEY_SUFFIX_PATTERN = /(?:centavos|pesos|ARS)/iu;
 const PERCENT_SUFFIX_PATTERN = /(?:%|por ciento|puntos b[aá]sicos|bps|pb)/iu;
 const MONTH_YEAR_PATTERN =
   /\b((?:enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)(?:\s+de)?)\s+((?:19|20)\d{2})\b/giu;
+const SPANISH_NUMBER_VALUES: Readonly<Record<string, number>> = {
+  cero: 0,
+  un: 1,
+  uno: 1,
+  una: 1,
+  dos: 2,
+  tres: 3,
+  cuatro: 4,
+  cinco: 5,
+  seis: 6,
+  siete: 7,
+  ocho: 8,
+  nueve: 9,
+  diez: 10,
+  once: 11,
+  doce: 12,
+  trece: 13,
+  catorce: 14,
+  quince: 15,
+  dieciseis: 16,
+  'dieciséis': 16,
+  diecisiete: 17,
+  dieciocho: 18,
+  diecinueve: 19,
+  veinte: 20,
+  veintiuno: 21,
+  veintiun: 21,
+  veintiuna: 21,
+  veintidos: 22,
+  'veintidós': 22,
+  veintitres: 23,
+  'veintitrés': 23,
+  veinticuatro: 24,
+  veinticinco: 25,
+  veintiseis: 26,
+  'veintiséis': 26,
+  veintisiete: 27,
+  veintiocho: 28,
+  veintinueve: 29,
+  treinta: 30,
+  cuarenta: 40,
+  cincuenta: 50,
+  sesenta: 60,
+  setenta: 70,
+  ochenta: 80,
+  noventa: 90,
+  cien: 100,
+  ciento: 100,
+  doscientos: 200,
+  doscientas: 200,
+  trescientos: 300,
+  trescientas: 300,
+  cuatrocientos: 400,
+  cuatrocientas: 400,
+  quinientos: 500,
+  quinientas: 500,
+  seiscientos: 600,
+  seiscientas: 600,
+  setecientos: 700,
+  setecientas: 700,
+  ochocientos: 800,
+  ochocientas: 800,
+  novecientos: 900,
+  novecientas: 900,
+  'millón': 1_000_000
+};
+const SPANISH_NUMBER_TOKENS = [
+  ...Object.keys(SPANISH_NUMBER_VALUES),
+  'mil',
+  'millon',
+  'millones',
+  'y'
+].join('|');
+const SPANISH_NUMBER_SEQUENCE_PATTERN = new RegExp(
+  `\\b(?:${SPANISH_NUMBER_TOKENS})(?:\\s+(?:${SPANISH_NUMBER_TOKENS}))*\\b`,
+  'giu'
+);
 const NUMBER_WORD_PATTERN =
-  /\b(?:cero|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce|trece|catorce|quince|diecis[eé]is|diecisiete|dieciocho|diecinueve|veinte|treinta|cuarenta|cincuenta|sesenta|setenta|ochenta|noventa|cien|ciento|doscientos|trescientos|cuatrocientos|quinientos|seiscientos|setecientos|ochocientos|novecientos|mil|mill[oó]n|millones)\b/iu;
-const ONE_BUSINESS_QUANTITY_PATTERN =
-  /\b(?:un|una)\s+(?:unidad|pedido|producto|d[ií]a|peso|centavo|porcentaje)(?:es|s)?\b/iu;
+  /\b(?:cero|un|uno|una|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce|trece|catorce|quince|diecis[eé]is|diecisiete|dieciocho|diecinueve|veinte|veinti(?:uno|un|una|d[oó]s|tr[eé]s|cuatro|cinco|s[eé]is|siete|ocho|nueve)|treinta|cuarenta|cincuenta|sesenta|setenta|ochenta|noventa|cien|ciento|doscient(?:os|as)|trescient(?:os|as)|cuatrocient(?:os|as)|quinient(?:os|as)|seiscient(?:os|as)|setecient(?:os|as)|ochocient(?:os|as)|novecient(?:os|as)|mil|mill[oó]n|millones)\b/iu;
 
 const stripRedundantFactSuffixes = (template: string): string =>
   template.replace(PLACEHOLDER_WITH_SUFFIX_PATTERN, (match, id: string, suffix?: string) => {
@@ -375,14 +458,167 @@ const normalizeKnownFactPlaceholders = (template: string, catalog: FactCatalog):
     catalog.has(id) ? `{{fact:${id}}}` : match
   );
 
+const normalizeFactPlaceholderAliases = (template: string, catalog: FactCatalog): string =>
+  template.replace(PLACEHOLDER_PATTERN, (match, id: string) => {
+    if (catalog.has(id)) return match;
+    if (id.endsWith('_basis_points')) {
+      const normalizedId = `${id.slice(0, -'_basis_points'.length)}_percent`;
+      if (catalog.has(normalizedId)) return `{{fact:${normalizedId}}}`;
+    }
+    return match;
+  });
+
+const normalizeNumericToken = (token: string): string | null => {
+  const clean = token.replace(/[^\d.,+-]/gu, '');
+  if (!clean || !/\d/u.test(clean)) return null;
+
+  const sign = clean.startsWith('-') ? -1 : 1;
+  const unsigned = clean.replace(/^[+-]/u, '');
+  const lastComma = unsigned.lastIndexOf(',');
+  const lastDot = unsigned.lastIndexOf('.');
+  let normalized: string;
+
+  if (lastComma >= 0 && lastDot >= 0) {
+    const decimalSeparator = lastComma > lastDot ? ',' : '.';
+    const thousandsSeparator = decimalSeparator === ',' ? '.' : ',';
+    normalized = unsigned
+      .replaceAll(thousandsSeparator, '')
+      .replace(decimalSeparator, '.');
+  } else if (lastComma >= 0 || lastDot >= 0) {
+    const separator = lastComma >= 0 ? ',' : '.';
+    const parts = unsigned.split(separator);
+    const fractionalLength = parts.at(-1)?.length ?? 0;
+    if (parts.length > 2 || fractionalLength === 3) {
+      normalized = parts.join('');
+    } else {
+      normalized = unsigned.replace(separator, '.');
+    }
+  } else {
+    normalized = unsigned;
+  }
+
+  const number = Number(normalized) * sign;
+  return Number.isFinite(number) ? String(number) : null;
+};
+
+const parseSpanishNumber = (phrase: string): number | null => {
+  const tokens = normalizedSearchText(phrase)
+    .split(/\s+/u)
+    .filter((token) => token !== 'y');
+  if (tokens.length === 0) return null;
+
+  let total = 0;
+  let group = 0;
+  let sawNumber = false;
+  for (const token of tokens) {
+    if (token === 'mil' || token === 'millon' || token === 'millones') {
+      const multiplier = token === 'mil' ? 1_000 : 1_000_000;
+      total += (group || 1) * multiplier;
+      group = 0;
+      sawNumber = true;
+      continue;
+    }
+    const value = SPANISH_NUMBER_VALUES[token];
+    if (value === undefined) return null;
+    group += value;
+    sawNumber = true;
+  }
+
+  return sawNumber ? total + group : null;
+};
+
+const normalizedSearchText = (value: string): string =>
+  value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('es-AR');
+
+const addEvidenceId = (usedIds: string[], id: string): void => {
+  if (usedIds.includes(id)) return;
+  if (usedIds.length >= 60) throw new UngroundedAnswerFailure('unknown_fact');
+  usedIds.push(id);
+};
+
+const addTrustedLiteralEvidence = (
+  text: string,
+  catalog: FactCatalog,
+  usedIds: string[]
+): void => {
+  const numericIndex = new Map<string, string[]>();
+  const addIndexValue = (value: string, id: string): void => {
+    const normalized = normalizeNumericToken(value);
+    if (!normalized) return;
+    const ids = numericIndex.get(normalized) ?? [];
+    if (!ids.includes(id)) ids.push(id);
+    numericIndex.set(normalized, ids);
+  };
+
+  for (const [id, fact] of catalog) {
+    if (typeof fact.rawValue === 'number') {
+      addIndexValue(String(fact.rawValue), id);
+      for (const formattedToken of fact.formatted.match(NUMERIC_TOKEN_PATTERN) ?? []) {
+        addIndexValue(formattedToken, id);
+      }
+    }
+    // Product labels and other trusted strings can contain meaningful
+    // quantities (for example a presentation such as "Omega 3"). Indexing
+    // those tokens lets the model repeat an exact label without turning that
+    // label into an ungrounded-number rejection.
+    if (typeof fact.rawValue === 'string' && id.endsWith('.label')) {
+      for (const labelToken of fact.rawValue.match(NUMERIC_TOKEN_PATTERN) ?? []) {
+        addIndexValue(labelToken, id);
+      }
+    }
+  }
+
+  // Models sometimes spell out a factual quantity ("diez unidades") even
+  // when the prompt asks for natural prose. Verify those words against the
+  // same numeric index used for digits instead of rejecting all number words.
+  const textWithNumberWordsRemoved = text.replace(
+    SPANISH_NUMBER_SEQUENCE_PATTERN,
+    (phrase) => {
+      const parsed = parseSpanishNumber(phrase);
+      if (parsed === null) return phrase;
+      const matchingIds = numericIndex.get(String(parsed));
+      if (!matchingIds || matchingIds.length === 0) {
+        throw new UngroundedAnswerFailure('literal_number');
+      }
+      for (const id of matchingIds) addEvidenceId(usedIds, id);
+      return ' ';
+    }
+  );
+  if (NUMBER_WORD_PATTERN.test(textWithNumberWordsRemoved)) {
+    throw new UngroundedAnswerFailure('literal_number');
+  }
+
+  for (const token of text.match(NUMERIC_TOKEN_PATTERN) ?? []) {
+    const normalized = normalizeNumericToken(token);
+    const matchingIds = normalized ? numericIndex.get(normalized) : undefined;
+    if (!matchingIds || matchingIds.length === 0) {
+      throw new UngroundedAnswerFailure('literal_number');
+    }
+    for (const id of matchingIds) addEvidenceId(usedIds, id);
+  }
+
+  const normalizedText = normalizedSearchText(text);
+  for (const [id, fact] of catalog) {
+    if (typeof fact.rawValue !== 'string' || fact.rawValue.length < 3) continue;
+    const formatted = normalizedSearchText(fact.formatted);
+    if (formatted.length >= 3 && normalizedText.includes(formatted)) {
+      addEvidenceId(usedIds, id);
+    }
+  }
+};
+
 export const renderGroundedAnswer = (
   template: string | null,
-  catalog: FactCatalog
+  catalog: FactCatalog,
+  options: { allowLiteralNumbers?: boolean } = {}
 ): { answer: string; evidence: ExactEvidence[] } => {
   const trimmed = template?.trim() ?? '';
   if (!trimmed) throw new UngroundedAnswerFailure('empty_answer');
   const normalizedTemplate = stripRedundantFactSuffixes(
-    normalizeKnownFactPlaceholders(groundTrustedMonthYears(trimmed, catalog), catalog)
+    normalizeKnownFactPlaceholders(
+      normalizeFactPlaceholderAliases(groundTrustedMonthYears(trimmed, catalog), catalog),
+      catalog
+    )
   );
 
   const usedIds: string[] = [];
@@ -400,15 +636,8 @@ export const renderGroundedAnswer = (
     throw new UngroundedAnswerFailure('unknown_fact');
   }
 
-  if (/\p{Number}/u.test(withoutPlaceholders)) {
-    throw new UngroundedAnswerFailure('literal_number');
-  }
-  if (
-    catalog.size > 0 &&
-    (NUMBER_WORD_PATTERN.test(withoutPlaceholders) ||
-      ONE_BUSINESS_QUANTITY_PATTERN.test(withoutPlaceholders))
-  ) {
-    throw new UngroundedAnswerFailure('literal_number');
+  if (!options.allowLiteralNumbers) {
+    addTrustedLiteralEvidence(withoutPlaceholders, catalog, usedIds);
   }
 
   const answer = normalizedTemplate.replace(

@@ -1,7 +1,11 @@
 import { spawnSync } from 'node:child_process';
 import { loadEnv } from 'vite';
 import { PROJECT_ROOT } from './validate-worker-target.mjs';
-import { assertSupabaseTarget } from './validate-supabase-target.mjs';
+import {
+  assertSupabaseTarget,
+  SUPABASE_PROJECT_REF,
+  SUPABASE_PROJECT_REGION
+} from './validate-supabase-target.mjs';
 
 const mode = process.argv[2];
 if (!['list', 'diff', 'lint', 'dry-run', 'push'].includes(mode)) {
@@ -16,20 +20,28 @@ if (!password || password.length < 12) {
   throw new Error('[supabase-linked] La contraseña local no supera la validacion previa.');
 }
 
+const usePooler = process.env.SUPABASE_DB_TRANSPORT === 'pooler';
+const connectionArgs = usePooler
+  ? [
+      '--db-url',
+      `postgresql://postgres.${SUPABASE_PROJECT_REF}:${encodeURIComponent(password)}@aws-0-${SUPABASE_PROJECT_REGION}.pooler.supabase.com:6543/postgres?sslmode=require`
+    ]
+  : ['--linked'];
+
 const args = mode === 'list'
-  ? ['exec', 'supabase', 'migration', 'list', '--linked']
+  ? ['exec', 'supabase', 'migration', 'list', ...connectionArgs]
   : mode === 'diff'
-    ? ['exec', 'supabase', 'db', 'diff', '--linked', '--schema', 'public,private']
+    ? ['exec', 'supabase', 'db', 'diff', ...connectionArgs, '--schema', 'public,private']
     : mode === 'lint'
-      ? ['exec', 'supabase', 'db', 'lint', '--linked', '--level', 'warning']
-    : [
-        'exec',
-        'supabase',
-        'db',
-        'push',
-        '--linked',
-        ...(mode === 'dry-run' ? ['--dry-run'] : ['--yes'])
-      ];
+      ? ['exec', 'supabase', 'db', 'lint', ...connectionArgs, '--level', 'warning']
+      : [
+          'exec',
+          'supabase',
+          'db',
+          'push',
+          ...connectionArgs,
+          ...(mode === 'dry-run' ? ['--dry-run'] : ['--yes'])
+        ];
 
 const result = spawnSync('pnpm', args, {
   cwd: PROJECT_ROOT,

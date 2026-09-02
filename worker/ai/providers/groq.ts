@@ -16,6 +16,37 @@ const hasFailedGeneration = (payload: unknown): boolean => {
   return typeof error === 'object' && error !== null && 'failed_generation' in error;
 };
 
+const safeErrorMetadata = (payload: unknown): {
+  errorType?: string;
+  errorCode?: string;
+  errorMessage?: string;
+} => {
+  if (typeof payload !== 'object' || payload === null || !('error' in payload)) return {};
+  const error = (payload as { error?: unknown }).error;
+  if (typeof error !== 'object' || error === null) return {};
+  const record = error as Record<string, unknown>;
+  const clean = (value: unknown, maxLength: number): string | undefined => {
+    if (typeof value !== 'string' || value.length === 0) return undefined;
+    return value
+      .replace(/https?:\/\/\S+/giu, '[url]')
+      .replace(/(?:bearer|api[_ -]?key|sk-[a-z0-9_-]{8,})\s*[:=]?\s*\S+/giu, '[redacted]')
+      .slice(0, maxLength);
+  };
+  return {
+    errorType: clean(record.type, 80),
+    errorCode: clean(record.code, 80),
+    errorMessage: clean(record.message, 240)
+  };
+};
+
+const retryAfterMilliseconds = (response: Response): number => {
+  const seconds = Number(response.headers.get('retry-after'));
+  if (!Number.isFinite(seconds) || seconds <= 0) return 60_000;
+  // A provider can return a very long value for a daily limit. Keep the
+  // process-local circuit bounded while honoring the provider's cooldown.
+  return Math.min(Math.max(Math.ceil(seconds * 1000), 60_000), 15 * 60_000);
+};
+
 export class GroqProvider implements AIProvider {
   readonly key = 'groq' as const;
 
@@ -74,6 +105,22 @@ export class GroqProvider implements AIProvider {
     const payload = parseJsonSafely(text);
 
     if (!response.ok) {
+      // Keep only provider metadata in the tail; response bodies may contain
+      // request details and must never be copied to logs.
+      const safeHeader = (name: string): string | undefined => {
+        const value = response.headers.get(name);
+        return value && value.length <= 80 ? value : undefined;
+      };
+      console.warn(JSON.stringify({
+        event: 'ai_groq_http_failure',
+        status: response.status,
+        retryAfter: safeHeader('retry-after'),
+        requestLimit: safeHeader('x-ratelimit-limit-requests'),
+        requestRemaining: safeHeader('x-ratelimit-remaining-requests'),
+        tokenLimit: safeHeader('x-ratelimit-limit-tokens'),
+        tokenRemaining: safeHeader('x-ratelimit-remaining-tokens'),
+        ...safeErrorMetadata(payload)
+      }));
       if (response.status === 408) {
         throw new ProviderFailure('groq', 'timeout', {
           retrySameProvider: false,
@@ -84,7 +131,7 @@ export class GroqProvider implements AIProvider {
         throw new ProviderFailure('groq', 'rate_limit', {
           retrySameProvider: false,
           fallbackEligible: true,
-          openCircuitMs: 60_000
+          openCircuitMs: retryAfterMilliseconds(response)
         });
       }
       if (response.status === 404) {

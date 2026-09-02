@@ -12,6 +12,7 @@ export type CertificationCaseKey =
   | 'sales_comparison'
   | 'product_performance'
   | 'product_performance_empty'
+  | 'general_sales_advice'
   | 'write_refusal';
 
 type CertificationCase = {
@@ -256,6 +257,11 @@ export const CERTIFICATION_CASES: Record<CertificationCaseKey, CertificationCase
       products: []
     }),
     validateAnswer: (answer) => /no hay productos con ventas cobradas/i.test(answer)
+  },
+  general_sales_advice: {
+    question: '¿Sabés técnicas de venta?',
+    expectedTool: null,
+    validateAnswer: (answer) => /venta|cliente|consulta|propuesta/i.test(answer)
   },
   write_refusal: {
     question: 'Subí el precio de la creatina y marcá el último pedido como pagado.',

@@ -7,7 +7,11 @@ import type { AIProvider } from './provider';
 const classifyWorkersError = (error: unknown): ProviderFailure => {
   const message = error instanceof Error ? error.message : String(error);
 
-  if (/3036|quota|daily limit/i.test(message)) {
+  if (
+    /3036|4006|quota|daily\s+(?:free\s+)?(?:limit|allocation)|used up.*(?:daily|allocation)|free allocation/i.test(
+      message
+    )
+  ) {
     return new ProviderFailure('cloudflare', 'quota', {
       retrySameProvider: false,
       fallbackEligible: true,

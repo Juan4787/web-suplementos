@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router';
-import { ArrowDown, ArrowRight, MessageCircle, PackageCheck, ShoppingBag } from 'lucide-react';
+import { ArrowDown, ArrowRight, MessageCircle, PackageCheck, Search, ShoppingBag, X } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { ProductCard } from '@/components/store/ProductCard';
 import { buttonStyles } from '@/components/ui/Button';
@@ -8,7 +8,6 @@ import { PublicShell } from '@/components/layout/PublicShell';
 import { queryKeys } from '@/app/query-keys';
 import { useBusinessQuery } from '@/app/use-business-query';
 import { useCart } from '@/features/cart/CartProvider';
-import { cn } from '@/lib/cn';
 
 export default function StorefrontPage() {
   const { itemCount } = useCart();
@@ -18,16 +17,26 @@ export default function StorefrontPage() {
     queryKey: queryKeys.storefrontProducts,
     queryFn: (api) => api.listStorefrontProducts()
   });
-  const [category, setCategory] = useState('Todos');
-  const categories = useMemo(
-    () => ['Todos', ...new Set(productsQuery.data?.map((product) => product.category) ?? [])],
-    [productsQuery.data]
-  );
-  const products = useMemo(
-    () =>
-      productsQuery.data?.filter((product) => category === 'Todos' || product.category === category) ?? [],
-    [productsQuery.data, category]
-  );
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const products = useMemo(() => {
+    if (!productsQuery.data) return [];
+    const query = searchQuery.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    if (!query) return productsQuery.data;
+
+    return productsQuery.data.filter((product) => {
+      const name = product.name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      const description = (product.description || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      const presentation = (product.presentation || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      const category = (product.category || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      return (
+        name.includes(query) ||
+        description.includes(query) ||
+        presentation.includes(query) ||
+        category.includes(query)
+      );
+    });
+  }, [productsQuery.data, searchQuery]);
 
   return (
     <PublicShell>
@@ -77,32 +86,82 @@ export default function StorefrontPage() {
       <section id="productos" className="mx-auto max-w-7xl scroll-mt-24 px-4 py-20 sm:px-6 lg:px-8 lg:py-28">
         <div>
           <p className="text-xs font-black uppercase tracking-[0.18em] text-brand-600">Elegidos para todos los días</p>
-          <h2 className="mt-3 max-w-2xl font-display text-4xl font-black tracking-[-0.055em] sm:text-5xl">Menos ruido. Mejores básicos.</h2>
+          <h2 className="mt-3 max-w-2xl font-display text-4xl font-black tracking-[-0.055em] sm:text-5xl">
+            Suplementación diseñada a medida
+          </h2>
         </div>
 
-        <div className="mt-9 flex flex-wrap gap-2" aria-label="Filtrar por categoría">
-          {categories.map((item) => (
-            <button
-              key={item}
-              className={cn(
-                'min-h-[44px] rounded-full border px-3.5 sm:px-4 text-sm font-extrabold transition select-none active:scale-95',
-                category === item
-                  ? 'border-brand-600 bg-brand-600 text-white shadow-sm'
-                  : 'border-ink-950/12 bg-white text-ink-800 hover:border-brand-500/30 hover:text-brand-700'
-              )}
-              onClick={() => setCategory(item)}
-            >
-              {item}
-            </button>
-          ))}
+        <div className="mt-8 mb-12 sm:mt-10 sm:mb-14 max-w-xl">
+          <label htmlFor="search-products" className="sr-only">
+            Buscar suplementos
+          </label>
+          <div className="relative group">
+            <Search className="pointer-events-none absolute left-4.5 top-1/2 size-5 -translate-y-1/2 text-ink-400 transition group-focus-within:text-brand-600" />
+            <input
+              id="search-products"
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Buscar por nombre o beneficio (ej. Creatina, Magnesio...)"
+              className="w-full rounded-2xl border border-ink-950/12 bg-white py-4 pl-12 pr-12 text-base font-semibold text-ink-950 placeholder:text-ink-400/90 shadow-soft transition duration-200 hover:border-ink-950/20 focus:border-brand-600 focus:outline-none focus:ring-4 focus:ring-brand-500/15"
+            />
+            {searchQuery ? (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                aria-label="Limpiar búsqueda"
+                className="absolute right-3.5 top-1/2 -translate-y-1/2 rounded-xl p-1.5 text-ink-400 transition hover:bg-ink-100 hover:text-ink-800"
+              >
+                <X className="size-4.5" />
+              </button>
+            ) : null}
+          </div>
+          {searchQuery && productsQuery.isSuccess ? (
+            <p className="mt-2.5 pl-1 text-xs font-bold text-ink-500">
+              {products.length === 1
+                ? '1 suplemento encontrado'
+                : `${products.length} suplementos encontrados`}
+            </p>
+          ) : null}
         </div>
 
         {productsQuery.isPending ? <LoadingState label="Buscando productos…" /> : null}
-        {productsQuery.isError ? <div className="mt-10"><ErrorState error={productsQuery.error} onRetry={() => void productsQuery.refetch()} /></div> : null}
-        {productsQuery.isSuccess ? (
-          <div className="mt-10 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-            {products.map((product) => <ProductCard key={product.id} product={product} />)}
+        {productsQuery.isError ? (
+          <div className="mt-10">
+            <ErrorState error={productsQuery.error} onRetry={() => void productsQuery.refetch()} />
           </div>
+        ) : null}
+        {productsQuery.isSuccess ? (
+          products.length > 0 ? (
+            <div className="mt-10 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+              {products.map((product) => <ProductCard key={product.id} product={product} />)}
+            </div>
+          ) : (
+            <div className="mt-10 rounded-[2rem] border border-ink-950/7 bg-white p-12 text-center shadow-card">
+              <PackageCheck className="mx-auto size-12 text-brand-500/70" />
+              <p className="mt-4 font-display text-2xl font-black text-ink-950">
+                {searchQuery ? 'No encontramos coincidencias' : 'No hay productos disponibles'}
+              </p>
+              <p className="mt-2 text-sm text-ink-600">
+                {searchQuery ? (
+                  <>
+                    No se encontraron suplementos para &ldquo;<span className="font-semibold text-ink-900">{searchQuery}</span>&rdquo;.
+                  </>
+                ) : (
+                  'Pronto agregaremos nuevos suplementos al catálogo.'
+                )}
+              </p>
+              {searchQuery ? (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="mt-5 inline-flex items-center gap-2 rounded-full bg-brand-600 px-5 py-2.5 text-xs font-extrabold text-white shadow-sm transition hover:bg-brand-700 active:scale-95"
+                >
+                  Limpiar búsqueda
+                </button>
+              ) : null}
+            </div>
+          )
         ) : null}
       </section>
 

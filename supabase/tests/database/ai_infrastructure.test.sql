@@ -213,7 +213,7 @@ declare
 begin
   -- El primer reclamo ya fue consumido. Se usan buckets de minuto distintos
   -- para probar el límite diario sin activar antes el límite por minuto.
-  for i in 1..29 loop
+  for i in 1..99 loop
     delete from public.ai_usage_counters
     where user_id = auth.uid() and bucket_kind = 'minute';
     perform public.claim_ai_request(10);
@@ -221,10 +221,10 @@ begin
 end;
 $consume_daily_quota$;
 
-select is((public.claim_ai_request(10) ->> 'allowed')::boolean, false, 'el reclamo número 31 falla cerrado');
+select is((public.claim_ai_request(10) ->> 'allowed')::boolean, false, 'el reclamo número 101 falla cerrado');
 select is(
   (select request_count from public.ai_usage_counters where user_id = auth.uid() and bucket_kind = 'day'),
-  30,
+  100,
   'la cuota diaria nunca supera el límite bajo el RPC atómico'
 );
 select ok(

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ProviderCircuitBreaker } from './circuit-breaker';
-import { AgentLoopLimitFailure, ProviderFailure, ToolDependencyFailure } from './errors';
+import { ProviderFailure, ToolDependencyFailure } from './errors';
 import { orchestrate, type OrchestratorDependencies } from './orchestrator';
 import type { AIProvider } from './providers/provider';
 import type {
@@ -94,6 +94,7 @@ describe('sticky AI orchestration', () => {
     expect(result.providerTransitions).toBe(0);
     expect(groq.calls).toHaveLength(2);
     expect(cloudflare.calls).toHaveLength(0);
+    expect(groq.calls[0]?.request.tools.map((tool) => tool.name)).toEqual(['get_inventory_status']);
   });
 
   it('cambia una sola vez y mantiene el fallback durante las rondas restantes', async () => {
@@ -167,7 +168,7 @@ describe('sticky AI orchestration', () => {
     expect(cloudflare.calls).toHaveLength(1);
   });
 
-  it('corta exactamente después de dos rondas de tools incluso tras el fallback', async () => {
+  it('rescata con datos exactos si el modelo insiste en llamar tools', async () => {
     const groq = new QueueProvider('groq', [
       tool('get_inventory_status'),
       tool('get_inventory_status'),
@@ -176,9 +177,10 @@ describe('sticky AI orchestration', () => {
     const cloudflare = new QueueProvider('cloudflare', [tool('get_inventory_status')]);
     const executeTool = vi.fn(async () => inventoryResult);
 
-    await expect(orchestrate(input, dependencies(groq, cloudflare, executeTool))).rejects.toBeInstanceOf(
-      AgentLoopLimitFailure
-    );
+    const result = await orchestrate(input, dependencies(groq, cloudflare, executeTool));
+    expect(result.answer).toContain('Creatina');
+    expect(result.answer).toContain('6');
+    expect(result.providerTransitions).toBe(1);
     expect(executeTool).toHaveBeenCalledTimes(2);
     expect(groq.calls).toHaveLength(3);
     expect(cloudflare.calls).toHaveLength(1);
@@ -186,14 +188,33 @@ describe('sticky AI orchestration', () => {
 
   it('rechaza una cifra literal y permite que el fallback la corrija', async () => {
     const groq = new QueueProvider('groq', [final('Hay 99 unidades.')]);
-    const cloudflare = new QueueProvider('cloudflare', [final('No pude respaldar una cantidad exacta.')]);
+    const cloudflare = new QueueProvider('cloudflare', [
+      tool('get_inventory_status'),
+      final('Hay {{fact:product:CREA300.stock.available_units}} unidades.')
+    ]);
 
     const result = await orchestrate(
-      { ...input, message: 'hola' },
+      { ...input, message: '¿Qué stock tengo?' },
       dependencies(groq, cloudflare)
     );
     expect(result.providerTransitions).toBe(1);
     expect(result.answer).not.toContain('99');
+  });
+
+  it('usa el último resultado exacto si el proveedor cae durante la redacción', async () => {
+    const groq = new QueueProvider('groq', [
+      tool('get_inventory_status'),
+      new ProviderFailure('groq', 'server', { retrySameProvider: false, fallbackEligible: true })
+    ]);
+    const cloudflare = new QueueProvider('cloudflare', [
+      new ProviderFailure('cloudflare', 'server', { retrySameProvider: false, fallbackEligible: true })
+    ]);
+
+    const result = await orchestrate(input, dependencies(groq, cloudflare));
+    expect(result.answer).toContain('Creatina');
+    expect(result.answer).toContain('6');
+    expect(result.usedTools).toEqual(['get_inventory_status']);
+    expect(result.providerTransitions).toBe(1);
   });
 
   it('rechaza una respuesta factual vaga después de usar una tool y conserva sus hechos en el fallback', async () => {
@@ -215,7 +236,8 @@ describe('sticky AI orchestration', () => {
   it('no acepta una respuesta comercial sin consultar una tool', async () => {
     const groq = new QueueProvider('groq', [final('No dispongo de precios.')]);
     const cloudflare = new QueueProvider('cloudflare', [
-      tool('get_product_catalog')
+      tool('get_product_catalog'),
+      final('El catálogo incluye {{fact:product:CREA300.label}} a {{fact:product:CREA300.catalog.price_cents}}.')
     ]);
     const catalogResult = {
       schemaVersion: 'ai-facts/v1',
@@ -239,14 +261,16 @@ describe('sticky AI orchestration', () => {
     expect(result.answer).toContain('$');
     expect(result.providerTransitions).toBe(1);
     expect(result.usedTools).toEqual(['get_product_catalog']);
+    expect(cloudflare.calls[0]?.request.tools.map((tool) => tool.name)).toEqual(['get_product_catalog']);
   });
 
-  it('responde sin una segunda inferencia cuando no hay ventas en el período', async () => {
+  it('mantiene una segunda inferencia natural aunque el resultado esté vacío', async () => {
     const groq = new QueueProvider('groq', [
       tool(
         'get_top_selling_products',
         '{"from":"2026-01-01","to":"2026-09-01","limit":10}'
-      )
+      ),
+      final('No hay productos con ventas cobradas en el período consultado. Productos con ventas: {{fact:performance.returned_product_count}}.')
     ]);
     const cloudflare = new QueueProvider('cloudflare', []);
     const emptyPerformance = {
@@ -273,7 +297,58 @@ describe('sticky AI orchestration', () => {
     expect(result.answer).toContain('No hay productos con ventas cobradas');
     expect(result.evidence).toHaveLength(1);
     expect(result.usedTools).toEqual(['get_top_selling_products']);
-    expect(groq.calls).toHaveLength(1);
+    expect(groq.calls).toHaveLength(2);
     expect(cloudflare.calls).toHaveLength(0);
+  });
+
+  it('mantiene una conversación general sin exigir una consulta de la tienda', async () => {
+    const groq = new QueueProvider('groq', [
+      final('Sí. Podés trabajar la propuesta de valor, la prueba social y el seguimiento de consultas.')
+    ]);
+    const cloudflare = new QueueProvider('cloudflare', []);
+
+    const result = await orchestrate(
+      { ...input, message: '¿Sabés técnicas de venta?' },
+      dependencies(groq, cloudflare)
+    );
+
+    expect(result.answer).toContain('propuesta de valor');
+    expect(result.usedTools).toEqual([]);
+    expect(result.evidence).toEqual([]);
+    expect(result.providerTransitions).toBe(0);
+    expect(groq.calls[0]?.request.tools).toHaveLength(0);
+    expect(groq.calls[0]?.request.maxCompletionTokens).toBe(420);
+  });
+
+  it('conserva contexto reciente sin reenviar una conversación ilimitada al proveedor', async () => {
+    const groq = new QueueProvider('groq', [final('Puedo seguir con ese tema.')]);
+    const cloudflare = new QueueProvider('cloudflare', []);
+    const history = Array.from({ length: 6 }, (_, index) => ({
+      role: index % 2 === 0 ? ('user' as const) : ('assistant' as const),
+      content: `mensaje ${index + 1}`
+    }));
+
+    await orchestrate(
+      { ...input, message: 'hola', history },
+      dependencies(groq, cloudflare)
+    );
+
+    expect(groq.calls[0]?.request.messages.filter((message) => message.role !== 'system')).toHaveLength(5);
+    expect(groq.calls[0]?.request.messages.at(1)?.content).toBe('mensaje 3');
+  });
+
+  it('permite números ilustrativos en una respuesta general sin hechos de la tienda', async () => {
+    const groq = new QueueProvider('groq', [
+      final('Podés probar tres técnicas y medir cuál genera más consultas.')
+    ]);
+    const cloudflare = new QueueProvider('cloudflare', []);
+
+    const result = await orchestrate(
+      { ...input, message: '¿Cómo mejoro mi estrategia comercial?' },
+      dependencies(groq, cloudflare)
+    );
+
+    expect(result.answer).toContain('tres técnicas');
+    expect(result.usedTools).toEqual([]);
   });
 });

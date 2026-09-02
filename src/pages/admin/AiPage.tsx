@@ -1,6 +1,6 @@
 import { useMutation } from '@tanstack/react-query';
 import { ArrowUp, Bot, Database, LockKeyhole, Sparkles, User } from 'lucide-react';
-import { useState } from 'react';
+import { type ReactNode, useState } from 'react';
 import { appEnv } from '@/app/env';
 import { PageHeader } from '@/components/layout/AdminShell';
 import { RoleGate } from '@/components/layout/RoleGate';
@@ -27,13 +27,77 @@ const suggestions = [
   '¿Cómo se relacionan margen y volumen en los productos más vendidos?'
 ];
 
+const renderAssistantInline = (line: string, lineIndex: number): ReactNode => {
+  const parts: ReactNode[] = [];
+  const pattern = /\*{2,3}([^*\n]+)\*{2,3}|`([^`\n]+)`/gu;
+  let cursor = 0;
+  let match: RegExpExecArray | null;
+  let partIndex = 0;
+
+  while ((match = pattern.exec(line)) !== null) {
+    if (match.index > cursor) parts.push(line.slice(cursor, match.index));
+    if (match[1] !== undefined) {
+      parts.push(<strong key={`${lineIndex}-${partIndex}`}>{match[1]}</strong>);
+    } else {
+      parts.push(
+        <code key={`${lineIndex}-${partIndex}`} className="rounded bg-ink-950/5 px-1 py-0.5 text-[0.9em]">
+          {match[2]}
+        </code>
+      );
+    }
+    cursor = match.index + match[0].length;
+    partIndex += 1;
+  }
+
+  if (cursor < line.length) parts.push(line.slice(cursor));
+  return parts.length > 0 ? parts : line;
+};
+
+/**
+ * Renders the small Markdown subset models commonly use without injecting
+ * HTML. React escapes all text, while bold text, inline code and lists remain
+ * readable instead of exposing literal asterisks to the user.
+ */
+export const renderAssistantContent = (content: string): ReactNode => {
+  const lines = content.split(/\r?\n/u);
+  return (
+    <div className="space-y-1.5">
+      {lines.map((line, index) => {
+        const bullet = line.match(/^\s*[-*]\s+(.+)$/u);
+        const numbered = line.match(/^\s*(\d+)[.)]\s+(.+)$/u);
+        if (bullet) {
+          return (
+            <div key={index} className="flex gap-2">
+              <span aria-hidden="true" className="text-brand-600">•</span>
+              <span>{renderAssistantInline(bullet[1]!, index)}</span>
+            </div>
+          );
+        }
+        if (numbered) {
+          return (
+            <div key={index} className="flex gap-2">
+              <span className="shrink-0 font-semibold text-brand-700">{numbered[1]}.</span>
+              <span>{renderAssistantInline(numbered[2]!, index)}</span>
+            </div>
+          );
+        }
+        return line.trim() === '' ? (
+          <div key={index} aria-hidden="true" className="h-1" />
+        ) : (
+          <p key={index}>{renderAssistantInline(line, index)}</p>
+        );
+      })}
+    </div>
+  );
+};
+
 export default function AiPage() {
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: 'welcome',
       role: 'assistant',
-      content: 'Preguntame sobre stock, ventas, compras o márgenes. Siempre voy a consultar datos autorizados antes de responder y no puedo modificar nada.'
+      content: 'Preguntame por datos concretos de tu tienda —stock, ventas, compras, precios o márgenes— y los voy a consultar antes de responder. También podés pedirme ideas generales; no puedo modificar nada.'
     }
   ]);
   const ask = useMutation({
@@ -94,7 +158,7 @@ export default function AiPage() {
                 <article key={message.id} className={`flex gap-3 ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                   {message.role === 'assistant' ? <span className="grid size-9 shrink-0 place-items-center rounded-full bg-ink-950 text-brand-300"><Bot className="size-4" /></span> : null}
                   <div className={`max-w-[82%] rounded-[1.5rem] px-4 py-3 text-sm leading-6 sm:max-w-[72%] ${message.role === 'user' ? 'rounded-br-md bg-brand-600 text-white' : 'rounded-bl-md border border-ink-950/7 bg-white text-ink-800 shadow-sm'}`}>
-                    <p className="whitespace-pre-wrap">{message.content}</p>
+                    {message.role === 'assistant' ? renderAssistantContent(message.content) : <p className="whitespace-pre-wrap">{message.content}</p>}
                     {message.evidence?.length ? <details className="mt-3 border-t border-ink-950/8 pt-2"><summary className="cursor-pointer text-[11px] font-black text-ink-600">Datos exactos usados</summary><dl className="mt-2 space-y-1.5">{message.evidence.map((fact) => <div key={`${fact.label}-${fact.formatted}`} className="flex items-start justify-between gap-4 text-xs"><dt className="text-ink-600">{fact.label}</dt><dd className="shrink-0 font-black text-ink-950">{fact.formatted}</dd></div>)}</dl></details> : null}
                     {message.consulted ? <p className="mt-3 flex items-center gap-1.5 border-t border-ink-950/8 pt-2 text-[10px] font-black uppercase tracking-wider text-brand-600"><Database className="size-3" /> Respuesta basada en datos reales de tu tienda</p> : null}
                   </div>

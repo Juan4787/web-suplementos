@@ -36,9 +36,45 @@ describe('AI request boundary', () => {
   });
 
   it('rechaza cuerpos por encima del límite antes de parsearlos', async () => {
-    await expect(parseAIRequest(request({ message: 'x'.repeat(16_100), history: [] }))).rejects.toThrow(
+    await expect(
+      parseAIRequest(
+        request({
+          message: 'consulta',
+          history: Array.from({ length: 6 }, () => ({
+            role: 'assistant',
+            content: 'x'.repeat(4000)
+          }))
+        })
+      )
+    ).rejects.toThrow(
       'REQUEST_TOO_LARGE'
     );
+  });
+
+  it('conserva respuestas anteriores completas para continuar la conversación', async () => {
+    const answer = 'x'.repeat(4000);
+    const parsed = await parseAIRequest(
+      request({
+        message: 'interesante',
+        history: [
+          { role: 'user', content: 'Técnicas para vender más' },
+          { role: 'assistant', content: answer }
+        ]
+      })
+    );
+
+    expect(parsed.history[1]?.content).toHaveLength(4000);
+  });
+
+  it('rechaza respuestas históricas por encima del límite seguro', async () => {
+    await expect(
+      parseAIRequest(
+        request({
+          message: 'hola',
+          history: [{ role: 'assistant', content: 'x'.repeat(4001) }]
+        })
+      )
+    ).rejects.toThrow();
   });
 
   it('extrae un Bearer acotado y rechaza credenciales ausentes', () => {

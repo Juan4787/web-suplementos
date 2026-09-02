@@ -54,4 +54,19 @@ describe('provider circuit breaker', () => {
     expect(() => breaker.assertClosed('cloudflare')).not.toThrow();
     expect(() => breaker.assertClosed('groq')).toThrow();
   });
+
+  it('no bloquea un proveedor por errores de formato de una respuesta', () => {
+    const breaker = new ProviderCircuitBreaker(() => 10_000);
+    const invalidOutput = () =>
+      new ProviderFailure('cloudflare', 'invalid_model_output', {
+        retrySameProvider: false,
+        fallbackEligible: true
+      });
+
+    breaker.recordFailure(invalidOutput());
+    breaker.recordFailure(invalidOutput());
+    breaker.recordFailure(invalidOutput());
+
+    expect(() => breaker.assertClosed('cloudflare')).not.toThrow();
+  });
 });

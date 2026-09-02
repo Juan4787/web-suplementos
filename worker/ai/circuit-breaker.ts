@@ -26,6 +26,12 @@ export class ProviderCircuitBreaker {
   }
 
   recordFailure(failure: ProviderFailure): void {
+    // A bad tool call or ungrounded prose is a contract failure for one
+    // generation, not proof that the provider is unavailable. Counting these
+    // failures would open the circuit after a few normal model mistakes and
+    // turn every following request into a 503 even while the provider is
+    // healthy. The orchestrator still falls back for the current request.
+    if (failure.kind === 'invalid_model_output' || failure.kind === 'invalid_request') return;
     const now = this.now();
     const previous = this.states.get(failure.provider);
     const withinWindow = previous && now - previous.firstFailureAt <= 60_000;

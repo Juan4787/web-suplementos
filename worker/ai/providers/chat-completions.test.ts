@@ -71,6 +71,21 @@ describe('chat completion adapters', () => {
     expect(failure.message).not.toContain('detalle remoto');
   });
 
+  it('respeta el cooldown indicado por Groq al abrir el circuito', async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({ error: { message: 'rate limited' } }), {
+        status: 429,
+        headers: { 'retry-after': '620' }
+      })
+    );
+    const provider = new GroqProvider('g'.repeat(40), fetchMock as typeof fetch);
+    const failure = await provider
+      .generate(MODEL_REGISTRY.gpt_oss_120b_groq_v1, canonicalRequest, new Deadline(1000))
+      .catch((error) => error);
+    expect(failure).toBeInstanceOf(ProviderFailure);
+    expect(failure.options.openCircuitMs).toBe(620_000);
+  });
+
   it.each([
     { status: 408, body: {}, kind: 'timeout', retry: false, fallback: true },
     { status: 404, body: {}, kind: 'model_unavailable', retry: false, fallback: true },
@@ -103,6 +118,8 @@ describe('chat completion adapters', () => {
 
   it.each([
     { message: 'Workers AI error 3036', kind: 'quota', retry: false },
+    { message: 'Workers AI error 4006 daily allocation', kind: 'quota', retry: false },
+    { message: 'you have used up your daily free allocation of 10,000 neurons', kind: 'quota', retry: false },
     { message: 'Workers AI error 3040 out of capacity', kind: 'capacity', retry: false },
     { message: 'Workers AI error 5007 model not found', kind: 'model_unavailable', retry: false },
     { message: 'Workers AI error 3007 timeout', kind: 'timeout', retry: false },

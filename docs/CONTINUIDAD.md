@@ -43,7 +43,7 @@ Este archivo existe para que una compactación de contexto no convierta decision
 - Toolchain local migrado a Node `24.20.0`, Wrangler `4.127.1` y Supabase CLI de proyecto `2.116.0`.
 - `wrangler.jsonc` apunta exclusivamente al Worker `impulso`, usa Static Assets para `dist`, ejecuta el Worker solo en `/api/*` y declara el binding `AI`.
 - Antes de cualquier escritura remota, `scripts/validate-worker-target.mjs` exige el perfil `impulso`, el directorio exacto, una única cuenta llamada `app de suplementos` y su ID esperado.
-- La migración `20260901000000_ai_infrastructure.sql` completa `ai_usage_counters` y `ai_request_audit`, implementa cuota atómica de 4 solicitudes por minuto y 30 por día, y agrega cuatro RPC de hechos read-only.
+- Las migraciones `20260901000000_ai_infrastructure.sql`, `20260901190000_ai_quota_policy.sql` y `20260901200000_ai_conversation_quota.sql` completan `ai_usage_counters` y `ai_request_audit`, implementan cuota atómica de 20 solicitudes por minuto y 100 por día, y mantienen las RPC de hechos read-only.
 - Las RPC de IA no devuelven clientes, teléfonos, direcciones, notas ni descripciones. Ventas y márgenes se calculan en PostgreSQL; inventario y rendimiento devuelven como máximo 20 y 10 productos respectivamente.
 - La migración se aplicó al proyecto Supabase vinculado `web-suplementos` después de comparar el esquema. Los conteos comerciales antes y después permanecieron iguales: 25 productos, 1 compra, 21 movimientos, 0 pedidos y 1 usuario.
 - La suite SQL específica aprobó 23/23 y la suite SQL completa 75/75; el conjunto web aprobó 117/117 en 19 archivos. La certificación real aprobó 6/6 casos en GPT-OSS/Groq y 6/6 en GLM 4.7 Flash/Workers AI.
