@@ -35,6 +35,27 @@ describe('business AI HTTP client', () => {
     expect(result.evidence).toHaveLength(1);
   });
 
+  it('acepta respuestas analíticas extensas de más de 4000 caracteres', async () => {
+    const longAnswer = 'Respuesta analítica extensa. '.repeat(200); // ~5800 chars
+    const fetchMock = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          answer: longAnswer,
+          model: 'GPT-OSS 120B',
+          provider: 'Groq',
+          fallback: false,
+          usedTools: ['get_sales_summary'],
+          evidence: []
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      )
+    );
+
+    const result = await requestBusinessAI(input, fetchMock as typeof fetch);
+    expect(result.answer).toBe(longAnswer);
+    expect(result.answer.length).toBeGreaterThan(4000);
+  });
+
   it('usa únicamente el mensaje público seguro ante un error', async () => {
     const fetchMock = vi.fn(async () =>
       new Response(

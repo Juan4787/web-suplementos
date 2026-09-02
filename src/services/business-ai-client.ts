@@ -48,7 +48,7 @@ const parseSuccess = (payload: unknown): AIAnswer | null => {
     !isRecord(payload) ||
     typeof payload.answer !== 'string' ||
     payload.answer.length < 1 ||
-    payload.answer.length > 4000 ||
+    payload.answer.length > 20000 ||
     typeof payload.model !== 'string' ||
     payload.model.length > 100 ||
     typeof payload.provider !== 'string' ||
@@ -58,7 +58,7 @@ const parseSuccess = (payload: unknown): AIAnswer | null => {
     payload.usedTools.length > 4 ||
     !payload.usedTools.every((tool) => typeof tool === 'string' && tool.length <= 64) ||
     !Array.isArray(payload.evidence) ||
-    payload.evidence.length > 60
+    payload.evidence.length > 200
   ) {
     return null;
   }
