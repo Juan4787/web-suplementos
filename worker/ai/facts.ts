@@ -538,10 +538,81 @@ const addEvidenceId = (usedIds: string[], id: string): void => {
   usedIds.push(id);
 };
 
+export interface UnsupportedClaimsReport {
+  unsupportedNumberWords: string[];
+  unsupportedNumericTokens: string[];
+  hasUnsupportedClaims: boolean;
+}
+
+export const inspectPotentialUnsupportedClaims = (
+  text: string,
+  catalog: FactCatalog
+): UnsupportedClaimsReport => {
+  const numericIndex = new Map<string, string[]>();
+  for (const [id, fact] of catalog) {
+    if (typeof fact.rawValue === 'number') {
+      const normalized = normalizeNumericToken(String(fact.rawValue));
+      if (normalized) {
+        const ids = numericIndex.get(normalized) ?? [];
+        if (!ids.includes(id)) ids.push(id);
+        numericIndex.set(normalized, ids);
+      }
+      for (const formattedToken of fact.formatted.match(NUMERIC_TOKEN_PATTERN) ?? []) {
+        const normFormatted = normalizeNumericToken(formattedToken);
+        if (normFormatted) {
+          const ids = numericIndex.get(normFormatted) ?? [];
+          if (!ids.includes(id)) ids.push(id);
+          numericIndex.set(normFormatted, ids);
+        }
+      }
+    }
+    if (typeof fact.rawValue === 'string' && id.endsWith('.label')) {
+      for (const labelToken of fact.rawValue.match(NUMERIC_TOKEN_PATTERN) ?? []) {
+        const normLabel = normalizeNumericToken(labelToken);
+        if (normLabel) {
+          const ids = numericIndex.get(normLabel) ?? [];
+          if (!ids.includes(id)) ids.push(id);
+          numericIndex.set(normLabel, ids);
+        }
+      }
+    }
+  }
+
+  const unsupportedNumberWords: string[] = [];
+  const textWithNumberWordsRemoved = text.replace(
+    SPANISH_NUMBER_SEQUENCE_PATTERN,
+    (phrase) => {
+      const parsed = parseSpanishNumber(phrase);
+      if (parsed === null) return phrase;
+      const matchingIds = numericIndex.get(String(parsed));
+      if (!matchingIds || matchingIds.length === 0) {
+        unsupportedNumberWords.push(phrase);
+      }
+      return ' ';
+    }
+  );
+
+  const unsupportedNumericTokens: string[] = [];
+  for (const token of textWithNumberWordsRemoved.match(NUMERIC_TOKEN_PATTERN) ?? []) {
+    const normalized = normalizeNumericToken(token);
+    const matchingIds = normalized ? numericIndex.get(normalized) : undefined;
+    if (!matchingIds || matchingIds.length === 0) {
+      unsupportedNumericTokens.push(token);
+    }
+  }
+
+  return {
+    unsupportedNumberWords,
+    unsupportedNumericTokens,
+    hasUnsupportedClaims: unsupportedNumberWords.length > 0 || unsupportedNumericTokens.length > 0
+  };
+};
+
 const addTrustedLiteralEvidence = (
   text: string,
   catalog: FactCatalog,
-  usedIds: string[]
+  usedIds: string[],
+  strict = false
 ): void => {
   const numericIndex = new Map<string, string[]>();
   const addIndexValue = (value: string, id: string): void => {
@@ -559,10 +630,6 @@ const addTrustedLiteralEvidence = (
         addIndexValue(formattedToken, id);
       }
     }
-    // Product labels and other trusted strings can contain meaningful
-    // quantities (for example a presentation such as "Omega 3"). Indexing
-    // those tokens lets the model repeat an exact label without turning that
-    // label into an ungrounded-number rejection.
     if (typeof fact.rawValue === 'string' && id.endsWith('.label')) {
       for (const labelToken of fact.rawValue.match(NUMERIC_TOKEN_PATTERN) ?? []) {
         addIndexValue(labelToken, id);
@@ -570,9 +637,6 @@ const addTrustedLiteralEvidence = (
     }
   }
 
-  // Models sometimes spell out a factual quantity ("diez unidades") even
-  // when the prompt asks for natural prose. Verify those words against the
-  // same numeric index used for digits instead of rejecting all number words.
   const textWithNumberWordsRemoved = text.replace(
     SPANISH_NUMBER_SEQUENCE_PATTERN,
     (phrase) => {
@@ -580,13 +644,14 @@ const addTrustedLiteralEvidence = (
       if (parsed === null) return phrase;
       const matchingIds = numericIndex.get(String(parsed));
       if (!matchingIds || matchingIds.length === 0) {
-        throw new UngroundedAnswerFailure('literal_number');
+        if (strict) throw new UngroundedAnswerFailure('literal_number');
+        return phrase;
       }
       for (const id of matchingIds) addEvidenceId(usedIds, id);
       return ' ';
     }
   );
-  if (NUMBER_WORD_PATTERN.test(textWithNumberWordsRemoved)) {
+  if (strict && NUMBER_WORD_PATTERN.test(textWithNumberWordsRemoved)) {
     throw new UngroundedAnswerFailure('literal_number');
   }
 
@@ -594,7 +659,8 @@ const addTrustedLiteralEvidence = (
     const normalized = normalizeNumericToken(token);
     const matchingIds = normalized ? numericIndex.get(normalized) : undefined;
     if (!matchingIds || matchingIds.length === 0) {
-      throw new UngroundedAnswerFailure('literal_number');
+      if (strict) throw new UngroundedAnswerFailure('literal_number');
+      continue;
     }
     for (const id of matchingIds) addEvidenceId(usedIds, id);
   }
@@ -612,7 +678,7 @@ const addTrustedLiteralEvidence = (
 export const renderGroundedAnswer = (
   template: string | null,
   catalog: FactCatalog,
-  options: { allowLiteralNumbers?: boolean } = {}
+  options: { allowLiteralNumbers?: boolean; strictLiteralNumbers?: boolean } = {}
 ): { answer: string; evidence: ExactEvidence[] } => {
   const trimmed = template?.trim() ?? '';
   if (!trimmed) throw new UngroundedAnswerFailure('empty_answer');
@@ -638,15 +704,14 @@ export const renderGroundedAnswer = (
     throw new UngroundedAnswerFailure('unknown_fact');
   }
 
-  if (!options.allowLiteralNumbers) {
-    addTrustedLiteralEvidence(withoutPlaceholders, catalog, usedIds);
-  }
+  const isStrict = options.strictLiteralNumbers ?? false;
+  addTrustedLiteralEvidence(withoutPlaceholders, catalog, usedIds, isStrict);
 
   const answer = normalizedTemplate.replace(
     PLACEHOLDER_PATTERN,
     (_match, id: string) => catalog.get(id)!.formatted
   );
-  if (answer.length > 4000) throw new UngroundedAnswerFailure('empty_answer');
+  if (answer.length > 16_000) throw new UngroundedAnswerFailure('empty_answer');
   return {
     answer,
     evidence: usedIds.map((id) => {

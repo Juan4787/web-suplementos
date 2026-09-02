@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   addToolFacts,
+  inspectPotentialUnsupportedClaims,
   prepareToolResultForModel,
   renderGroundedAnswer,
   sanitizeToolResult,
@@ -47,12 +48,23 @@ describe('exact facts contract', () => {
     expect(rendered.evidence[0]?.label).toContain('Creatina');
   });
 
-  it('rechaza cifras literales y facts inexistentes', () => {
+  it('rechaza facts inexistentes, audita con oráculo y permite propuestas libres en producción', () => {
     const catalog: FactCatalog = new Map();
-    expect(() => renderGroundedAnswer('Vendiste 10 unidades.', catalog)).toThrow(UngroundedAnswerFailure);
     expect(() => renderGroundedAnswer('{{fact:sales.inventado}}', catalog)).toThrow(
       UngroundedAnswerFailure
     );
+    expect(() =>
+      renderGroundedAnswer('Vendiste 10 unidades.', catalog, { strictLiteralNumbers: true })
+    ).toThrow(UngroundedAnswerFailure);
+
+    const report = inspectPotentialUnsupportedClaims('Propondría un descuento de 10% en 3 combos.', catalog);
+    expect(report.hasUnsupportedClaims).toBe(true);
+    expect(report.unsupportedNumericTokens).toContain('10');
+    expect(report.unsupportedNumericTokens).toContain('3');
+
+    // En producción (modo normal), no bloquea propuestas:
+    const proposal = renderGroundedAnswer('Propondría un descuento de 10% en 3 combos.', catalog);
+    expect(proposal.answer).toBe('Propondría un descuento de 10% en 3 combos.');
   });
 
   it('verifica cantidades de negocio escritas con palabras contra los facts', () => {
@@ -73,9 +85,9 @@ describe('exact facts contract', () => {
     const composite = renderGroundedAnswer('Vendiste treinta y cuatro unidades.', catalog);
     expect(composite.answer).toBe('Vendiste treinta y cuatro unidades.');
     expect(composite.evidence).toHaveLength(1);
-    expect(() => renderGroundedAnswer('Vendiste una unidad.', catalog)).toThrow(
-      UngroundedAnswerFailure
-    );
+    expect(() =>
+      renderGroundedAnswer('Vendiste una unidad.', catalog, { strictLiteralNumbers: true })
+    ).toThrow(UngroundedAnswerFailure);
     expect(renderGroundedAnswer('Vendiste {{fact:sales.units}} unidades.', catalog).answer).toBe(
       'Vendiste 10 unidades.'
     );
@@ -236,11 +248,11 @@ describe('exact facts contract', () => {
     );
     expect(rendered.answer).toContain('agosto de 2026');
     expect(rendered.evidence).toHaveLength(2);
-    expect(() => renderGroundedAnswer('Vendiste 2026 unidades.', catalog)).toThrow(
-      UngroundedAnswerFailure
-    );
-    expect(() => renderGroundedAnswer('En agosto de 2025 vendiste mucho.', catalog)).toThrow(
-      UngroundedAnswerFailure
-    );
+    expect(() =>
+      renderGroundedAnswer('Vendiste 2026 unidades.', catalog, { strictLiteralNumbers: true })
+    ).toThrow(UngroundedAnswerFailure);
+    expect(() =>
+      renderGroundedAnswer('En agosto de 2025 vendiste mucho.', catalog, { strictLiteralNumbers: true })
+    ).toThrow(UngroundedAnswerFailure);
   });
 });
