@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ProviderCircuitBreaker } from './circuit-breaker';
 import { ProviderFailure, ToolDependencyFailure } from './errors';
+import { MODEL_REGISTRY } from './model-registry';
 import { orchestrate, type OrchestratorDependencies } from './orchestrator';
 import type { AIProvider } from './providers/provider';
 import type {
@@ -317,7 +318,9 @@ describe('sticky AI orchestration', () => {
     expect(result.evidence).toEqual([]);
     expect(result.providerTransitions).toBe(0);
     expect(groq.calls[0]?.request.tools).toHaveLength(0);
-    expect(groq.calls[0]?.request.maxCompletionTokens).toBe(420);
+    expect(groq.calls[0]?.request.maxCompletionTokens).toBe(
+      MODEL_REGISTRY.gpt_oss_120b_groq_v1.maxCompletionTokens
+    );
   });
 
   it('conserva contexto reciente sin reenviar una conversación ilimitada al proveedor', async () => {

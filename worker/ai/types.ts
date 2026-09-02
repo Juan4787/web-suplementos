@@ -51,6 +51,7 @@ export type ModelDefinition = {
   key: ModelKey;
   provider: ProviderKey;
   providerModel: string;
+  role?: 'primary' | 'fallback';
   label: string;
   providerLabel: string;
   certified: boolean;

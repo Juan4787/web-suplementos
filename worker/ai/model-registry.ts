@@ -7,33 +7,41 @@ export const MODEL_REGISTRY: Record<ModelKey, ModelDefinition> = {
     key: 'gpt_oss_120b_groq_v1',
     provider: 'groq',
     providerModel: 'openai/gpt-oss-120b',
+    role: 'primary',
     label: 'GPT-OSS 120B',
     providerLabel: 'Groq',
     certified: true,
     enabled: true,
     certificationSuite: CERTIFICATION_SUITE_VERSION,
-    timeoutMs: 10_000,
-    maxCompletionTokens: 420,
+    timeoutMs: 25_000,
+    maxCompletionTokens: 3072,
     capabilities: { tools: true, reasoning: true, json: true }
   },
   glm_4_7_flash_cf_v1: {
     key: 'glm_4_7_flash_cf_v1',
     provider: 'cloudflare',
     providerModel: '@cf/zai-org/glm-4.7-flash',
+    role: 'fallback',
     label: 'GLM 4.7 Flash',
     providerLabel: 'Cloudflare',
     certified: true,
     enabled: true,
     certificationSuite: CERTIFICATION_SUITE_VERSION,
     timeoutMs: 20_000,
-    maxCompletionTokens: 512,
+    maxCompletionTokens: 2048,
     capabilities: { tools: true, reasoning: true, json: true }
   }
 };
 
+export const MODEL_POLICY = {
+  primary: 'gpt_oss_120b_groq_v1' as const,
+  fallback: 'glm_4_7_flash_cf_v1' as const,
+  maxProviderSwitches: 1
+} as const;
+
 export const AUTOMATIC_ROUTE: readonly ModelKey[] = [
-  'gpt_oss_120b_groq_v1',
-  'glm_4_7_flash_cf_v1'
+  MODEL_POLICY.primary,
+  MODEL_POLICY.fallback
 ];
 
 export const assertProductionModelsReady = (env: Env): void => {
