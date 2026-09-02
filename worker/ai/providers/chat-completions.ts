@@ -103,7 +103,7 @@ export const normalizeChatCompletion = (
       fallbackEligible: true
     });
   }
-  if (typeof content === 'string' && content.length > 12_000) {
+  if (typeof content === 'string' && content.length > 24_000) {
     throw new ProviderFailure(provider, 'invalid_model_output', {
       retrySameProvider: false,
       fallbackEligible: true
@@ -135,7 +135,7 @@ export const normalizeChatCompletion = (
       });
     }
     return {
-      id: rawCall.id,
+      id: rawCall.id.trim() || 'call_0',
       name: rawCall.function.name,
       argumentsJson: rawCall.function.arguments
     };

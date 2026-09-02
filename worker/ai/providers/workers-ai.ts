@@ -19,7 +19,7 @@ const classifyWorkersError = (error: unknown): ProviderFailure => {
       cause: error
     });
   }
-  if (/3040|capacity/i.test(message)) {
+  if (/3040|5035|capacity|overloaded/i.test(message)) {
     return new ProviderFailure('cloudflare', 'capacity', {
       retrySameProvider: false,
       fallbackEligible: true,

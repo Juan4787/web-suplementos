@@ -121,6 +121,7 @@ describe('chat completion adapters', () => {
     { message: 'Workers AI error 4006 daily allocation', kind: 'quota', retry: false },
     { message: 'you have used up your daily free allocation of 10,000 neurons', kind: 'quota', retry: false },
     { message: 'Workers AI error 3040 out of capacity', kind: 'capacity', retry: false },
+    { message: 'Workers AI error 5035 service temporarily overloaded', kind: 'capacity', retry: false },
     { message: 'Workers AI error 5007 model not found', kind: 'model_unavailable', retry: false },
     { message: 'Workers AI error 3007 timeout', kind: 'timeout', retry: false },
     { message: 'Workers AI error 429 rate limit', kind: 'rate_limit', retry: false },
@@ -135,5 +136,62 @@ describe('chat completion adapters', () => {
     expect(failure.kind).toBe(kind);
     expect(failure.options.retrySameProvider).toBe(retry);
     expect(failure.options.fallbackEligible).toBe(true);
+  });
+
+  it('formatea correctamente el transcript canónico multi-ronda para GLM / Workers AI', () => {
+    const multiRoundRequest: CanonicalAIRequest = {
+      messages: [
+        { role: 'system', content: 'system prompt' },
+        { role: 'user', content: '¿Qué vendo más?' },
+        {
+          role: 'assistant',
+          content: 'Consultando ranking...',
+          toolCalls: [{ id: 'call_ranking_123', name: 'get_top_selling_products', argumentsJson: '{"limit":5}' }]
+        },
+        {
+          role: 'tool',
+          content: '{"ranking":[{"product":"Creatina","units":50}]}',
+          toolCallId: 'call_ranking_123',
+          name: 'get_top_selling_products'
+        }
+      ],
+      tools: [],
+      reasoning: 'low',
+      maxCompletionTokens: 2048
+    };
+
+    const payload = toChatCompletionPayload(MODEL_REGISTRY.glm_4_7_flash_cf_v1, multiRoundRequest);
+    expect(payload.messages).toHaveLength(4);
+    expect(payload.messages[2]).toMatchObject({
+      role: 'assistant',
+      content: 'Consultando ranking...',
+      tool_calls: [
+        {
+          id: 'call_ranking_123',
+          type: 'function',
+          function: { name: 'get_top_selling_products', arguments: '{"limit":5}' }
+        }
+      ]
+    });
+    expect(payload.messages[3]).toEqual({
+      role: 'tool',
+      content: '{"ranking":[{"product":"Creatina","units":50}]}',
+      tool_call_id: 'call_ranking_123',
+      name: 'get_top_selling_products'
+    });
+  });
+
+  it('acepta respuestas extensas de hasta 24.000 caracteres sin fallar', () => {
+    const longText = 'A'.repeat(20_000);
+    const result = normalizeChatCompletion('cloudflare', MODEL_REGISTRY.glm_4_7_flash_cf_v1, {
+      choices: [
+        {
+          finish_reason: 'stop',
+          message: { content: longText }
+        }
+      ]
+    });
+    expect(result.text).toBe(longText);
+    expect(result.finishReason).toBe('complete');
   });
 });
