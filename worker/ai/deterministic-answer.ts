@@ -23,9 +23,9 @@ const BUSINESS_DATA_PATTERN =
 const BUSINESS_CONTEXT_PATTERN =
   /\b(?:mi|mis|tengo|hay|queda|quedan|disponible|disponibles|deber[ií]a|prioriz|compar|per[ií]odo|mes|semana|a[nñ]o|fecha|rindi[oó]|rendimiento|m[aá]s|cu[aá]l|qu[eé]|cu[aá]nt)\b/u;
 const GENERAL_ADVICE_PATTERN =
-  /\b(?:t[eé]cnica(?:s)?|estrategia|consejo(?:s)?|idea(?:s)?|mejorar|vender m[aá]s|venta consultiva|promoci[oó]n)\b/u;
+  /\b(?:t[eé]cnica(?:s)?|estrategia(?:s)?|consejo(?:s)?|idea(?:s)?|mejorar|vender m[aá]s|venta consultiva|promoci[oó]n|opina(?:s)?|opini[oó]n|recomendaci[oó]n|recomenda(?:s)?|suelen funcionar)\b/u;
 const SPECIFIC_DATA_CUE_PATTERN =
-  /\b(?:stock|inventario|reposici[oó]n|rotaci[oó]n|precio|precios|caro|costos?|m[aá]rgenes?|facturaci[oó]n|pedidos?|producto(?:s)?|cat[aá]logo|compras?|compar|per[ií]odo|mes|semana|fecha|cu[aá]l|qu[eé]|cu[aá]nt|rindi[oó]|rendimiento|vendido|vendi[oó])\b/u;
+  /\b(?:este mes|este a[nñ]o|esta semana|hoy|ayer|el mes pasado|mis n[uú]meros|en mi tienda|en el local)\b/u;
 
 const placeholder = (id: string): string => `{{fact:${id}}}`;
 
