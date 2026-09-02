@@ -13,7 +13,7 @@ const historyUserMessageSchema = z
 const historyAssistantMessageSchema = z
   .object({
     role: z.literal('assistant'),
-    content: z.string().trim().min(1).max(4000)
+    content: z.string().trim().min(1).max(16_000)
   })
   .strict();
 
@@ -32,7 +32,7 @@ const aiRequestSchema = z
 
 export type ValidatedAIRequest = z.infer<typeof aiRequestSchema>;
 
-const MAX_REQUEST_BYTES = 24_000;
+const MAX_REQUEST_BYTES = 64_000;
 
 const readLimitedBody = async (request: Request): Promise<string> => {
   const declaredLength = Number.parseInt(request.headers.get('Content-Length') ?? '', 10);

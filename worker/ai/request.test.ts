@@ -42,7 +42,7 @@ describe('AI request boundary', () => {
           message: 'consulta',
           history: Array.from({ length: 6 }, () => ({
             role: 'assistant',
-            content: 'x'.repeat(4000)
+            content: 'x'.repeat(12_000)
           }))
         })
       )
@@ -52,7 +52,7 @@ describe('AI request boundary', () => {
   });
 
   it('conserva respuestas anteriores completas para continuar la conversación', async () => {
-    const answer = 'x'.repeat(4000);
+    const answer = 'x'.repeat(15_000);
     const parsed = await parseAIRequest(
       request({
         message: 'interesante',
@@ -63,7 +63,7 @@ describe('AI request boundary', () => {
       })
     );
 
-    expect(parsed.history[1]?.content).toHaveLength(4000);
+    expect(parsed.history[1]?.content).toHaveLength(15_000);
   });
 
   it('rechaza respuestas históricas por encima del límite seguro', async () => {
@@ -71,7 +71,7 @@ describe('AI request boundary', () => {
       parseAIRequest(
         request({
           message: 'hola',
-          history: [{ role: 'assistant', content: 'x'.repeat(4001) }]
+          history: [{ role: 'assistant', content: 'x'.repeat(16_001) }]
         })
       )
     ).rejects.toThrow();
