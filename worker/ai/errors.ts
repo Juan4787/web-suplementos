@@ -58,8 +58,11 @@ export class AgentLoopLimitFailure extends Error {
 }
 
 export class UngroundedAnswerFailure extends Error {
-  constructor(readonly reason: 'unknown_fact' | 'literal_number' | 'empty_answer' | 'missing_evidence') {
-    super(`The model answer is not grounded: ${reason}`);
+  constructor(
+    readonly reason: 'unknown_fact' | 'literal_number' | 'empty_answer' | 'missing_evidence',
+    readonly detail?: string
+  ) {
+    super(`The model answer is not grounded: ${reason}${detail ? ` (${detail})` : ''}`);
     this.name = 'UngroundedAnswerFailure';
   }
 }

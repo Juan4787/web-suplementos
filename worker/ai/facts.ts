@@ -534,8 +534,9 @@ const normalizedSearchText = (value: string): string =>
 
 const addEvidenceId = (usedIds: string[], id: string): void => {
   if (usedIds.includes(id)) return;
-  if (usedIds.length >= 60) throw new UngroundedAnswerFailure('unknown_fact');
-  usedIds.push(id);
+  if (usedIds.length < 500) {
+    usedIds.push(id);
+  }
 };
 
 export interface UnsupportedClaimsReport {
@@ -692,16 +693,16 @@ export const renderGroundedAnswer = (
   const usedIds: string[] = [];
   const withoutPlaceholders = normalizedTemplate.replace(PLACEHOLDER_PATTERN, (_match, id: string) => {
     const fact = catalog.get(id);
-    if (!fact) throw new UngroundedAnswerFailure('unknown_fact');
-    if (!usedIds.includes(id)) {
-      if (usedIds.length >= 60) throw new UngroundedAnswerFailure('unknown_fact');
+    if (!fact) throw new UngroundedAnswerFailure('unknown_fact', id);
+    if (!usedIds.includes(id) && usedIds.length < 500) {
       usedIds.push(id);
     }
     return '';
   });
 
-  if (UNRESOLVED_PLACEHOLDER_PATTERN.test(withoutPlaceholders)) {
-    throw new UngroundedAnswerFailure('unknown_fact');
+  const unresolvedMatch = withoutPlaceholders.match(UNRESOLVED_PLACEHOLDER_PATTERN);
+  if (unresolvedMatch) {
+    throw new UngroundedAnswerFailure('unknown_fact', unresolvedMatch[0]);
   }
 
   const isStrict = options.strictLiteralNumbers ?? false;
