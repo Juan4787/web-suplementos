@@ -27,21 +27,42 @@ const suggestions = [
   '¿Cómo se relacionan margen y volumen en los productos más vendidos?'
 ];
 
-const renderAssistantInline = (line: string, lineIndex: number): ReactNode => {
+const renderAssistantInline = (line: string, keyPrefix: string | number): ReactNode => {
   const parts: ReactNode[] = [];
-  const pattern = /\*{2,3}([^*\n]+)\*{2,3}|`([^`\n]+)`/gu;
+  const pattern = /\*\*\*([^*\n]+)\*\*\*|\*\*([^*\n]+)\*\*|\*([^*\n]+)\*|`([^`\n]+)`/gu;
   let cursor = 0;
   let match: RegExpExecArray | null;
   let partIndex = 0;
 
   while ((match = pattern.exec(line)) !== null) {
-    if (match.index > cursor) parts.push(line.slice(cursor, match.index));
+    if (match.index > cursor) {
+      parts.push(line.slice(cursor, match.index));
+    }
     if (match[1] !== undefined) {
-      parts.push(<strong key={`${lineIndex}-${partIndex}`}>{match[1]}</strong>);
-    } else {
       parts.push(
-        <code key={`${lineIndex}-${partIndex}`} className="rounded bg-ink-950/5 px-1 py-0.5 text-[0.9em]">
+        <strong key={`${keyPrefix}-bi-${partIndex}`} className="font-black italic text-ink-950">
+          {match[1]}
+        </strong>
+      );
+    } else if (match[2] !== undefined) {
+      parts.push(
+        <strong key={`${keyPrefix}-b-${partIndex}`} className="font-bold text-ink-950">
           {match[2]}
+        </strong>
+      );
+    } else if (match[3] !== undefined) {
+      parts.push(
+        <em key={`${keyPrefix}-i-${partIndex}`} className="italic text-ink-800">
+          {match[3]}
+        </em>
+      );
+    } else if (match[4] !== undefined) {
+      parts.push(
+        <code
+          key={`${keyPrefix}-c-${partIndex}`}
+          className="rounded bg-ink-950/5 px-1.5 py-0.5 font-mono text-[0.85em] text-brand-700"
+        >
+          {match[4]}
         </code>
       );
     }
@@ -49,42 +70,217 @@ const renderAssistantInline = (line: string, lineIndex: number): ReactNode => {
     partIndex += 1;
   }
 
-  if (cursor < line.length) parts.push(line.slice(cursor));
+  if (cursor < line.length) {
+    parts.push(line.slice(cursor));
+  }
   return parts.length > 0 ? parts : line;
 };
 
+const isTableSeparator = (line: string): boolean =>
+  /^\s*\|?(\s*:?-+:?\s*\|)+\s*:?-+:?\s*\|?\s*$/u.test(line);
+
+const isTableRow = (line: string): boolean => {
+  const trimmed = line.trim();
+  return trimmed.startsWith('|') || (trimmed.includes('|') && trimmed.endsWith('|'));
+};
+
+const parseTableRow = (line: string): string[] => {
+  const trimmed = line.trim();
+  const raw = trimmed.replace(/^\|/u, '').replace(/\|$/u, '');
+  return raw.split('|').map((cell) => cell.trim());
+};
+
+const parseTableAlignments = (separatorLine: string): ('left' | 'center' | 'right')[] => {
+  const cells = parseTableRow(separatorLine);
+  return cells.map((cell) => {
+    const left = cell.startsWith(':');
+    const right = cell.endsWith(':');
+    if (left && right) return 'center';
+    if (right) return 'right';
+    return 'left';
+  });
+};
+
+const getAlignClass = (align?: 'left' | 'center' | 'right'): string => {
+  if (align === 'center') return 'text-center';
+  if (align === 'right') return 'text-right';
+  return 'text-left';
+};
+
+type MarkdownBlock =
+  | { type: 'heading'; level: number; text: string }
+  | { type: 'table'; headers: string[]; alignments: ('left' | 'center' | 'right')[]; rows: string[][] }
+  | { type: 'bullet'; text: string }
+  | { type: 'numbered'; number: string; text: string }
+  | { type: 'empty' }
+  | { type: 'paragraph'; text: string };
+
+const parseBlocks = (content: string): MarkdownBlock[] => {
+  const lines = content.split(/\r?\n/u);
+  const blocks: MarkdownBlock[] = [];
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = lines[i]!;
+
+    // Check for Markdown Table: header line followed by separator line
+    if (i + 1 < lines.length && isTableRow(line) && isTableSeparator(lines[i + 1]!)) {
+      const headers = parseTableRow(line);
+      const alignments = parseTableAlignments(lines[i + 1]!);
+      const rows: string[][] = [];
+      i += 2;
+      while (i < lines.length && isTableRow(lines[i]!) && !isTableSeparator(lines[i]!)) {
+        rows.push(parseTableRow(lines[i]!));
+        i++;
+      }
+      blocks.push({ type: 'table', headers, alignments, rows });
+      continue;
+    }
+
+    const heading = line.match(/^(#{1,4})\s+(.+)$/u);
+    if (heading) {
+      blocks.push({
+        type: 'heading',
+        level: heading[1]!.length,
+        text: heading[2]!
+      });
+      i++;
+      continue;
+    }
+
+    const bullet = line.match(/^\s*[-*]\s+(.+)$/u);
+    if (bullet) {
+      blocks.push({ type: 'bullet', text: bullet[1]! });
+      i++;
+      continue;
+    }
+
+    const numbered = line.match(/^\s*(\d+)[.)]\s+(.+)$/u);
+    if (numbered) {
+      blocks.push({ type: 'numbered', number: numbered[1]!, text: numbered[2]! });
+      i++;
+      continue;
+    }
+
+    if (line.trim() === '') {
+      blocks.push({ type: 'empty' });
+      i++;
+      continue;
+    }
+
+    blocks.push({ type: 'paragraph', text: line });
+    i++;
+  }
+
+  return blocks;
+};
+
 /**
- * Renders the small Markdown subset models commonly use without injecting
- * HTML. React escapes all text, while bold text, inline code and lists remain
- * readable instead of exposing literal asterisks to the user.
+ * Renders Markdown subset (tables, headings, bold, italic, code, lists)
+ * without using dangerouslySetInnerHTML. React automatically escapes all
+ * text, preventing XSS while displaying clean, professional tables and cards.
  */
 export const renderAssistantContent = (content: string): ReactNode => {
-  const lines = content.split(/\r?\n/u);
+  const blocks = parseBlocks(content);
+
   return (
-    <div className="space-y-1.5">
-      {lines.map((line, index) => {
-        const bullet = line.match(/^\s*[-*]\s+(.+)$/u);
-        const numbered = line.match(/^\s*(\d+)[.)]\s+(.+)$/u);
-        if (bullet) {
+    <div className="space-y-2">
+      {blocks.map((block, index) => {
+        if (block.type === 'heading') {
           return (
-            <div key={index} className="flex gap-2">
-              <span aria-hidden="true" className="text-brand-600">•</span>
-              <span>{renderAssistantInline(bullet[1]!, index)}</span>
+            <h4
+              key={index}
+              className="mt-3.5 mb-1.5 font-display text-sm font-black tracking-tight text-ink-950"
+            >
+              {renderAssistantInline(block.text, `h-${index}`)}
+            </h4>
+          );
+        }
+
+        if (block.type === 'table') {
+          return (
+            <div
+              key={index}
+              className="my-3 overflow-hidden rounded-2xl border border-ink-950/10 bg-white shadow-sm"
+            >
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse text-left text-xs">
+                  <thead>
+                    <tr className="border-b border-ink-950/10 bg-cream-100/80">
+                      {block.headers.map((header, hIdx) => {
+                        const align = getAlignClass(block.alignments[hIdx]);
+                        return (
+                          <th
+                            key={hIdx}
+                            className={`px-3.5 py-2.5 font-black whitespace-nowrap text-ink-900 ${align}`}
+                          >
+                            {renderAssistantInline(header, `th-${index}-${hIdx}`)}
+                          </th>
+                        );
+                      })}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-ink-950/5">
+                    {block.rows.map((row, rIdx) => (
+                      <tr
+                        key={rIdx}
+                        className="transition-colors hover:bg-cream-50/60"
+                      >
+                        {row.map((cell, cIdx) => {
+                          const align = getAlignClass(block.alignments[cIdx]);
+                          return (
+                            <td
+                              key={cIdx}
+                              className={`px-3.5 py-2 whitespace-nowrap text-ink-700 ${align}`}
+                            >
+                              {renderAssistantInline(cell, `td-${index}-${rIdx}-${cIdx}`)}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           );
         }
-        if (numbered) {
+
+        if (block.type === 'bullet') {
           return (
-            <div key={index} className="flex gap-2">
-              <span className="shrink-0 font-semibold text-brand-700">{numbered[1]}.</span>
-              <span>{renderAssistantInline(numbered[2]!, index)}</span>
+            <div key={index} className="flex items-start gap-2.5 py-0.5">
+              <span
+                aria-hidden="true"
+                className="mt-2 size-1.5 shrink-0 rounded-full bg-brand-500"
+              />
+              <div className="flex-1 leading-relaxed text-ink-800">
+                {renderAssistantInline(block.text, `b-${index}`)}
+              </div>
             </div>
           );
         }
-        return line.trim() === '' ? (
-          <div key={index} aria-hidden="true" className="h-1" />
-        ) : (
-          <p key={index}>{renderAssistantInline(line, index)}</p>
+
+        if (block.type === 'numbered') {
+          return (
+            <div key={index} className="flex items-start gap-2.5 py-0.5">
+              <span className="shrink-0 font-bold tabular-nums text-brand-600">
+                {block.number}.
+              </span>
+              <div className="flex-1 leading-relaxed text-ink-800">
+                {renderAssistantInline(block.text, `n-${index}`)}
+              </div>
+            </div>
+          );
+        }
+
+        if (block.type === 'empty') {
+          return <div key={index} aria-hidden="true" className="h-1" />;
+        }
+
+        return (
+          <p key={index} className="leading-relaxed text-ink-800">
+            {renderAssistantInline(block.text, `p-${index}`)}
+          </p>
         );
       })}
     </div>
