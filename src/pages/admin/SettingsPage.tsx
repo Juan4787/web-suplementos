@@ -13,7 +13,6 @@ import {
   Shield,
   ShieldCheck,
   Store,
-  TrendingUp,
   Truck,
   UserCog,
   Users
@@ -26,7 +25,7 @@ import { PageHeader } from '@/components/layout/AdminShell';
 import { RoleGate } from '@/components/layout/RoleGate';
 import { Button } from '@/components/ui/Button';
 import { ErrorState, LoadingState } from '@/components/ui/DataState';
-import { DatePicker, Field, Input, Select, Textarea } from '@/components/ui/Field';
+import { Field, Input, Select, Textarea } from '@/components/ui/Field';
 import { StatusChip } from '@/components/ui/StatusChip';
 import { Toast } from '@/components/ui/Toast';
 import { sanitizeDecimalInput, sanitizeIntegerInput } from '@/domain/inventory';
@@ -66,120 +65,6 @@ const toDraft = (settings: StoreSettings): DraftSettings => ({
       ? String(settings.taxRateBasisPoints / 100)
       : ''
 });
-
-function InflationTab({
-  onNotify
-}: {
-  onNotify?: (title: string, description?: string) => void;
-}) {
-  const queryClient = useQueryClient();
-  const [period, setPeriod] = useState(new Date().toISOString().slice(0, 7));
-  const [indexValue, setIndexValue] = useState('');
-  const [sourceUrl, setSourceUrl] = useState('https://www.indec.gob.ar/');
-  const [publishedAt, setPublishedAt] = useState(new Date().toISOString().slice(0, 10));
-  const [justSaved, setJustSaved] = useState(false);
-
-  const indicesQuery = useBusinessQuery({
-    queryKey: queryKeys.inflation,
-    queryFn: (api) => api.listInflationIndices()
-  });
-
-  const saveIndex = useMutation({
-    mutationFn: async () => {
-      const api = await getBusinessApi();
-      return api.saveInflationIndex({
-        period: `${period}-01`,
-        indexValue: Number(indexValue),
-        sourceUrl: sourceUrl.trim(),
-        publishedAt: new Date(publishedAt).toISOString()
-      });
-    },
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: queryKeys.inflation });
-      const val = Number(indexValue).toFixed(2);
-      const per = period;
-      setIndexValue('');
-      setJustSaved(true);
-      setTimeout(() => setJustSaved(false), 3000);
-      onNotify?.(
-        'Índice de inflación registrado',
-        `Se guardó el valor ${val} correspondiente al período ${per}.`
-      );
-    }
-  });
-
-  return (
-    <section className="mt-8 rounded-2xl border border-ink-950/8 bg-white p-6 shadow-sm">
-      <div className="flex items-center gap-3">
-        <span className="grid size-11 place-items-center rounded-xl bg-brand-50 text-brand-700">
-          <TrendingUp className="size-5" />
-        </span>
-        <div>
-          <h3 className="font-display text-xl font-black text-ink-950">Inflación oficial (INDEC)</h3>
-          <p className="text-xs text-ink-600">
-            Cargá el índice del mes para que los gráficos de Analíticas calculen la facturación en poder de compra real.
-          </p>
-        </div>
-      </div>
-
-      <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Field label="Período">
-          <Input type="month" value={period} onChange={(e) => setPeriod(e.target.value)} />
-        </Field>
-        <Field label="Valor del índice">
-          <Input
-            placeholder="Ej: 5824.2"
-            value={indexValue}
-            inputMode="decimal"
-            onFocus={(e) => e.target.select()}
-            onChange={(e) => setIndexValue(sanitizeDecimalInput(e.target.value, indexValue))}
-          />
-        </Field>
-        <Field label="Publicado">
-          <DatePicker value={publishedAt} onChange={(val) => setPublishedAt(val)} />
-        </Field>
-        <Field label="Fuente oficial">
-          <Input value={sourceUrl} onChange={(e) => setSourceUrl(e.target.value)} />
-        </Field>
-      </div>
-
-      {saveIndex.error ? <div className="mt-4"><ErrorState error={saveIndex.error} /></div> : null}
-
-      <div className="mt-5 flex justify-end">
-        <Button
-          size="sm"
-          disabled={!indexValue || Number.isNaN(Number(indexValue))}
-          loading={saveIndex.isPending}
-          className={cn(
-            'transition-all duration-300',
-            justSaved ? 'bg-emerald-600 hover:bg-emerald-600 text-white shadow-md' : ''
-          )}
-          onClick={() => saveIndex.mutate()}
-        >
-          {justSaved ? (
-            <>
-              <Check className="size-4 animate-in zoom-in" /> ¡Índice guardado!
-            </>
-          ) : (
-            'Guardar índice'
-          )}
-        </Button>
-      </div>
-
-      <div className="mt-6 border-t border-ink-950/8 pt-4">
-        <h4 className="text-xs font-bold uppercase tracking-wider text-ink-600">Historial cargado</h4>
-        <div className="mt-3 flex flex-wrap gap-2">
-          {indicesQuery.data?.map((idx) => (
-            <div key={idx.period} className="flex items-center gap-2 rounded-xl bg-cream-100 px-3 py-1.5 text-xs font-bold text-ink-950">
-              <span>{idx.period.slice(0, 7)}:</span>
-              <span className="text-brand-700 font-black">{idx.indexValue.toFixed(2)}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
 
 function BackupsTab() {
   const [phase, setPhase] = useState<Phase>('idle');
@@ -236,7 +121,7 @@ function BackupsTab() {
             'Movimientos físicos',
             'Reservas de stock',
             'Libreta de clientes',
-            'Inflación oficial',
+            'Índices y ajustes',
             'Usuarios y roles'
           ].map((sheet) => (
             <div key={sheet} className="flex items-center gap-2 rounded-xl bg-cream-50 p-2.5 text-xs font-bold text-ink-950 border border-ink-950/6">
@@ -490,7 +375,7 @@ export default function SettingsPage() {
               activeTab === 'store' ? 'bg-brand-600 text-white shadow-sm' : 'text-ink-600 hover:bg-white hover:text-ink-950'
             )}
           >
-            Tienda & Inflación
+            Tienda
           </button>
           <button
             type="button"
@@ -654,8 +539,6 @@ export default function SettingsPage() {
                     )}
                   </Button>
                 </div>
-
-                <InflationTab onNotify={showToast} />
               </div>
             ) : null}
           </div>

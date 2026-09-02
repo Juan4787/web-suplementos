@@ -3,7 +3,7 @@ import {
   CalendarRange,
   ChevronDown,
   CircleDollarSign,
-  Info,
+  Filter,
   PackageCheck,
   TrendingUp
 } from 'lucide-react';
@@ -69,10 +69,6 @@ export default function SalesPage() {
   const [from, setFrom] = useState(() => format(startOfMonth(new Date()), 'yyyy-MM-dd'));
   const [to, setTo] = useState(() => format(new Date(), 'yyyy-MM-dd'));
 
-  // Evolución & IPC: modo de visualización
-  const [chartMode, setChartMode] = useState<'nominal' | 'adjusted'>('nominal');
-  const [compareBoth, setCompareBoth] = useState(true);
-
   // Ordenamiento de tabla de productos
   const [productSortField, setProductSortField] = useState<'name' | 'units' | 'revenue' | 'share'>('revenue');
   const [productSortAsc, setProductSortAsc] = useState(false);
@@ -129,7 +125,6 @@ export default function SalesPage() {
         period: monthLabel(point.period),
         rawPeriod: point.period,
         nominal: point.revenueCents / 100,
-        ajustada: point.adjustedRevenueCents === null ? null : point.adjustedRevenueCents / 100,
         unidades: point.units
       })) ?? []
     );
@@ -411,47 +406,11 @@ export default function SalesPage() {
         {activeTab === 'evolution' && analyticsQuery.data ? (
           <section className="space-y-6">
             <div className="rounded-2xl border border-ink-950/8 bg-white p-6 shadow-sm">
-              <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <h3 className="font-display text-2xl font-black text-ink-950">Evolución mensual</h3>
-                  <p className="mt-1 text-[14.5px] font-semibold text-ink-700">
-                    Compará las ventas mes a mes, con o sin el efecto de la inflación.
-                  </p>
-                </div>
-                <div className="flex flex-wrap items-center gap-3">
-                  <div className="flex rounded-2xl border border-ink-950/15 bg-cream-50 p-1.5 text-[14px] font-bold">
-                    <button
-                      type="button"
-                      onClick={() => setChartMode('nominal')}
-                      className={cn('rounded-xl px-4 py-2 transition select-none', chartMode === 'nominal' ? 'bg-white text-ink-950 shadow-sm font-black' : 'text-ink-700')}
-                    >
-                      Sin ajustar
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setChartMode('adjusted')}
-                      className={cn('rounded-xl px-4 py-2 transition select-none', chartMode === 'adjusted' ? 'bg-white text-ink-950 shadow-sm font-black' : 'text-ink-700')}
-                    >
-                      Ajustado por inflación
-                    </button>
-                  </div>
-
-                  <label className="flex items-center gap-2 text-[14.5px] font-bold text-ink-800 cursor-pointer select-none">
-                    <input
-                      type="checkbox"
-                      checked={compareBoth}
-                      onChange={(e) => setCompareBoth(e.target.checked)}
-                      className="size-4 rounded text-brand-600 focus:ring-brand-500"
-                    />
-                    <span>Ver ambos</span>
-                  </label>
-                </div>
-              </div>
-
-              {/* Nota sutil sobre inflación INDEC */}
-              <div className="mb-4 flex items-center gap-2.5 rounded-2xl bg-cream-50 p-4 text-[14px] font-semibold text-ink-800 border border-ink-950/8">
-                <Info className="size-5 text-brand-600 shrink-0" />
-                <span>Agosto: el INDEC todavía no publicó el dato de inflación. Por ahora se muestra el valor sin ajustar.</span>
+              <div className="mb-6">
+                <h3 className="font-display text-2xl font-black text-ink-950">Evolución mensual</h3>
+                <p className="mt-1 text-[14.5px] font-semibold text-ink-700">
+                  Compará la evolución de las ventas mes a mes.
+                </p>
               </div>
 
               <div className="h-80 w-full">
@@ -464,16 +423,11 @@ export default function SalesPage() {
                       tick={{ fill: '#334155', fontSize: 13, fontWeight: 700 }}
                     />
                     <Tooltip
-                      formatter={(value) => [`$${Number(value ?? 0).toLocaleString('es-AR')}`, '']}
+                      formatter={(value) => [`$${Number(value ?? 0).toLocaleString('es-AR')}`, 'Ventas']}
                       contentStyle={{ backgroundColor: '#061226', borderRadius: '1rem', border: 'none', color: '#fff', fontWeight: 'bold', fontSize: 14 }}
                     />
                     <Legend />
-                    {compareBoth || chartMode === 'nominal' ? (
-                      <Bar dataKey="nominal" name="Sin ajustar" fill="#2563eb" radius={[6, 6, 0, 0]} />
-                    ) : null}
-                    {compareBoth || chartMode === 'adjusted' ? (
-                      <Bar dataKey="ajustada" name="Ajustado por inflación" fill="#60a5fa" radius={[6, 6, 0, 0]} />
-                    ) : null}
+                    <Bar dataKey="nominal" name="Ventas" fill="#2563eb" radius={[6, 6, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>

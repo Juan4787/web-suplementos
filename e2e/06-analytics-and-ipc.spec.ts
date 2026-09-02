@@ -26,18 +26,6 @@ test.describe('Pilar 10: Analíticas, Pestañas e IPC Oficial', () => {
     const evolutionTab = page.getByRole('button', { name: /evolución/i });
     await evolutionTab.click();
     await page.waitForTimeout(200);
-
-    // Conmutadores: Sin ajustar, Ajustado por inflación
-    const nominalBtn = page.getByRole('button', { name: /sin ajustar|^nominal$/i });
-    if (await nominalBtn.isVisible()) {
-      await nominalBtn.click();
-      await page.waitForTimeout(100);
-    }
-
-    const adjustedBtn = page.getByRole('button', { name: /ajustado por inflación|ajustado por ipc/i });
-    if (await adjustedBtn.isVisible()) {
-      await adjustedBtn.click();
-      await page.waitForTimeout(100);
-    }
+    await expect(page.getByRole('heading', { name: /evolución mensual/i })).toBeVisible();
   });
 });
