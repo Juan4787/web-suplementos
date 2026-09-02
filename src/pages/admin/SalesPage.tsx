@@ -66,8 +66,8 @@ export default function SalesPage() {
 
   // Selector de período con presets
   const [preset, setPreset] = useState<DatePreset>('this_month');
-  const [from, setFrom] = useState(() => format(startOfMonth(new Date('2026-08-01T00:00:00-03:00')), 'yyyy-MM-dd'));
-  const [to, setTo] = useState(() => format(new Date('2026-08-29T23:59:59-03:00'), 'yyyy-MM-dd'));
+  const [from, setFrom] = useState(() => format(startOfMonth(new Date()), 'yyyy-MM-dd'));
+  const [to, setTo] = useState(() => format(new Date(), 'yyyy-MM-dd'));
 
   // Evolución & IPC: modo de visualización
   const [chartMode, setChartMode] = useState<'nominal' | 'adjusted'>('nominal');
@@ -79,7 +79,7 @@ export default function SalesPage() {
 
   const handlePresetChange = (nextPreset: DatePreset) => {
     setPreset(nextPreset);
-    const refDate = new Date('2026-08-29T12:00:00-03:00');
+    const refDate = new Date();
 
     if (nextPreset === 'this_month') {
       setFrom(format(startOfMonth(refDate), 'yyyy-MM-dd'));

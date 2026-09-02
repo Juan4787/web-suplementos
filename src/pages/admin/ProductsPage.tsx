@@ -288,6 +288,7 @@ function ProductForm({ product, onClose }: { product: AdminProduct | null; onClo
                     min="0"
                     step="0.01"
                     placeholder="25000"
+                    onFocus={(e) => e.target.select()}
                     {...register('pricePesos', { valueAsNumber: true })}
                   />
                 </Field>
@@ -363,6 +364,7 @@ function ProductForm({ product, onClose }: { product: AdminProduct | null; onClo
                   min="0"
                   step="0.01"
                   placeholder="15000"
+                  onFocus={(e) => e.target.select()}
                   {...register('costPesos', { valueAsNumber: true })}
                 />
               </Field>
@@ -420,6 +422,7 @@ function ProductForm({ product, onClose }: { product: AdminProduct | null; onClo
                     <Input
                       type="number"
                       min="0"
+                      onFocus={(e) => e.target.select()}
                       {...register('reorderPoint', { valueAsNumber: true })}
                     />
                   </Field>
@@ -431,6 +434,7 @@ function ProductForm({ product, onClose }: { product: AdminProduct | null; onClo
                     <Input
                       type="number"
                       min="0"
+                      onFocus={(e) => e.target.select()}
                       {...register('safetyStock', { valueAsNumber: true })}
                     />
                   </Field>
@@ -442,6 +446,7 @@ function ProductForm({ product, onClose }: { product: AdminProduct | null; onClo
                     <Input
                       type="number"
                       min="0"
+                      onFocus={(e) => e.target.select()}
                       {...register('leadTimeDays', { valueAsNumber: true })}
                     />
                   </Field>
@@ -501,14 +506,20 @@ export default function ProductsPage() {
 
   const filteredProducts = useMemo(() => {
     const list = productsQuery.data ?? [];
-    if (!search.trim()) return list;
-    const term = search.toLowerCase();
-    return list.filter(
-      (p) =>
-        p.name.toLowerCase().includes(term) ||
-        p.sku.toLowerCase().includes(term) ||
-        p.category.toLowerCase().includes(term)
-    );
+    const query = search.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    if (!query) return list;
+    return list.filter((p) => {
+      const name = p.name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      const sku = p.sku.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      const category = (p.category || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      const presentation = (p.presentation || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      return (
+        name.includes(query) ||
+        sku.includes(query) ||
+        category.includes(query) ||
+        presentation.includes(query)
+      );
+    });
   }, [productsQuery.data, search]);
 
   return (

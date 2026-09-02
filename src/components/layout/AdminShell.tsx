@@ -14,7 +14,7 @@ import {
   UserRound,
   X
 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Logo } from '@/components/brand/Logo';
 import { Button } from '@/components/ui/Button';
 import { LoadingState } from '@/components/ui/DataState';
@@ -102,9 +102,29 @@ function NavigationItems({ close }: { close?: (() => void) | undefined }) {
 function UserPanel() {
   const { user, isDemo, signOut, switchDemoRole } = useAuth();
   const [open, setOpen] = useState(false);
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [open]);
+
   if (!user) return null;
   return (
-    <div className="relative mt-5 border-t border-white/10 pt-5">
+    <div ref={panelRef} className="relative mt-5 border-t border-white/10 pt-5">
       <button
         type="button"
         className="flex w-full items-center gap-3 rounded-2xl p-2 text-left transition hover:bg-white/8"

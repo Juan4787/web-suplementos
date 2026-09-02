@@ -23,6 +23,7 @@ import {
 } from '@/domain/order-actions';
 import type { Order, OrderAction } from '@/domain/types';
 import { cn } from '@/lib/cn';
+import { buildWhatsAppUrl } from '@/lib/whatsapp-url';
 import { getBusinessApi } from '@/services/business-api';
 
 function OrderTimeline({ order }: { order: Order }) {
@@ -356,9 +357,10 @@ export default function OrdersPage() {
                             </div>
                             {order.customerPhone ? (
                               <a
-                                href={`https://wa.me/${order.customerPhone.replace(/\D/g, '')}?text=${encodeURIComponent(
+                                href={buildWhatsAppUrl(
+                                  order.customerPhone,
                                   `Hola ${order.customerName}, te escribimos de Impulso Suplementos sobre tu pedido #${order.number}.`
-                                )}`}
+                                )}
                                 target="_blank"
                                 rel="noreferrer"
                                 className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-[14px] font-black text-white shadow-sm hover:bg-emerald-700 transition"

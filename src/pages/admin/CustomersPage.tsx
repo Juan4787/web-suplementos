@@ -17,6 +17,7 @@ import { formatMoney } from '@/domain/money';
 import { can } from '@/domain/permissions';
 import type { Customer } from '@/domain/types';
 import { useAuth } from '@/features/auth/AuthProvider';
+import { buildWhatsAppUrl } from '@/lib/whatsapp-url';
 
 export default function CustomersPage() {
   const { user } = useAuth();
@@ -89,10 +90,9 @@ export default function CustomersPage() {
                     o.customerId === customer.id ||
                     o.customerName.toLowerCase() === customer.name.toLowerCase()
                 );
-                const hasPending =
-                  customerOrders.some((o) => o.paymentState === 'pending') ||
-                  customer.name.toLowerCase().includes('sacaliter') ||
-                  (customer.totalPaidCents ?? 0) === 0;
+                const hasPending = customerOrders.some(
+                  (o) => o.paymentState === 'pending' && o.orderState !== 'cancelled'
+                );
 
                 return (
                   <article
@@ -212,9 +212,10 @@ export default function CustomersPage() {
                 {selectedCustomer.phone ? (
                   <div className="pt-1.5">
                     <a
-                      href={`https://wa.me/${selectedCustomer.phone.replace(/\D/g, '')}?text=${encodeURIComponent(
+                      href={buildWhatsAppUrl(
+                        selectedCustomer.phone,
                         `Hola ${selectedCustomer.name}, te escribimos de Impulso Suplementos.`
-                      )}`}
+                      )}
                       target="_blank"
                       rel="noreferrer"
                       className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-[14px] font-black text-white shadow-sm hover:bg-emerald-700 transition"
@@ -231,28 +232,36 @@ export default function CustomersPage() {
                   Pagos pendientes
                 </h4>
 
-                {selectedCustomer.name.toLowerCase().includes('sacaliter') ? (
-                  <div className="rounded-xl bg-amber-50 p-3.5 border border-amber-200/80 text-[14px]">
-                    <p className="font-black text-amber-900">
-                      1 cuota pendiente · $84.500
-                    </p>
-                    <p className="mt-0.5 text-amber-800 font-semibold">Vence 17/09/2026</p>
-                  </div>
-                ) : (ordersQuery.data?.items ?? []).some(
+                {(() => {
+                  const pendingOrders = (ordersQuery.data?.items ?? []).filter(
                     (o) =>
                       (o.customerId === selectedCustomer.id ||
                         o.customerName.toLowerCase() === selectedCustomer.name.toLowerCase()) &&
-                      o.paymentState === 'pending'
-                  ) ? (
-                  <div className="rounded-xl bg-amber-50 p-3.5 border border-amber-200/80 text-[14px]">
-                    <p className="font-black text-amber-900">Pedido con cobro pendiente</p>
-                    <p className="mt-0.5 text-amber-800 font-semibold">Pendiente de acreditación</p>
-                  </div>
-                ) : (
-                  <div className="rounded-xl bg-emerald-50 p-3.5 border border-emerald-200/80 text-[14px] font-bold text-emerald-900">
-                    ✓ Al día · Sin pagos pendientes
-                  </div>
-                )}
+                      o.paymentState === 'pending' &&
+                      o.orderState !== 'cancelled'
+                  );
+
+                  if (pendingOrders.length === 0) {
+                    return (
+                      <div className="rounded-xl bg-emerald-50 p-3.5 border border-emerald-200/80 text-[14px] font-bold text-emerald-900">
+                        ✓ Al día · Sin pagos pendientes
+                      </div>
+                    );
+                  }
+
+                  const totalPendingCents = pendingOrders.reduce((sum, o) => sum + o.totalCents, 0);
+
+                  return (
+                    <div className="rounded-xl bg-amber-50 p-3.5 border border-amber-200/80 text-[14px] space-y-1">
+                      <p className="font-black text-amber-900">
+                        {pendingOrders.length === 1 ? '1 pedido pendiente' : `${pendingOrders.length} pedidos pendientes`} · {formatMoney(totalPendingCents)}
+                      </p>
+                      <p className="text-amber-800 font-semibold text-xs">
+                        {pendingOrders.map((o) => `#${o.number}`).join(', ')} (pendiente de cobro)
+                      </p>
+                    </div>
+                  );
+                })()}
               </div>
 
               {/* Bloque: Pedidos */}
