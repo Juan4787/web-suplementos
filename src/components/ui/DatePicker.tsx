@@ -180,125 +180,148 @@ export function DatePicker({
         </div>
       </button>
 
-      {/* Floating Calendar Popover */}
+      {/* Floating / Centered Calendar Popover */}
       {isOpen && (
-        <div
-          className={`absolute top-full z-50 mt-2 w-[19.5rem] min-w-[19.5rem] rounded-[1.75rem] border border-ink-950/10 bg-white p-4 shadow-[0_20px_50px_rgba(15,23,42,0.18)] transition-all animate-in fade-in zoom-in-95 duration-150 select-none ${
-            align === 'right' ? 'right-0' : 'left-0'
-          }`}
-          style={{ isolation: 'isolate' }}
-        >
-          {/* Quick Shortcuts */}
-          {showShortcuts && (
-            <div className="mb-3.5 flex flex-wrap gap-1.5 border-b border-ink-950/6 pb-3">
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleSelectDate(new Date());
-                }}
-                className="rounded-xl bg-cream-100 px-3 py-1.5 text-[12px] font-black text-ink-700 hover:bg-brand-50 hover:text-brand-700 transition active:scale-95"
-              >
-                Hoy
-              </button>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleSelectDate(addDays(new Date(), 1));
-                }}
-                className="rounded-xl bg-cream-100 px-3 py-1.5 text-[12px] font-black text-ink-700 hover:bg-brand-50 hover:text-brand-700 transition active:scale-95"
-              >
-                Mañana
-              </button>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleSelectDate(addDays(new Date(), 3));
-                }}
-                className="rounded-xl bg-cream-100 px-3 py-1.5 text-[12px] font-black text-ink-700 hover:bg-brand-50 hover:text-brand-700 transition active:scale-95"
-              >
-                En 3 días
-              </button>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleSelectDate(addDays(new Date(), 7));
-                }}
-                className="rounded-xl bg-cream-100 px-3 py-1.5 text-[12px] font-black text-ink-700 hover:bg-brand-50 hover:text-brand-700 transition active:scale-95"
-              >
-                En 1 sem.
-              </button>
-            </div>
-          )}
+        <>
+          {/* Mobile backdrop */}
+          <div
+            className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs sm:hidden animate-in fade-in duration-150"
+            onClick={() => setIsOpen(false)}
+            aria-hidden="true"
+          />
 
-          {/* Month & Year Navigation Header */}
-          <div className="mb-3 flex items-center justify-between px-1">
-            <h4 className="font-display text-[15px] font-black capitalize text-ink-950">
-              {format(viewDate, 'MMMM yyyy', { locale: es })}
-            </h4>
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                onClick={handlePrevMonth}
-                className="grid size-8 place-items-center rounded-xl text-ink-600 hover:bg-cream-100 hover:text-ink-950 transition active:scale-90"
-                aria-label="Mes anterior"
-              >
-                <ChevronLeft className="size-4" />
-              </button>
-              <button
-                type="button"
-                onClick={handleNextMonth}
-                className="grid size-8 place-items-center rounded-xl text-ink-600 hover:bg-cream-100 hover:text-ink-950 transition active:scale-90"
-                aria-label="Mes siguiente"
-              >
-                <ChevronRight className="size-4" />
-              </button>
-            </div>
-          </div>
-
-          {/* Weekday headers */}
-          <div className="mb-2 grid grid-cols-7 gap-1 text-center">
-            {weekDayLabels.map((dayLabel, idx) => (
-              <span key={idx} className="text-[11px] font-black uppercase tracking-wider text-ink-400 py-0.5">
-                {dayLabel}
-              </span>
-            ))}
-          </div>
-
-          {/* Day Grid */}
-          <div className="grid grid-cols-7 gap-1">
-            {days.map((day, idx) => {
-              const isSelected = selectedDate ? isSameDay(day, selectedDate) : false;
-              const isCurrentMonth = isSameMonth(day, viewDate);
-              const isCurrentDay = isToday(day);
-
-              return (
+          <div
+            className={`fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-[min(21.5rem,calc(100vw-2rem))] rounded-[1.75rem] border border-ink-950/10 bg-white p-4 sm:p-4.5 shadow-[0_20px_50px_rgba(15,23,42,0.25)] transition-all animate-in fade-in zoom-in-95 duration-150 select-none sm:translate-x-0 sm:translate-y-0 sm:top-full sm:mt-2 sm:w-[19.5rem] sm:min-w-[19.5rem] sm:shadow-[0_20px_50px_rgba(15,23,42,0.18)] ${
+              align === 'right' ? 'sm:right-0 sm:left-auto' : 'sm:left-0 sm:right-auto'
+            } sm:absolute`}
+            style={{ isolation: 'isolate' }}
+          >
+            {/* Quick Shortcuts */}
+            {showShortcuts && (
+              <div className="mb-3.5 flex flex-wrap gap-1.5 border-b border-ink-950/6 pb-3">
                 <button
-                  key={idx}
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
-                    handleSelectDate(day);
+                    handleSelectDate(new Date());
                   }}
-                  className={`relative grid h-9 w-full place-items-center rounded-xl text-[13px] font-bold tabular-nums transition select-none ${
-                    isSelected
-                      ? 'bg-ink-950 text-white font-black shadow-sm scale-105 z-10'
-                      : isCurrentDay
-                        ? 'border border-brand-500 font-black text-brand-600 hover:bg-brand-50'
-                        : isCurrentMonth
-                          ? 'text-ink-900 hover:bg-cream-100 hover:text-ink-950 active:scale-95'
-                          : 'text-ink-300 hover:bg-cream-50 hover:text-ink-500'
-                  }`}
+                  className="rounded-xl bg-cream-100 px-3 py-1.5 text-[12px] font-black text-ink-700 hover:bg-brand-50 hover:text-brand-700 transition active:scale-95"
                 >
-                  {format(day, 'd')}
+                  Hoy
                 </button>
-              );
-            })}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleSelectDate(addDays(new Date(), 1));
+                  }}
+                  className="rounded-xl bg-cream-100 px-3 py-1.5 text-[12px] font-black text-ink-700 hover:bg-brand-50 hover:text-brand-700 transition active:scale-95"
+                >
+                  Mañana
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleSelectDate(addDays(new Date(), 3));
+                  }}
+                  className="rounded-xl bg-cream-100 px-3 py-1.5 text-[12px] font-black text-ink-700 hover:bg-brand-50 hover:text-brand-700 transition active:scale-95"
+                >
+                  En 3 días
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleSelectDate(addDays(new Date(), 7));
+                  }}
+                  className="rounded-xl bg-cream-100 px-3 py-1.5 text-[12px] font-black text-ink-700 hover:bg-brand-50 hover:text-brand-700 transition active:scale-95"
+                >
+                  En 1 sem.
+                </button>
+              </div>
+            )}
+
+            {/* Month & Year Navigation Header */}
+            <div className="mb-3 flex items-center justify-between px-1">
+              <h4 className="font-display text-[15.5px] font-black capitalize text-ink-950">
+                {format(viewDate, 'MMMM yyyy', { locale: es })}
+              </h4>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={handlePrevMonth}
+                  className="grid size-8 place-items-center rounded-xl text-ink-600 hover:bg-cream-100 hover:text-ink-950 transition active:scale-90"
+                  aria-label="Mes anterior"
+                >
+                  <ChevronLeft className="size-4.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={handleNextMonth}
+                  className="grid size-8 place-items-center rounded-xl text-ink-600 hover:bg-cream-100 hover:text-ink-950 transition active:scale-90"
+                  aria-label="Mes siguiente"
+                >
+                  <ChevronRight className="size-4.5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Weekday headers */}
+            <div className="mb-2 grid grid-cols-7 gap-1 text-center">
+              {weekDayLabels.map((dayLabel, idx) => (
+                <span key={idx} className="text-[11px] font-black uppercase tracking-wider text-ink-400 py-0.5">
+                  {dayLabel}
+                </span>
+              ))}
+            </div>
+
+            {/* Day Grid */}
+            <div className="grid grid-cols-7 gap-1">
+              {days.map((day, idx) => {
+                const isSelected = selectedDate ? isSameDay(day, selectedDate) : false;
+                const isCurrentMonth = isSameMonth(day, viewDate);
+                const isCurrentDay = isToday(day);
+
+                return (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleSelectDate(day);
+                    }}
+                    className={`relative grid h-9.5 w-full place-items-center rounded-xl text-[13.5px] font-bold tabular-nums transition select-none ${
+                      isSelected
+                        ? 'bg-ink-950 text-white font-black shadow-sm scale-105 z-10'
+                        : isCurrentDay
+                          ? 'border border-brand-500 font-black text-brand-600 hover:bg-brand-50'
+                          : isCurrentMonth
+                            ? 'text-ink-900 hover:bg-cream-100 hover:text-ink-950 active:scale-95'
+                            : 'text-ink-300 hover:bg-cream-50 hover:text-ink-500'
+                    }`}
+                  >
+                    {format(day, 'd')}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Mobile close button */}
+            <div className="mt-3 flex justify-end border-t border-ink-950/6 pt-2.5 sm:hidden">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsOpen(false);
+                }}
+                className="w-full rounded-xl bg-cream-100 hover:bg-cream-200 py-2.5 text-center text-xs font-black text-ink-800 active:scale-95 transition"
+              >
+                Cerrar
+              </button>
+            </div>
           </div>
-        </div>
+        </>
       )}
     </div>
   );

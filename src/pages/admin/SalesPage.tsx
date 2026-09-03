@@ -189,8 +189,8 @@ export default function SalesPage() {
           title="Ventas"
           description="Revisá cuánto vendiste, cómo evolucionaron las ventas y cuánto te dejó cada producto."
           action={
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="w-56">
+            <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-3 w-full sm:w-auto">
+              <div className="w-full sm:w-56">
                 <Select
                   value={preset}
                   onChange={(e) => handlePresetChange(e.target.value as DatePreset)}
@@ -209,7 +209,7 @@ export default function SalesPage() {
               </div>
 
               {preset === 'custom' ? (
-                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 rounded-2xl border border-ink-950/15 bg-white p-2 shadow-sm">
+                <div className="grid grid-cols-2 sm:flex sm:flex-row items-center gap-2 rounded-2xl border border-ink-950/15 bg-white p-2.5 shadow-sm w-full sm:w-auto">
                   <div className="w-full sm:w-44">
                     <span className="text-[11px] font-black uppercase tracking-wider text-ink-600 block px-1">Desde</span>
                     <DatePicker
