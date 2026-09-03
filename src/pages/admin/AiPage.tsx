@@ -1,5 +1,5 @@
 import { useMutation } from '@tanstack/react-query';
-import { ArrowUp, Bot, Database, LockKeyhole, Sparkles, User } from 'lucide-react';
+import { ArrowRight, ArrowUp, Bot, Database, LockKeyhole, Sparkles, User } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
 import { appEnv } from '@/app/env';
 import { PageHeader } from '@/components/layout/AdminShell';
@@ -371,7 +371,24 @@ export default function AiPage() {
           </section>
           <aside className="space-y-5">
             <section className="rounded-[1.75rem] bg-ink-950 p-5 text-white"><LockKeyhole className="size-6 text-brand-300" /><h2 className="mt-4 font-display text-xl font-black">Seguridad total</h2><p className="mt-2 text-sm leading-6 text-white/60">El asistente no puede modificar stock, precios, compras ni pedidos. Solo responde preguntas de consulta.</p></section>
-            <section className="rounded-[1.75rem] bg-white p-5 shadow-card"><h3 className="flex items-center gap-2 text-sm font-black text-ink-950"><Sparkles className="size-4 text-brand-600" /> Preguntas sugeridas</h3><div className="mt-4 space-y-2">{suggestions.map((suggestion) => <button key={suggestion} className="w-full rounded-2xl bg-cream-100 p-3 text-left text-xs font-bold leading-5 transition hover:bg-brand-50 hover:text-brand-700" onClick={() => submit(suggestion)}>{suggestion}</button>)}</div></section>
+            <section className="rounded-[1.75rem] bg-white p-5 shadow-card">
+              <h3 className="flex items-center gap-2 text-sm font-black text-ink-950">
+                <Sparkles className="size-4 text-brand-600" /> Preguntas sugeridas
+              </h3>
+              <div className="mt-4 space-y-2.5">
+                {suggestions.map((suggestion) => (
+                  <button
+                    key={suggestion}
+                    type="button"
+                    className="group flex w-full items-center justify-between gap-3 rounded-2xl border border-ink-950/8 bg-cream-50/70 p-3.5 text-left text-xs sm:text-[13px] font-bold leading-snug text-ink-800 transition-all duration-200 hover:-translate-y-0.5 hover:border-brand-500 hover:bg-brand-50 hover:text-brand-950 hover:shadow-sm active:translate-y-0 active:scale-[0.99]"
+                    onClick={() => submit(suggestion)}
+                  >
+                    <span className="flex-1">{suggestion}</span>
+                    <ArrowRight className="size-4 shrink-0 text-brand-600 opacity-0 -translate-x-1.5 transition-all duration-200 group-hover:opacity-100 group-hover:translate-x-0" />
+                  </button>
+                ))}
+              </div>
+            </section>
           </aside>
         </div>
       </div>
