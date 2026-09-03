@@ -366,7 +366,7 @@ export default function AiPage() {
             </div>
             <div className="border-t border-ink-950/8 bg-white p-4 sm:p-5">
               <div className="relative"><Textarea className="min-h-24 resize-none pr-16" maxLength={1200} placeholder="Ej. ¿Qué debería reponer esta semana y por qué?" value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); submit(); } }} /><Button className="absolute bottom-3 right-3 size-11 px-0" onClick={() => submit()} disabled={!input.trim() || ask.isPending} aria-label="Enviar pregunta"><ArrowUp className="size-5" /></Button></div>
-              <p className="mt-2 text-xs text-ink-600">Enter para enviar · Shift + Enter para una nueva línea</p>
+              <p className="mt-2 text-xs text-ink-600">La IA puede cometer errores. Para datos exactos, consultá las secciones de la app.</p>
             </div>
           </section>
           <aside className="space-y-5">
