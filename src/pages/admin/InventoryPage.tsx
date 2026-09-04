@@ -466,48 +466,54 @@ function StockDetailDrawer({
         {/* 3. STOCK HOY (Tarjetas con alineación vertical geométrica perfecta de 3 filas) */}
         <div>
           <h4 className="text-[12px] font-black uppercase tracking-wider text-ink-600 mb-2">Stock hoy</h4>
-          <div className="grid grid-cols-3 gap-2.5">
+          <div className="grid grid-cols-3 gap-2 sm:gap-2.5">
             {/* DISPONIBLE */}
-            <div className="rounded-2xl bg-cream-50 p-3.5 border border-ink-950/6 flex flex-col">
-              <span className="block text-[12px] font-black uppercase tracking-wider text-ink-700">Disponible</span>
-              <div className="my-1.5 flex items-baseline gap-1">
-                <span
-                  className={cn(
-                    'text-3xl font-black tracking-tight leading-none',
-                    item.available <= 0
-                      ? 'text-red-700'
-                      : item.status === 'critical'
-                        ? 'text-rose-700'
-                        : item.status === 'low'
-                          ? 'text-amber-800'
-                          : 'text-ink-950'
-                  )}
-                >
-                  {item.available}
-                </span>
-                <span className="text-xs font-bold text-ink-500">u.</span>
+            <div className="rounded-2xl bg-cream-50 p-2.5 sm:p-3.5 border border-ink-950/6 flex flex-col justify-between items-center text-center">
+              <div className="w-full flex flex-col items-center">
+                <span className="block text-[11px] sm:text-[12px] font-black uppercase tracking-wider text-ink-700 text-center w-full">Disponible</span>
+                <div className="my-1.5 flex items-baseline justify-center gap-1">
+                  <span
+                    className={cn(
+                      'text-2xl sm:text-3xl font-black tracking-tight leading-none',
+                      item.available <= 0
+                        ? 'text-red-700'
+                        : item.status === 'critical'
+                          ? 'text-rose-700'
+                          : item.status === 'low'
+                            ? 'text-amber-800'
+                            : 'text-ink-950'
+                    )}
+                  >
+                    {item.available}
+                  </span>
+                  <span className="text-xs font-bold text-ink-500">u.</span>
+                </div>
               </div>
-              <span className="text-[11.5px] font-semibold text-ink-500 min-h-[1.125rem]">Para vender</span>
+              <span className="text-[11px] font-semibold text-ink-500 min-h-[2rem] leading-tight flex items-start justify-center text-center">Para vender</span>
             </div>
 
             {/* RESERVADO */}
-            <div className="rounded-2xl bg-cream-50 p-3.5 border border-ink-950/6 flex flex-col">
-              <span className="block text-[12px] font-black uppercase tracking-wider text-ink-700">Reservado</span>
-              <div className="my-1.5 flex items-baseline gap-1">
-                <span className="text-3xl font-black text-ink-950 tracking-tight leading-none">{item.reserved}</span>
-                <span className="text-xs font-bold text-ink-500">u.</span>
+            <div className="rounded-2xl bg-cream-50 p-2.5 sm:p-3.5 border border-ink-950/6 flex flex-col justify-between items-center text-center">
+              <div className="w-full flex flex-col items-center">
+                <span className="block text-[11px] sm:text-[12px] font-black uppercase tracking-wider text-ink-700 text-center w-full">Reservado</span>
+                <div className="my-1.5 flex items-baseline justify-center gap-1">
+                  <span className="text-2xl sm:text-3xl font-black text-ink-950 tracking-tight leading-none">{item.reserved}</span>
+                  <span className="text-xs font-bold text-ink-500">u.</span>
+                </div>
               </div>
-              <span className="text-[11.5px] font-semibold text-ink-500 min-h-[1.125rem]">En pedidos</span>
+              <span className="text-[11px] font-semibold text-ink-500 min-h-[2rem] leading-tight flex items-start justify-center text-center">Reservado por clientes</span>
             </div>
 
             {/* TOTAL */}
-            <div className="rounded-2xl bg-cream-50 p-3.5 border border-ink-950/6 flex flex-col">
-              <span className="block text-[12px] font-black uppercase tracking-wider text-ink-700">Total</span>
-              <div className="my-1.5 flex items-baseline gap-1">
-                <span className="text-3xl font-black text-ink-950 tracking-tight leading-none">{item.onHand}</span>
-                <span className="text-xs font-bold text-ink-500">u.</span>
+            <div className="rounded-2xl bg-cream-50 p-2.5 sm:p-3.5 border border-ink-950/6 flex flex-col justify-between items-center text-center">
+              <div className="w-full flex flex-col items-center">
+                <span className="block text-[11px] sm:text-[12px] font-black uppercase tracking-wider text-ink-700 text-center w-full">Total</span>
+                <div className="my-1.5 flex items-baseline justify-center gap-1">
+                  <span className="text-2xl sm:text-3xl font-black text-ink-950 tracking-tight leading-none">{item.onHand}</span>
+                  <span className="text-xs font-bold text-ink-500">u.</span>
+                </div>
               </div>
-              <span className="text-[11.5px] font-semibold text-transparent min-h-[1.125rem] select-none" aria-hidden="true">Total</span>
+              <span className="text-[11px] font-semibold text-ink-500 min-h-[2rem] leading-tight flex items-start justify-center text-center">En depósito</span>
             </div>
           </div>
         </div>
