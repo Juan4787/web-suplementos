@@ -59,6 +59,7 @@ export default function ImportOrderPage() {
       setShowEditFields(false);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['orders'] }),
+        queryClient.invalidateQueries({ queryKey: ['customers'] }),
         queryClient.invalidateQueries({ queryKey: queryKeys.inventory }),
         queryClient.invalidateQueries({ queryKey: queryKeys.dashboard })
       ]);

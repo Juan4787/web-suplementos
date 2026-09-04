@@ -39,12 +39,108 @@ export default function CustomersPage() {
 
   const filteredCustomers = useMemo(() => {
     const raw = customersQuery.data?.items ?? [];
-    if (!search.trim()) return raw;
+    // Consolidar clientes duplicados por teléfono (si existe) o por nombre normalizado
+    const customerMap = new Map<string, Customer>();
+
+    for (const c of raw) {
+      const key = c.phone && c.phone.trim() !== ''
+        ? `phone:${c.phone.replace(/[^0-9]/g, '')}`
+        : `name:${c.name.trim().toLowerCase()}`;
+
+      const existing = customerMap.get(key);
+      if (!existing) {
+        customerMap.set(key, { ...c });
+      } else {
+        const isMoreRecent = new Date(c.lastOrderAt) > new Date(existing.lastOrderAt);
+        const isEarlierFirst = new Date(c.firstOrderAt) < new Date(existing.firstOrderAt);
+
+        customerMap.set(key, {
+          ...existing,
+          id: isMoreRecent ? c.id : existing.id,
+          name: isMoreRecent ? c.name : existing.name,
+          phone: existing.phone || c.phone,
+          lastOrderAt: isMoreRecent ? c.lastOrderAt : existing.lastOrderAt,
+          firstOrderAt: isEarlierFirst ? c.firstOrderAt : existing.firstOrderAt,
+          orderCount: (existing.orderCount || 0) + (c.orderCount || 0),
+          totalPaidCents:
+            existing.totalPaidCents !== null || c.totalPaidCents !== null
+              ? (existing.totalPaidCents ?? 0) + (c.totalPaidCents ?? 0)
+              : null
+        });
+      }
+    }
+
+    const consolidated = Array.from(customerMap.values()).sort(
+      (a, b) => new Date(b.lastOrderAt).getTime() - new Date(a.lastOrderAt).getTime()
+    );
+
+    if (!search.trim()) return consolidated;
     const term = search.toLowerCase();
-    return raw.filter(
+    return consolidated.filter(
       (c) => c.name.toLowerCase().includes(term) || (c.phone ?? '').includes(term)
     );
   }, [customersQuery.data?.items, search]);
+
+  const selectedCustomerOrders = useMemo(() => {
+    if (!selectedCustomer) return [];
+    return (ordersQuery.data?.items ?? []).filter(
+      (o) =>
+        (selectedCustomer.id && o.customerId === selectedCustomer.id) ||
+        (selectedCustomer.phone && o.customerPhone && o.customerPhone === selectedCustomer.phone) ||
+        (o.customerName &&
+          selectedCustomer.name &&
+          o.customerName.trim().toLowerCase() === selectedCustomer.name.trim().toLowerCase())
+    );
+  }, [selectedCustomer, ordersQuery.data?.items]);
+
+  const selectedCustomerPhone = useMemo(() => {
+    if (!selectedCustomer) return null;
+    if (selectedCustomer.phone && selectedCustomer.phone.trim() !== '') {
+      return selectedCustomer.phone;
+    }
+    const orderWithPhone = selectedCustomerOrders.find(
+      (o) => Boolean(o.customerPhone && o.customerPhone.trim() !== '')
+    );
+    return orderWithPhone?.customerPhone ?? null;
+  }, [selectedCustomer, selectedCustomerOrders]);
+
+  const selectedCustomerFirstOrder = useMemo(() => {
+    if (!selectedCustomer) return null;
+    if (selectedCustomerOrders.length === 0) return selectedCustomer.firstOrderAt;
+    return selectedCustomerOrders.reduce(
+      (earliest, o) => (new Date(o.createdAt) < new Date(earliest) ? o.createdAt : earliest),
+      selectedCustomer.firstOrderAt
+    );
+  }, [selectedCustomer, selectedCustomerOrders]);
+
+  const selectedCustomerPendingOrders = useMemo(() => {
+    return selectedCustomerOrders.filter(
+      (o) => o.paymentState === 'pending' && o.orderState !== 'cancelled'
+    );
+  }, [selectedCustomerOrders]);
+
+  const selectedCustomerPaidOrders = useMemo(() => {
+    return selectedCustomerOrders.filter(
+      (o) => o.paymentState === 'paid' && o.orderState !== 'cancelled'
+    );
+  }, [selectedCustomerOrders]);
+
+  const selectedCustomerTotalPaidCents = useMemo(() => {
+    if (!selectedCustomer) return 0;
+    if (selectedCustomerOrders.length > 0) {
+      return selectedCustomerPaidOrders.reduce((sum, o) => sum + o.totalCents, 0);
+    }
+    return selectedCustomer.totalPaidCents ?? 0;
+  }, [selectedCustomer, selectedCustomerOrders.length, selectedCustomerPaidOrders]);
+
+  const selectedCustomerOrderCount = useMemo(() => {
+    if (!selectedCustomer) return 0;
+    if (selectedCustomerOrders.length > 0) {
+      const nonCancelled = selectedCustomerOrders.filter((o) => o.orderState !== 'cancelled');
+      return nonCancelled.length > 0 ? nonCancelled.length : selectedCustomerOrders.length;
+    }
+    return selectedCustomer.orderCount;
+  }, [selectedCustomer, selectedCustomerOrders]);
 
   return (
     <div className="page-enter">
@@ -185,7 +281,7 @@ export default function CustomersPage() {
               </h2>
                 <p className="mt-1 text-[14.5px] font-bold text-ink-700">
                   Cliente desde {new Intl.DateTimeFormat('es-AR', { dateStyle: 'medium' }).format(
-                    new Date(selectedCustomer.firstOrderAt)
+                    new Date(selectedCustomerFirstOrder ?? selectedCustomer.firstOrderAt)
                   )}
                 </p>
               </div>
@@ -205,15 +301,15 @@ export default function CustomersPage() {
                 <div className="text-[14.5px] space-y-1.5 font-semibold text-ink-900">
                   <p>
                     <span className="text-ink-600">Teléfono:</span>{' '}
-                    {selectedCustomer.phone ?? 'Sin registrar'}
+                    {selectedCustomerPhone ?? 'Sin registrar'}
                   </p>
                 </div>
 
-                {selectedCustomer.phone ? (
+                {selectedCustomerPhone ? (
                   <div className="pt-1.5">
                     <a
                       href={buildWhatsAppUrl(
-                        selectedCustomer.phone,
+                        selectedCustomerPhone,
                         `Hola ${selectedCustomer.name}, te escribimos de Impulso Suplementos.`
                       )}
                       target="_blank"
@@ -232,36 +328,24 @@ export default function CustomersPage() {
                   Pagos pendientes
                 </h4>
 
-                {(() => {
-                  const pendingOrders = (ordersQuery.data?.items ?? []).filter(
-                    (o) =>
-                      (o.customerId === selectedCustomer.id ||
-                        o.customerName.toLowerCase() === selectedCustomer.name.toLowerCase()) &&
-                      o.paymentState === 'pending' &&
-                      o.orderState !== 'cancelled'
-                  );
-
-                  if (pendingOrders.length === 0) {
-                    return (
-                      <div className="rounded-xl bg-emerald-50 p-3.5 border border-emerald-200/80 text-[14px] font-bold text-emerald-900">
-                        ✓ Al día · Sin pagos pendientes
-                      </div>
-                    );
-                  }
-
-                  const totalPendingCents = pendingOrders.reduce((sum, o) => sum + o.totalCents, 0);
-
-                  return (
-                    <div className="rounded-xl bg-amber-50 p-3.5 border border-amber-200/80 text-[14px] space-y-1">
-                      <p className="font-black text-amber-900">
-                        {pendingOrders.length === 1 ? '1 pedido pendiente' : `${pendingOrders.length} pedidos pendientes`} · {formatMoney(totalPendingCents)}
-                      </p>
-                      <p className="text-amber-800 font-semibold text-xs">
-                        {pendingOrders.map((o) => `#${o.number}`).join(', ')} (pendiente de cobro)
-                      </p>
-                    </div>
-                  );
-                })()}
+                {selectedCustomerPendingOrders.length === 0 ? (
+                  <div className="rounded-xl bg-emerald-50 p-3.5 border border-emerald-200/80 text-[14px] font-bold text-emerald-900">
+                    ✓ Al día · Sin pagos pendientes
+                  </div>
+                ) : (
+                  <div className="rounded-xl bg-amber-50 p-3.5 border border-amber-200/80 text-[14px] space-y-1">
+                    <p className="font-black text-amber-900">
+                      {selectedCustomerPendingOrders.length === 1
+                        ? '1 pedido pendiente'
+                        : `${selectedCustomerPendingOrders.length} pedidos pendientes`} · {formatMoney(
+                        selectedCustomerPendingOrders.reduce((sum, o) => sum + o.totalCents, 0)
+                      )}
+                    </p>
+                    <p className="text-amber-800 font-semibold text-xs">
+                      {selectedCustomerPendingOrders.map((o) => `#${o.number}`).join(', ')} (pendiente de cobro)
+                    </p>
+                  </div>
+                )}
               </div>
 
               {/* Bloque: Pedidos */}
@@ -271,8 +355,8 @@ export default function CustomersPage() {
                     Pedidos
                   </h4>
                   <span className="text-sm font-bold text-ink-700">
-                    {selectedCustomer.orderCount}{' '}
-                    {selectedCustomer.orderCount === 1 ? 'pedido' : 'pedidos'}
+                    {selectedCustomerOrderCount}{' '}
+                    {selectedCustomerOrderCount === 1 ? 'pedido' : 'pedidos'}
                   </span>
                 </div>
 
@@ -280,41 +364,43 @@ export default function CustomersPage() {
                   <div className="rounded-xl bg-cream-50 p-3.5 border border-ink-950/6 text-[14px] flex justify-between items-center">
                     <span className="font-bold text-ink-700">Total cobrado:</span>
                     <strong className="font-display text-lg font-black text-ink-950">
-                      {formatMoney(selectedCustomer.totalPaidCents ?? 0)}
+                      {formatMoney(selectedCustomerTotalPaidCents)}
                     </strong>
                   </div>
                 ) : null}
 
                 <div className="space-y-2 pt-1">
-                  {(ordersQuery.data?.items ?? [])
-                    .filter(
-                      (o) =>
-                        o.customerId === selectedCustomer.id ||
-                        o.customerName.toLowerCase() === selectedCustomer.name.toLowerCase()
-                    )
-                    .map((ord) => (
-                      <div
-                        key={ord.id}
-                        className="flex items-center justify-between rounded-xl bg-cream-50 p-3 text-[14px]"
-                      >
-                        <div>
-                          <p className="font-bold text-ink-950">Pedido #{ord.number}</p>
-                          <p className="text-[13px] text-ink-600 font-medium">
-                            {new Intl.DateTimeFormat('es-AR', { dateStyle: 'short' }).format(
-                              new Date(ord.createdAt)
-                            )}
-                          </p>
-                        </div>
-                        <div className="text-right">
-                          <strong className="font-black text-ink-950">
-                            {formatMoney(ord.totalCents)}
-                          </strong>
-                          <p className="text-[12px] font-bold text-ink-700 capitalize">
-                            {ord.paymentState === 'paid' ? 'Pagado' : 'Pendiente'}
-                          </p>
-                        </div>
+                  {selectedCustomerOrders.map((ord) => (
+                    <div
+                      key={ord.id}
+                      className="flex items-center justify-between rounded-xl bg-cream-50 p-3 text-[14px]"
+                    >
+                      <div>
+                        <p className="font-bold text-ink-950">Pedido #{ord.number}</p>
+                        <p className="text-[13px] text-ink-600 font-medium">
+                          {new Intl.DateTimeFormat('es-AR', { dateStyle: 'short' }).format(
+                            new Date(ord.createdAt)
+                          )}
+                        </p>
                       </div>
-                    ))}
+                      <div className="text-right">
+                        <strong className="font-black text-ink-950">
+                          {formatMoney(ord.totalCents)}
+                        </strong>
+                        <p className="text-[12px] font-bold">
+                          {ord.orderState === 'cancelled' ? (
+                            <span className="text-rose-600">Cancelado</span>
+                          ) : ord.paymentState === 'paid' ? (
+                            <span className="text-emerald-700">Pagado</span>
+                          ) : ord.paymentState === 'refunded' ? (
+                            <span className="text-amber-700">Reintegrado</span>
+                          ) : (
+                            <span className="text-amber-600">Pendiente</span>
+                          )}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>

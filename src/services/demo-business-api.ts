@@ -339,10 +339,17 @@ export const demoBusinessApi: BusinessApi = {
       (sum, item) => sum + (item.unitCostCents ?? 0) * item.quantity,
       0
     );
+    const existingCustomer = state.customers.find(
+      (c) =>
+        (input.phone && c.phone && c.phone.trim() === input.phone.trim()) ||
+        c.name.trim().toLowerCase() === input.customerName.trim().toLowerCase()
+    );
+    const customerId = existingCustomer ? existingCustomer.id : nextUuid();
+
     const order: Order = {
       id: nextUuid(),
       number,
-      customerId: nextUuid(),
+      customerId,
       customerName: input.customerName,
       customerPhone: input.phone,
       paymentMethod: input.paymentMethod,
@@ -391,15 +398,23 @@ export const demoBusinessApi: BusinessApi = {
     }
     state.orders.unshift(order);
     state.importedProtocolIds.add(input.protocolOrderId);
-    state.customers.unshift({
-      id: order.customerId!,
-      name: order.customerName,
-      phone: order.customerPhone,
-      firstOrderAt: now,
-      lastOrderAt: now,
-      orderCount: 1,
-      totalPaidCents: 0
-    });
+    if (existingCustomer) {
+      existingCustomer.orderCount += 1;
+      existingCustomer.lastOrderAt = now;
+      if (!existingCustomer.phone && input.phone) {
+        existingCustomer.phone = input.phone;
+      }
+    } else {
+      state.customers.unshift({
+        id: customerId,
+        name: order.customerName,
+        phone: order.customerPhone,
+        firstOrderAt: now,
+        lastOrderAt: now,
+        orderCount: 1,
+        totalPaidCents: 0
+      });
+    }
     state.revision += 1;
     return latency(order);
   },
@@ -416,12 +431,22 @@ export const demoBusinessApi: BusinessApi = {
     if (action === 'mark_paid') {
       order.paymentState = 'paid';
       order.paidAt = now;
-      const customer = state.customers.find((candidate) => candidate.id === order.customerId);
+      const customer = state.customers.find(
+        (candidate) =>
+          candidate.id === order.customerId ||
+          (candidate.phone && order.customerPhone && candidate.phone === order.customerPhone) ||
+          candidate.name.trim().toLowerCase() === order.customerName.trim().toLowerCase()
+      );
       if (customer) customer.totalPaidCents = (customer.totalPaidCents ?? 0) + order.totalCents;
     }
     if (action === 'mark_refunded') {
       order.paymentState = 'refunded';
-      const customer = state.customers.find((candidate) => candidate.id === order.customerId);
+      const customer = state.customers.find(
+        (candidate) =>
+          candidate.id === order.customerId ||
+          (candidate.phone && order.customerPhone && candidate.phone === order.customerPhone) ||
+          candidate.name.trim().toLowerCase() === order.customerName.trim().toLowerCase()
+      );
       if (customer && customer.totalPaidCents !== null) {
         customer.totalPaidCents = Math.max(0, customer.totalPaidCents - order.totalCents);
       }
@@ -563,6 +588,21 @@ export const demoBusinessApi: BusinessApi = {
   },
 
   async listCustomers(page = 1, pageSize = 30) {
+    // Sincronizar estadísticas de clientes con pedidos reales
+    for (const customer of state.customers) {
+      const orders = state.orders.filter(
+        (o) =>
+          o.customerId === customer.id ||
+          (customer.phone && o.customerPhone && o.customerPhone === customer.phone) ||
+          o.customerName.trim().toLowerCase() === customer.name.trim().toLowerCase()
+      );
+      if (orders.length > 0) {
+        customer.orderCount = orders.filter((o) => o.orderState !== 'cancelled').length;
+        customer.totalPaidCents = orders
+          .filter((o) => o.paymentState === 'paid' && o.orderState !== 'cancelled')
+          .reduce((sum, o) => sum + o.totalCents, 0);
+      }
+    }
     return latency(paginate(state.customers, page, pageSize));
   },
 
