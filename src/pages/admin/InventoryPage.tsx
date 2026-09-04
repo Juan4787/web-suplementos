@@ -138,20 +138,20 @@ function PurchaseFormModal({ onClose }: { onClose: () => void }) {
           />
         </Field>
 
+        {/* Notas */}
+        <Field label="Notas · opcional">
+          <Input
+            placeholder="Ej. 50% pagado. Resto contra entrega."
+            value={notes}
+            onChange={(event) => setNotes(event.target.value)}
+          />
+        </Field>
+
         {/* Sección de productos */}
         <div className="space-y-3 pt-2">
           <h3 className="text-[13px] font-black uppercase tracking-wider text-ink-700">
             PRODUCTOS ({lines.length})
           </h3>
-
-          <Button
-            type="button"
-            variant="secondary"
-            className="w-full min-h-12 rounded-2xl text-[14.5px] font-bold"
-            onClick={() => setLines([...lines, { productId: '', quantity: 1, unitCostPesos: 0 }])}
-          >
-            + Agregar producto
-          </Button>
 
           <div className="space-y-4 pt-1">
             {lines.map((line, index) => (
@@ -251,16 +251,16 @@ function PurchaseFormModal({ onClose }: { onClose: () => void }) {
               </div>
             ))}
           </div>
-        </div>
 
-        {/* Notas */}
-        <Field label="Notas · opcional">
-          <Input
-            placeholder="Ej. 50% pagado. Resto contra entrega."
-            value={notes}
-            onChange={(event) => setNotes(event.target.value)}
-          />
-        </Field>
+          <Button
+            type="button"
+            variant="secondary"
+            className="w-full min-h-12 rounded-2xl text-[14.5px] font-bold"
+            onClick={() => setLines([...lines, { productId: '', quantity: 1, unitCostPesos: 0 }])}
+          >
+            + Agregar producto
+          </Button>
+        </div>
 
         {create.error ? <ErrorState error={create.error} /> : null}
       </div>
