@@ -199,49 +199,92 @@ function UsersTab({
       {usersQuery.isError ? <ErrorState error={usersQuery.error} onRetry={() => void usersQuery.refetch()} /> : null}
       {update.error ? <ErrorState error={update.error} /> : null}
 
-      <div className="overflow-hidden rounded-2xl border border-ink-950/8 bg-white shadow-sm">
-        <div className="divide-y divide-ink-950/6">
-          {usersQuery.data?.map((user) => {
-            const role = draftRoles[user.id] ?? user.role;
-            const active = draftActive[user.id] ?? user.active;
-            const changed = role !== user.role || active !== user.active;
-            const isSaved = savedUserIds[user.id];
-            return (
-              <article key={user.id} className="grid gap-4 p-5 sm:grid-cols-[auto_1fr_10rem_10rem_auto] sm:items-center sm:px-6">
-                <span className={cn('grid size-11 place-items-center rounded-xl', user.role === 'owner' ? 'bg-brand-600 text-white' : 'bg-cream-100 text-ink-800')}>
+      {/* Lista de usuarios con diseño espacioso y sin overflow-hidden para que los menús floten libremente */}
+      <div className="rounded-2xl border border-ink-950/8 bg-white shadow-sm divide-y divide-ink-950/6">
+        {usersQuery.data?.map((user) => {
+          const role = draftRoles[user.id] ?? user.role;
+          const active = draftActive[user.id] ?? user.active;
+          const changed = role !== user.role || active !== user.active;
+          const isSaved = savedUserIds[user.id];
+
+          return (
+            <article
+              key={user.id}
+              className="relative flex flex-col gap-4 p-5 transition sm:flex-row sm:items-center sm:justify-between sm:p-6 hover:bg-cream-50/40"
+            >
+              {/* Información del colaborador */}
+              <div className="flex items-center gap-3.5 min-w-0 flex-1">
+                <span
+                  className={cn(
+                    'grid size-12 shrink-0 place-items-center rounded-2xl shadow-xs transition',
+                    user.role === 'owner'
+                      ? 'bg-gradient-to-br from-brand-600 to-brand-700 text-white ring-4 ring-brand-50'
+                      : 'bg-cream-100 text-ink-700 ring-4 ring-cream-50'
+                  )}
+                >
                   {user.role === 'owner' ? <Crown className="size-5" /> : <UserCog className="size-5" />}
                 </span>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h4 className="font-black text-ink-950">{user.displayName}</h4>
-                    <span className="text-xs text-ink-600">({user.role === 'owner' ? 'Dueña' : 'Personal'})</span>
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h4 className="font-display font-black text-[16px] text-ink-950 truncate">
+                      {user.displayName}
+                    </h4>
+                    <StatusChip
+                      label={user.role === 'owner' ? 'Dueña' : 'Personal'}
+                      tone={user.role === 'owner' ? 'info' : 'neutral'}
+                    />
+                    <StatusChip
+                      label={user.active ? 'Habilitada' : 'Deshabilitada'}
+                      tone={user.active ? 'success' : 'danger'}
+                    />
                   </div>
-                  <p className="text-xs text-ink-600">{user.email}</p>
+                  <p className="text-[13px] text-ink-600 font-medium truncate mt-0.5">{user.email}</p>
                 </div>
-                <Select
-                  aria-label={`Rol de ${user.displayName}`}
-                  value={role}
-                  onChange={(e) => setDraftRoles((cur) => ({ ...cur, [user.id]: e.target.value as UserRole }))}
-                >
-                  <option value="owner">Dueña (Total)</option>
-                  <option value="staff">Personal (Operativo)</option>
-                </Select>
-                <Select
-                  aria-label={`Acceso de ${user.displayName}`}
-                  value={active ? 'active' : 'inactive'}
-                  onChange={(e) => setDraftActive((cur) => ({ ...cur, [user.id]: e.target.value === 'active' }))}
-                >
-                  <option value="active">Habilitada</option>
-                  <option value="inactive">Deshabilitada</option>
-                </Select>
+              </div>
+
+              {/* Controles de rol, acceso y guardar */}
+              <div className="flex flex-wrap items-center gap-3 shrink-0 pt-2 sm:pt-0">
+                <div className="w-full sm:w-48">
+                  <Select
+                    aria-label={`Rol de ${user.displayName}`}
+                    value={role}
+                    size="sm"
+                    onChange={(e) =>
+                      setDraftRoles((cur) => ({ ...cur, [user.id]: e.target.value as UserRole }))
+                    }
+                  >
+                    <option value="owner">Dueña (Total)</option>
+                    <option value="staff">Personal (Operativo)</option>
+                  </Select>
+                </div>
+
+                <div className="w-full sm:w-40">
+                  <Select
+                    aria-label={`Acceso de ${user.displayName}`}
+                    value={active ? 'active' : 'inactive'}
+                    size="sm"
+                    align="right"
+                    onChange={(e) =>
+                      setDraftActive((cur) => ({ ...cur, [user.id]: e.target.value === 'active' }))
+                    }
+                  >
+                    <option value="active">Habilitada</option>
+                    <option value="inactive">Deshabilitada</option>
+                  </Select>
+                </div>
+
                 <Button
                   size="sm"
                   variant="primary"
                   disabled={!changed && !isSaved}
                   loading={update.isPending && update.variables?.id === user.id}
                   className={cn(
-                    'transition-all duration-300 min-w-[5.5rem]',
-                    isSaved ? 'bg-emerald-600 hover:bg-emerald-600 text-white shadow-md border-emerald-600' : ''
+                    'w-full sm:w-auto transition-all duration-300 min-w-[6.5rem] font-bold',
+                    isSaved
+                      ? 'bg-emerald-600 hover:bg-emerald-600 text-white shadow-md border-emerald-600'
+                      : changed
+                        ? 'shadow-md shadow-brand-500/20'
+                        : ''
                   )}
                   onClick={() => update.mutate({ id: user.id, role, active })}
                 >
@@ -253,24 +296,28 @@ function UsersTab({
                     'Guardar'
                   )}
                 </Button>
-              </article>
-            );
-          })}
-        </div>
+              </div>
+            </article>
+          );
+        })}
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
-        <div className="rounded-2xl bg-ink-950 p-5 text-white">
-          <Crown className="size-5 text-brand-300" />
-          <h4 className="mt-3 font-display text-lg font-black">Rol Dueña</h4>
-          <p className="mt-1 text-xs text-white/70 leading-5">
+        <div className="rounded-2xl bg-ink-950 p-5 text-white shadow-sm">
+          <div className="flex items-center gap-2 text-brand-300">
+            <Crown className="size-5" />
+            <h4 className="font-display text-lg font-black text-white">Rol Dueña</h4>
+          </div>
+          <p className="mt-2 text-xs text-white/70 leading-5">
             Acceso irrestricto a costos, márgenes, facturación, analíticas, exportaciones, IA y configuración de tienda.
           </p>
         </div>
-        <div className="rounded-2xl border border-ink-950/8 bg-white p-5">
-          <Shield className="size-5 text-brand-600" />
-          <h4 className="mt-3 font-display text-lg font-black">Rol Personal</h4>
-          <p className="mt-1 text-xs text-ink-600 leading-5">
+        <div className="rounded-2xl border border-ink-950/8 bg-white p-5 shadow-sm">
+          <div className="flex items-center gap-2 text-brand-600">
+            <Shield className="size-5" />
+            <h4 className="font-display text-lg font-black text-ink-950">Rol Personal</h4>
+          </div>
+          <p className="mt-2 text-xs text-ink-600 leading-5">
             Operación de catálogo, stock, pedidos y compras. El sistema oculta automáticamente los costos y datos financieros.
           </p>
         </div>

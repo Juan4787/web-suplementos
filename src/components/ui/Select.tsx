@@ -31,6 +31,8 @@ export type SelectProps = {
   'aria-label'?: string | undefined;
   searchable?: boolean | undefined;
   size?: 'sm' | 'md' | undefined;
+  align?: 'left' | 'right' | undefined;
+  dropdownWidth?: 'auto' | 'trigger' | 'wide' | undefined;
 };
 
 /**
@@ -76,7 +78,9 @@ export function Select({
   children,
   'aria-label': ariaLabel,
   searchable,
-  size = 'md'
+  size = 'md',
+  align = 'left',
+  dropdownWidth = 'auto'
 }: SelectProps) {
   const isControlled = controlledValue !== undefined;
   const [internalValue, setInternalValue] = useState(defaultValue);
@@ -185,7 +189,7 @@ export function Select({
   }, [isOpen, showSearch]);
 
   return (
-    <div ref={containerRef} className={cn('relative w-full select-none', className)}>
+    <div ref={containerRef} className={cn('relative w-full select-none', isOpen && 'z-40', className)}>
       {/* Hidden native input for form compatibility */}
       <input type="hidden" name={name} id={id} value={activeValue} />
 
@@ -236,7 +240,15 @@ export function Select({
         <div
           role="listbox"
           aria-label={ariaLabel}
-          className="absolute left-0 top-[calc(100%+6px)] z-50 flex max-h-80 w-full min-w-full sm:min-w-[340px] max-w-[calc(100vw-2rem)] flex-col rounded-2xl border border-ink-950/10 bg-white/95 p-1.5 shadow-[0_16px_40px_rgba(15,23,42,0.18)] backdrop-blur-xl animate-in fade-in zoom-in-95 duration-150"
+          className={cn(
+            'absolute top-[calc(100%+6px)] z-50 flex max-h-80 flex-col rounded-2xl border border-ink-950/10 bg-white/95 p-1.5 shadow-[0_16px_40px_rgba(15,23,42,0.18)] backdrop-blur-xl animate-in fade-in zoom-in-95 duration-150',
+            align === 'right' ? 'right-0 left-auto' : 'left-0 right-auto',
+            dropdownWidth === 'trigger'
+              ? 'w-full min-w-full'
+              : dropdownWidth === 'wide' || showSearch
+                ? 'w-full min-w-full sm:min-w-[320px] max-w-[calc(100vw-2rem)]'
+                : 'w-full min-w-full sm:min-w-[12rem] max-w-[calc(100vw-2rem)]'
+          )}
         >
           {/* Search bar for large option lists */}
           {showSearch && (
