@@ -10,8 +10,10 @@ import { StatusChip } from '@/components/ui/StatusChip';
 import type { UserRole } from '@/domain/types';
 import { getBusinessApi } from '@/services/business-api';
 import { useBusinessQuery } from '@/app/use-business-query';
+import { useAuth } from '@/features/auth/AuthProvider';
 
 export default function UsersPage() {
+  const { user: currentUser } = useAuth();
   const queryClient = useQueryClient();
   const usersQuery = useBusinessQuery({ queryKey: ['store-users'], queryFn: (api) => api.listUsers() });
   const [draftRoles, setDraftRoles] = useState<Record<string, UserRole>>({});
@@ -29,9 +31,10 @@ export default function UsersPage() {
         {usersQuery.isError ? <ErrorState error={usersQuery.error} onRetry={() => void usersQuery.refetch()} /> : null}
         {update.error ? <div className="mb-5"><ErrorState error={update.error} /></div> : null}
         <div className="space-y-4">{usersQuery.data?.map((user) => {
+          const isSelf = currentUser?.id === user.id;
           const role = draftRoles[user.id] ?? user.role;
           const active = draftActive[user.id] ?? user.active;
-          const changed = role !== user.role || active !== user.active;
+          const changed = !isSelf && (role !== user.role || active !== user.active);
           return (
             <article
               key={user.id}
@@ -47,6 +50,7 @@ export default function UsersPage() {
               <div>
                 <div className="flex flex-wrap items-center gap-2">
                   <h2 className="font-black">{user.displayName}</h2>
+                  {isSelf ? <StatusChip label="Tu usuario actual" tone="info" /> : null}
                   <StatusChip
                     label={user.role === 'owner' ? 'Dueña' : 'Personal'}
                     tone={user.role === 'owner' ? 'success' : 'neutral'}
@@ -62,6 +66,8 @@ export default function UsersPage() {
                 aria-label={`Rol de ${user.displayName}`}
                 value={role}
                 size="sm"
+                disabled={isSelf}
+                title={isSelf ? 'No podés cambiar tu propio rol.' : undefined}
                 onChange={(event) =>
                   setDraftRoles((current) => ({ ...current, [user.id]: event.target.value as UserRole }))
                 }
@@ -74,6 +80,8 @@ export default function UsersPage() {
                 value={active ? 'active' : 'inactive'}
                 size="sm"
                 align="right"
+                disabled={isSelf}
+                title={isSelf ? 'No podés deshabilitar tu propia cuenta.' : undefined}
                 onChange={(event) =>
                   setDraftActive((current) => ({
                     ...current,

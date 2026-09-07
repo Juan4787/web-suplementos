@@ -1,5 +1,6 @@
 import { Link, useSearch } from '@tanstack/react-router';
 import {
+  AlertTriangle,
   Check,
   ChevronDown,
   ChevronLeft,
@@ -18,6 +19,7 @@ import { OrderStatus } from '@/components/admin/OrderStatus';
 import { PageHeader } from '@/components/layout/AdminShell';
 import { Button, buttonStyles } from '@/components/ui/Button';
 import { ErrorState, LoadingState } from '@/components/ui/DataState';
+import { Modal } from '@/components/ui/Modal';
 import { formatMoney } from '@/domain/money';
 import {
   availableOrderActions,
@@ -115,6 +117,7 @@ export default function OrdersPage() {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [mutationError, setMutationError] = useState<Error | null>(null);
   const [showSecondaryActions, setShowSecondaryActions] = useState<Record<string, boolean>>({});
+  const [confirmAction, setConfirmAction] = useState<{ order: Order; action: OrderAction } | null>(null);
 
   const ordersQuery = useBusinessQuery({
     queryKey: queryKeys.orders(page),
@@ -509,26 +512,38 @@ export default function OrdersPage() {
                                 <div className="mt-2 space-y-2 border-t border-ink-950/8 pt-2">
                                   {actions
                                     .filter((a) => a !== 'mark_paid' && a !== 'mark_delivered')
-                                    .map((secAction) => (
-                                      <Button
-                                        key={secAction}
-                                        variant="ghost"
-                                        size="sm"
-                                        className="w-full text-[13.5px] font-bold text-ink-800 hover:text-red-700"
-                                        loading={
-                                          transition.isPending &&
-                                          transition.variables?.action === secAction
-                                        }
-                                        onClick={() =>
-                                          transition.mutate({
-                                            orderId: order.id,
-                                            action: secAction
-                                          })
-                                        }
-                                      >
-                                        {ORDER_ACTION_LABELS[secAction]}
-                                      </Button>
-                                    ))}
+                                    .map((secAction) => {
+                                      const isDestructive = secAction === 'cancel' || secAction === 'mark_refunded';
+                                      return (
+                                        <Button
+                                          key={secAction}
+                                          variant="ghost"
+                                          size="sm"
+                                          className={cn(
+                                            'w-full text-[13.5px] font-bold',
+                                            secAction === 'cancel'
+                                              ? 'text-rose-700 hover:bg-rose-50 hover:text-rose-800'
+                                              : 'text-ink-800 hover:text-ink-950'
+                                          )}
+                                          loading={
+                                            transition.isPending &&
+                                            transition.variables?.action === secAction
+                                          }
+                                          onClick={() => {
+                                            if (isDestructive) {
+                                              setConfirmAction({ order, action: secAction });
+                                            } else {
+                                              transition.mutate({
+                                                orderId: order.id,
+                                                action: secAction
+                                              });
+                                            }
+                                          }}
+                                        >
+                                          {ORDER_ACTION_LABELS[secAction]}
+                                        </Button>
+                                      );
+                                    })}
                                 </div>
                               ) : null}
                             </div>
@@ -541,6 +556,94 @@ export default function OrdersPage() {
               );
             })
           )}
+
+          {confirmAction ? (
+            <Modal
+              isOpen={Boolean(confirmAction)}
+              onClose={() => setConfirmAction(null)}
+              maxWidth="md"
+              ariaLabelledBy="confirm-order-action-title"
+            >
+              <div className="flex items-start gap-4">
+                <div
+                  className={cn(
+                    'grid size-12 shrink-0 place-items-center rounded-2xl',
+                    confirmAction.action === 'cancel'
+                      ? 'bg-rose-100 text-rose-700'
+                      : 'bg-amber-100 text-amber-800'
+                  )}
+                >
+                  <AlertTriangle className="size-6" />
+                </div>
+                <div className="space-y-1">
+                  <h3 id="confirm-order-action-title" className="font-display text-xl font-black text-ink-950">
+                    {confirmAction.action === 'cancel'
+                      ? `¿Cancelar pedido #${confirmAction.order.number}?`
+                      : `¿Registrar reintegro para pedido #${confirmAction.order.number}?`}
+                  </h3>
+                  <p className="text-sm font-semibold text-ink-800">
+                    Cliente: {confirmAction.order.customerName} ({formatMoney(confirmAction.order.totalCents)})
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-4 rounded-2xl bg-cream-50 p-4 text-sm text-ink-700 space-y-2">
+                {confirmAction.action === 'cancel' ? (
+                  <>
+                    <p>
+                      Al cancelar el pedido, <strong>se liberarán inmediatamente las unidades reservadas en inventario</strong> para que otros clientes puedan comprarlas.
+                    </p>
+                    <p className="text-xs font-semibold text-rose-700">
+                      ⚠️ Esta acción cambiará el estado del pedido a «Cancelado».
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p>
+                      Confirmá que se ha realizado la <strong>devolución o reintegro del dinero</strong> al cliente.
+                    </p>
+                    <p className="text-xs text-ink-600">
+                      El pedido quedará registrado con reintegro completado.
+                    </p>
+                  </>
+                )}
+              </div>
+
+              {mutationError ? (
+                <div className="mt-4">
+                  <ErrorState error={mutationError} />
+                </div>
+              ) : null}
+
+              <div className="mt-6 flex items-center justify-end gap-3">
+                <Button
+                  variant="ghost"
+                  onClick={() => setConfirmAction(null)}
+                  disabled={transition.isPending}
+                >
+                  Volver
+                </Button>
+                <Button
+                  variant="dark"
+                  className={
+                    confirmAction.action === 'cancel'
+                      ? 'bg-rose-700 hover:bg-rose-800 text-white font-bold'
+                      : 'bg-amber-800 hover:bg-amber-900 text-white font-bold'
+                  }
+                  loading={transition.isPending}
+                  onClick={async () => {
+                    await transition.mutateAsync({
+                      orderId: confirmAction.order.id,
+                      action: confirmAction.action
+                    });
+                    setConfirmAction(null);
+                  }}
+                >
+                  {confirmAction.action === 'cancel' ? 'Sí, cancelar pedido' : 'Sí, confirmar reintegro'}
+                </Button>
+              </div>
+            </Modal>
+          ) : null}
 
           {ordersQuery.data.total > ordersQuery.data.pageSize ? (
             <nav

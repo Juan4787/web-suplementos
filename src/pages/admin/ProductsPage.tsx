@@ -118,6 +118,7 @@ function ProductForm({
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
   const [imageError, setImageError] = useState<unknown>(null);
+  const [confirmArchive, setConfirmArchive] = useState<boolean | null>(null);
 
   const {
     register,
@@ -575,9 +576,7 @@ function ProductForm({
                 }
                 loading={save.isPending}
                 onClick={() => {
-                  setValue('active', !product.active);
-                  setValue('published', !product.active);
-                  handleSubmit((values) => save.mutate(values))();
+                  setConfirmArchive(product.active ? true : false);
                 }}
               >
                 {product.active ? (
@@ -601,7 +600,84 @@ function ProductForm({
             </div>
           </div>
         </form>
-    </Modal>
+
+        {confirmArchive !== null && product ? (
+          <Modal
+            isOpen={true}
+            onClose={() => setConfirmArchive(null)}
+            maxWidth="md"
+            ariaLabelledBy="confirm-form-archive-title"
+          >
+            <div className="flex items-start gap-4">
+              <div
+                className={cn(
+                  'grid size-12 shrink-0 place-items-center rounded-2xl',
+                  confirmArchive ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'
+                )}
+              >
+                {confirmArchive ? <Archive className="size-6" /> : <ArchiveRestore className="size-6" />}
+              </div>
+              <div className="space-y-1">
+                <h3 id="confirm-form-archive-title" className="font-display text-xl font-black text-ink-950">
+                  {confirmArchive ? '¿Archivar este producto?' : '¿Desarchivar este producto?'}
+                </h3>
+                <p className="text-sm font-semibold text-ink-800">
+                  {product.name} ({product.presentation})
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-4 rounded-2xl bg-cream-50 p-4 text-sm text-ink-700 space-y-2">
+              {confirmArchive ? (
+                <>
+                  <p>
+                    El producto quedará <strong>oculto de la tienda pública</strong> y no se podrá seleccionar para nuevas ventas.
+                  </p>
+                  <p className="text-xs text-ink-600">
+                    ✓ El historial de compras, ventas y stock se mantendrá intacto.<br />
+                    ✓ Podés volver a activarlo en cualquier momento.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p>
+                    El producto volverá a estar <strong>activo y disponible</strong> en el catálogo y sistema de ventas.
+                  </p>
+                </>
+              )}
+            </div>
+
+            <div className="mt-6 flex items-center justify-end gap-3">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => setConfirmArchive(null)}
+                disabled={save.isPending}
+              >
+                Cancelar
+              </Button>
+              <Button
+                type="button"
+                variant={confirmArchive ? 'dark' : 'primary'}
+                className={
+                  confirmArchive
+                    ? 'bg-amber-800 hover:bg-amber-900 text-white'
+                    : 'bg-emerald-700 hover:bg-emerald-800 text-white'
+                }
+                loading={save.isPending}
+                onClick={() => {
+                  setValue('active', !confirmArchive);
+                  setValue('published', !confirmArchive);
+                  setConfirmArchive(null);
+                  handleSubmit((values) => save.mutate(values))();
+                }}
+              >
+                {confirmArchive ? 'Sí, archivar producto' : 'Sí, desarchivar producto'}
+              </Button>
+            </div>
+          </Modal>
+        ) : null}
+      </Modal>
   );
 }
 
@@ -609,6 +685,7 @@ export default function ProductsPage() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState<AdminProduct | null | undefined>(undefined);
+  const [archiveTarget, setArchiveTarget] = useState<{ product: AdminProduct; archived: boolean } | null>(null);
   const [search, setSearch] = useState('');
   const productsQuery = useBusinessQuery({
     queryKey: queryKeys.products,
@@ -760,9 +837,7 @@ export default function ProductsPage() {
                             archiveMutation.isPending &&
                             archiveMutation.variables?.productId === product.id
                           }
-                          onClick={() =>
-                            archiveMutation.mutate({ productId: product.id, archived: true })
-                          }
+                          onClick={() => setArchiveTarget({ product, archived: true })}
                         >
                           <Archive className="size-4" /> Archivar
                         </Button>
@@ -776,9 +851,7 @@ export default function ProductsPage() {
                             archiveMutation.isPending &&
                             archiveMutation.variables?.productId === product.id
                           }
-                          onClick={() =>
-                            archiveMutation.mutate({ productId: product.id, archived: false })
-                          }
+                          onClick={() => setArchiveTarget({ product, archived: false })}
                         >
                           <ArchiveRestore className="size-4" /> Desarchivar
                         </Button>
@@ -802,6 +875,96 @@ export default function ProductsPage() {
           product={editing}
           onClose={() => setEditing(undefined)}
         />
+      ) : null}
+
+      {/* Modal de confirmación para Archivar / Desarchivar desde el listado */}
+      {archiveTarget ? (
+        <Modal
+          isOpen={Boolean(archiveTarget)}
+          onClose={() => setArchiveTarget(null)}
+          maxWidth="md"
+          ariaLabelledBy="archive-card-modal-title"
+        >
+          <div className="flex items-start gap-4">
+            <div
+              className={cn(
+                'grid size-12 shrink-0 place-items-center rounded-2xl',
+                archiveTarget.archived ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'
+              )}
+            >
+              {archiveTarget.archived ? (
+                <Archive className="size-6" />
+              ) : (
+                <ArchiveRestore className="size-6" />
+              )}
+            </div>
+            <div className="space-y-1">
+              <h3 id="archive-card-modal-title" className="font-display text-xl font-black text-ink-950">
+                {archiveTarget.archived ? '¿Archivar producto?' : '¿Desarchivar producto?'}
+              </h3>
+              <p className="text-sm font-semibold text-ink-800">
+                {archiveTarget.product.name} ({archiveTarget.product.presentation})
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-4 rounded-2xl bg-cream-50 p-4 text-sm text-ink-700 space-y-2">
+            {archiveTarget.archived ? (
+              <>
+                <p>
+                  El producto quedará <strong>oculto de la tienda pública</strong> y no se podrá seleccionar para nuevas ventas.
+                </p>
+                <p className="text-xs text-ink-600">
+                  ✓ El historial de compras, ventas y stock se mantendrá intacto.<br />
+                  ✓ Podés volver a activarlo en cualquier momento.
+                </p>
+              </>
+            ) : (
+              <>
+                <p>
+                  El producto volverá a estar <strong>activo y disponible</strong> en el catálogo y sistema de ventas.
+                </p>
+                <p className="text-xs text-ink-600">
+                  Podrás administrar su stock y precios de forma regular.
+                </p>
+              </>
+            )}
+          </div>
+
+          {archiveMutation.error ? (
+            <div className="mt-4">
+              <ErrorState error={archiveMutation.error} />
+            </div>
+          ) : null}
+
+          <div className="mt-6 flex items-center justify-end gap-3">
+            <Button
+              variant="ghost"
+              onClick={() => setArchiveTarget(null)}
+              disabled={archiveMutation.isPending}
+            >
+              Cancelar
+            </Button>
+            <Button
+              variant={archiveTarget.archived ? 'dark' : 'primary'}
+              className={
+                archiveTarget.archived
+                  ? 'bg-amber-800 hover:bg-amber-900 text-white'
+                  : 'bg-emerald-700 hover:bg-emerald-800 text-white'
+              }
+              loading={archiveMutation.isPending}
+              onClick={async () => {
+                await archiveMutation.mutateAsync({
+                  productId: archiveTarget.product.id,
+                  archived: archiveTarget.archived
+                });
+                setArchiveTarget(null);
+              }}
+            >
+              {archiveTarget.archived ? 'Sí, archivar producto' : 'Sí, desarchivar producto'}
+            </Button>
+          </div>
+        </Modal>
       ) : null}
     </div>
   );

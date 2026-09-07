@@ -32,6 +32,7 @@ import { sanitizeDecimalInput, sanitizeIntegerInput } from '@/domain/inventory';
 import type { StoreSettings, UserRole } from '@/domain/types';
 import { cn } from '@/lib/cn';
 import { getBusinessApi } from '@/services/business-api';
+import { useAuth } from '@/features/auth/AuthProvider';
 
 type DraftSettings = {
   storeName: string;
@@ -171,6 +172,7 @@ function UsersTab({
 }: {
   onNotify?: (title: string, description?: string) => void;
 }) {
+  const { user: currentUser } = useAuth();
   const queryClient = useQueryClient();
   const usersQuery = useBusinessQuery({ queryKey: ['store-users'], queryFn: (api) => api.listUsers() });
   const [draftRoles, setDraftRoles] = useState<Record<string, UserRole>>({});
@@ -202,9 +204,10 @@ function UsersTab({
       {/* Lista de usuarios con diseño espacioso y sin overflow-hidden para que los menús floten libremente */}
       <div className="rounded-2xl border border-ink-950/8 bg-white shadow-sm divide-y divide-ink-950/6">
         {usersQuery.data?.map((user) => {
+          const isSelf = currentUser?.id === user.id;
           const role = draftRoles[user.id] ?? user.role;
           const active = draftActive[user.id] ?? user.active;
-          const changed = role !== user.role || active !== user.active;
+          const changed = !isSelf && (role !== user.role || active !== user.active);
           const isSaved = savedUserIds[user.id];
 
           return (
@@ -229,6 +232,7 @@ function UsersTab({
                     <h4 className="font-display font-black text-[16px] text-ink-950 truncate">
                       {user.displayName}
                     </h4>
+                    {isSelf ? <StatusChip label="Tu usuario actual" tone="info" /> : null}
                     <StatusChip
                       label={user.role === 'owner' ? 'Dueña' : 'Personal'}
                       tone={user.role === 'owner' ? 'info' : 'neutral'}
@@ -249,6 +253,8 @@ function UsersTab({
                     aria-label={`Rol de ${user.displayName}`}
                     value={role}
                     size="sm"
+                    disabled={isSelf}
+                    title={isSelf ? 'No podés cambiar tu propio rol.' : undefined}
                     onChange={(e) =>
                       setDraftRoles((cur) => ({ ...cur, [user.id]: e.target.value as UserRole }))
                     }
@@ -264,6 +270,8 @@ function UsersTab({
                     value={active ? 'active' : 'inactive'}
                     size="sm"
                     align="right"
+                    disabled={isSelf}
+                    title={isSelf ? 'No podés deshabilitar tu propia cuenta.' : undefined}
                     onChange={(e) =>
                       setDraftActive((cur) => ({ ...cur, [user.id]: e.target.value === 'active' }))
                     }

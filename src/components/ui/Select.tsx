@@ -33,6 +33,7 @@ export type SelectProps = {
   size?: 'sm' | 'md' | undefined;
   align?: 'left' | 'right' | undefined;
   dropdownWidth?: 'auto' | 'trigger' | 'wide' | undefined;
+  title?: string | undefined;
 };
 
 /**
@@ -80,7 +81,8 @@ export function Select({
   searchable,
   size = 'md',
   align = 'left',
-  dropdownWidth = 'auto'
+  dropdownWidth = 'auto',
+  title
 }: SelectProps) {
   const isControlled = controlledValue !== undefined;
   const [internalValue, setInternalValue] = useState(defaultValue);
@@ -196,6 +198,7 @@ export function Select({
       {/* Trigger button */}
       <button
         type="button"
+        title={title}
         disabled={disabled}
         aria-label={ariaLabel}
         aria-haspopup="listbox"

@@ -912,11 +912,21 @@ export default function CreateOrderPage() {
                 </div>
               ) : null}
 
+              {items.length === 0 ? (
+                <p className="mb-3 rounded-xl bg-cream-100 p-2.5 text-center text-xs font-bold text-ink-600">
+                  Agregá al menos un producto al pedido para poder confirmar.
+                </p>
+              ) : customerName.trim().length < 2 ? (
+                <p className="mb-3 rounded-xl bg-amber-50 p-2.5 text-center text-xs font-bold text-amber-800 border border-amber-200">
+                  Completá el nombre del cliente (mínimo 2 letras) para habilitar la confirmación.
+                </p>
+              ) : null}
+
               <Button
                 size="lg"
                 className="w-full text-base font-black shadow-sm"
                 loading={confirmMutation.isPending}
-                disabled={items.length === 0 || customerName.trim().length < 2}
+                disabled={items.length === 0 || customerName.trim().length < 2 || confirmMutation.isPending}
                 onClick={handleSubmit}
               >
                 Confirmar pedido manual

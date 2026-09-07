@@ -15,8 +15,6 @@ const TARRO_SLUGS = new Set([
   'b-complex-active',
   'climateric-support',
   'd-40-support',
-  'deep-dreams-x-100',
-  'deep-dreams-x-30',
   'femme-balance',
   'gastro-support',
   'hepato-support',
