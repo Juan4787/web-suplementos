@@ -11,7 +11,6 @@ import {
   Search,
   Sliders,
   Sparkles,
-  Trash2,
   X
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
@@ -107,12 +106,10 @@ const defaults: FormValues = {
 
 function ProductForm({
   product,
-  onClose,
-  onDeleteRequest
+  onClose
 }: {
   product: AdminProduct | null;
   onClose: () => void;
-  onDeleteRequest?: (product: AdminProduct) => void;
 }) {
   const { user } = useAuth();
   const queryClient = useQueryClient();
@@ -568,44 +565,31 @@ function ProductForm({
 
           <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
             {product && can(user, 'manage_pricing') ? (
-              <div className="flex flex-wrap items-center gap-2">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  className={
-                    product.active
-                      ? 'text-amber-800 hover:bg-amber-50 hover:text-amber-900'
-                      : 'text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800'
-                  }
-                  loading={save.isPending}
-                  onClick={() => {
-                    setValue('active', !product.active);
-                    setValue('published', !product.active);
-                    handleSubmit((values) => save.mutate(values))();
-                  }}
-                >
-                  {product.active ? (
-                    <>
-                      <Archive className="size-4" /> Archivar producto
-                    </>
-                  ) : (
-                    <>
-                      <ArchiveRestore className="size-4" /> Desarchivar producto
-                    </>
-                  )}
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  className="text-red-700 hover:bg-red-50 hover:text-red-800"
-                  onClick={() => {
-                    onClose();
-                    onDeleteRequest?.(product);
-                  }}
-                >
-                  <Trash2 className="size-4" /> Eliminar
-                </Button>
-              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                className={
+                  product.active
+                    ? 'text-amber-800 hover:bg-amber-50 hover:text-amber-900'
+                    : 'text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800'
+                }
+                loading={save.isPending}
+                onClick={() => {
+                  setValue('active', !product.active);
+                  setValue('published', !product.active);
+                  handleSubmit((values) => save.mutate(values))();
+                }}
+              >
+                {product.active ? (
+                  <>
+                    <Archive className="size-4" /> Archivar producto
+                  </>
+                ) : (
+                  <>
+                    <ArchiveRestore className="size-4" /> Desarchivar producto
+                  </>
+                )}
+              </Button>
             ) : <div />}
             <div className="flex items-center gap-3">
               <Button type="button" variant="ghost" onClick={onClose}>
@@ -625,26 +609,10 @@ export default function ProductsPage() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState<AdminProduct | null | undefined>(undefined);
-  const [productToDelete, setProductToDelete] = useState<AdminProduct | null>(null);
   const [search, setSearch] = useState('');
   const productsQuery = useBusinessQuery({
     queryKey: queryKeys.products,
     queryFn: (api) => api.listAdminProducts()
-  });
-
-  const deleteMutation = useMutation({
-    mutationFn: async (productId: string) => {
-      const api = await getBusinessApi();
-      await api.deleteProduct(productId);
-    },
-    onSuccess: async () => {
-      setProductToDelete(null);
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: queryKeys.products }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.inventory }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.dashboard })
-      ]);
-    }
   });
 
   const archiveMutation = useMutation({
@@ -653,8 +621,6 @@ export default function ProductsPage() {
       return await api.archiveProduct(productId, archived);
     },
     onSuccess: async () => {
-      setProductToDelete(null);
-      deleteMutation.reset();
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: queryKeys.products }),
         queryClient.invalidateQueries({ queryKey: queryKeys.inventory }),
@@ -819,19 +785,6 @@ export default function ProductsPage() {
                       )
                     ) : null}
 
-                    {can(user, 'manage_pricing') ? (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="text-red-700 hover:bg-red-50 hover:text-red-800"
-                        onClick={() => {
-                          deleteMutation.reset();
-                          setProductToDelete(product);
-                        }}
-                      >
-                        <Trash2 className="size-4" /> Eliminar
-                      </Button>
-                    ) : null}
                   </div>
 
                   <Button variant="ghost" size="sm" onClick={() => setEditing(product)}>
@@ -848,132 +801,8 @@ export default function ProductsPage() {
         <ProductForm
           product={editing}
           onClose={() => setEditing(undefined)}
-          onDeleteRequest={(prod) => {
-            deleteMutation.reset();
-            setProductToDelete(prod);
-          }}
         />
       ) : null}
-
-      {/* Modal de confirmación para evitar borrados accidentales */}
-      <Modal
-        isOpen={Boolean(productToDelete)}
-        onClose={() => {
-          if (!deleteMutation.isPending) {
-            setProductToDelete(null);
-            deleteMutation.reset();
-          }
-        }}
-        maxWidth="lg"
-        ariaLabelledBy="delete-product-title"
-      >
-        {productToDelete ? (
-          <div className="space-y-5">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <h2 id="delete-product-title" className="font-display text-2xl font-black text-ink-950">
-                  Eliminar producto
-                </h2>
-                <p className="mt-1 text-[14.5px] font-medium text-ink-700">
-                  Confirmá si realmente deseás remover este producto del sistema.
-                </p>
-              </div>
-              <button
-                type="button"
-                className="grid size-10 place-items-center rounded-full hover:bg-cream-100 text-ink-600 transition"
-                onClick={() => {
-                  if (!deleteMutation.isPending) {
-                    setProductToDelete(null);
-                    deleteMutation.reset();
-                  }
-                }}
-                aria-label="Cerrar"
-              >
-                <X className="size-5" />
-              </button>
-            </div>
-
-            <div className="flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50 p-4 text-red-950">
-              <AlertTriangle className="size-6 shrink-0 text-red-600 mt-0.5" />
-              <div className="text-sm">
-                <p className="font-bold text-red-900">
-                  ¿Confirmás que querés eliminar definitivamente este producto?
-                </p>
-                <p className="mt-1 text-red-800">
-                  Vas a eliminar <strong>{productToDelete.name}</strong> ({productToDelete.presentation}) con código <strong>{productToDelete.sku}</strong>.
-                </p>
-                <p className="mt-1.5 text-xs text-red-700 leading-relaxed">
-                  Esta acción es irreversible y eliminará el producto del catálogo y balances de inventario. Si el producto ya cuenta con pedidos o ventas asociadas, el sistema impedirá su borrado para proteger el historial financiero (en ese caso podés desactivarlo o archivarlo).
-                </p>
-              </div>
-            </div>
-
-            {/* Opción directa para archivar */}
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50/70 p-4 text-amber-950">
-              <div className="text-xs text-amber-900 leading-relaxed">
-                <strong>¿Preferís conservarlo archivado?</strong> Oculta el producto de la tienda y de nuevos pedidos sin alterar los reportes ni borrar las ventas asociadas.
-              </div>
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                className="shrink-0 border-amber-300 bg-white text-amber-900 hover:bg-amber-100"
-                loading={archiveMutation.isPending}
-                onClick={() =>
-                  archiveMutation.mutate({
-                    productId: productToDelete.id,
-                    archived: true
-                  })
-                }
-              >
-                <Archive className="size-4" /> Archivar en su lugar
-              </Button>
-            </div>
-
-            {deleteMutation.error ? (
-              <div className="space-y-3">
-                <ErrorState error={deleteMutation.error} />
-                <Button
-                  type="button"
-                  variant="secondary"
-                  className="w-full border-amber-300 bg-amber-50 font-bold text-amber-900 hover:bg-amber-100"
-                  loading={archiveMutation.isPending}
-                  onClick={() =>
-                    archiveMutation.mutate({
-                      productId: productToDelete.id,
-                      archived: true
-                    })
-                  }
-                >
-                  <Archive className="size-4 mr-1.5" /> Archivar este producto ahora
-                </Button>
-              </div>
-            ) : null}
-
-            <div className="flex justify-end gap-3 pt-2">
-              <Button
-                type="button"
-                variant="ghost"
-                disabled={deleteMutation.isPending}
-                onClick={() => {
-                  setProductToDelete(null);
-                  deleteMutation.reset();
-                }}
-              >
-                Cancelar
-              </Button>
-              <Button
-                type="button"
-                variant="danger"
-                loading={deleteMutation.isPending}
-                onClick={() => deleteMutation.mutate(productToDelete.id)}
-              >
-                <Trash2 className="size-4" /> Sí, eliminar producto
-              </Button>
-            </div>
-          </div>
-        ) : null}
-      </Modal>
     </div>
   );
 }
