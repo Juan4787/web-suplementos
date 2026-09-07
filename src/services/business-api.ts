@@ -89,6 +89,7 @@ export interface BusinessApi {
   listAdminProducts(): Promise<AdminProduct[]>;
   saveProduct(input: ProductUpdate): Promise<AdminProduct>;
   deleteProduct(productId: string): Promise<void>;
+  archiveProduct(productId: string, archived: boolean): Promise<AdminProduct>;
   listInventory(): Promise<InventoryItem[]>;
   adjustStock(productId: string, delta: number, reason: string): Promise<void>;
   updateStockThresholds(input: UpdateStockThresholdsInput): Promise<void>;

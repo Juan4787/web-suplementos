@@ -186,6 +186,41 @@ export const supabaseBusinessApi: BusinessApi = {
   deleteProduct: async (productId) => {
     await rpc('delete_product', { p_product_id: productId });
   },
+  archiveProduct: async (productId, archived) => {
+    try {
+      await rpc('archive_product', { p_product_id: productId, p_archived: archived });
+    } catch {
+      // Fallback a save_product si se ejecutara en un entorno previo
+      const products = await rpc<AdminProduct[]>('list_admin_products');
+      const prod = products.find((p) => p.id === productId);
+      if (!prod) throw new AppError('business', 'No encontramos el producto que querías actualizar.');
+      return await rpc<AdminProduct>('save_product', {
+        p_product: {
+          id: prod.id,
+          sku: prod.sku,
+          slug: prod.slug,
+          name: prod.name,
+          presentation: prod.presentation,
+          description: prod.description,
+          category: prod.category,
+          priceCents: prod.priceCents,
+          currentCostCents: prod.currentCostCents,
+          reorderPoint: prod.reorderPoint,
+          safetyStock: prod.safetyStock,
+          leadTimeDays: prod.leadTimeDays,
+          imageUrl: prod.imageUrl,
+          imageAlt: prod.imageAlt,
+          published: archived ? false : prod.published,
+          active: !archived,
+          featured: archived ? false : prod.featured
+        }
+      });
+    }
+    const updated = await rpc<AdminProduct[]>('list_admin_products');
+    const match = updated.find((p) => p.id === productId);
+    if (!match) throw new AppError('business', 'No se pudo verificar la actualización del producto.');
+    return match;
+  },
   listInventory: () => rpc('list_inventory_status'),
   adjustStock: async (productId, delta, reason) => {
     await rpc('adjust_product_stock', {

@@ -2,6 +2,8 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle,
+  Archive,
+  ArchiveRestore,
   ChevronDown,
   Edit3,
   Image as ImageIcon,
@@ -13,14 +15,14 @@ import {
   X
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, Controller } from 'react-hook-form';
 import { z } from 'zod';
 import { queryKeys } from '@/app/query-keys';
 import { useBusinessQuery } from '@/app/use-business-query';
 import { PageHeader } from '@/components/layout/AdminShell';
 import { Button } from '@/components/ui/Button';
 import { ErrorState, LoadingState } from '@/components/ui/DataState';
-import { Field, Input, Textarea } from '@/components/ui/Field';
+import { CurrencyInput, Field, Input, Textarea } from '@/components/ui/Field';
 import { Modal } from '@/components/ui/Modal';
 import { StatusChip } from '@/components/ui/StatusChip';
 import { formatMoney, pesosToCents } from '@/domain/money';
@@ -41,8 +43,12 @@ const formSchema = z.object({
   presentation: z.string().trim().min(1, 'Ingresá la presentación (ej. 300 g · Sin sabor).').max(100),
   description: z.string().trim().min(10, 'Describí el producto en al menos 10 caracteres.').max(1000),
   category: z.string().trim().min(2, 'Ingresá una categoría.').max(60),
-  pricePesos: z.number().nonnegative('El precio de venta no puede ser negativo.'),
-  costPesos: z.number().nonnegative('El costo no puede ser negativo.'),
+  pricePesos: z
+    .number({ error: 'Ingresá el precio de venta al público.' })
+    .positive('El precio de venta al público debe ser mayor a $0.'),
+  costPesos: z
+    .number({ error: 'Ingresá un costo válido.' })
+    .nonnegative('El costo no puede ser negativo.'),
   sku: z.string().trim().max(30).optional(),
   slug: z
     .string()
@@ -87,7 +93,7 @@ const defaults: FormValues = {
   presentation: '',
   description: '',
   category: 'General',
-  pricePesos: 0,
+  pricePesos: undefined as unknown as number,
   costPesos: 0,
   reorderPoint: 5,
   safetyStock: 2,
@@ -122,6 +128,7 @@ function ProductForm({
     reset,
     setValue,
     watch,
+    control,
     formState: { errors }
   } = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -322,13 +329,18 @@ function ProductForm({
                   label="Precio de venta al público (ARS)"
                   error={errors.pricePesos?.message}
                 >
-                  <Input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    placeholder="25000"
-                    onFocus={(e) => e.target.select()}
-                    {...register('pricePesos', { valueAsNumber: true })}
+                  <Controller
+                    control={control}
+                    name="pricePesos"
+                    render={({ field }) => (
+                      <CurrencyInput
+                        placeholder="25.000"
+                        value={field.value}
+                        onChange={field.onChange}
+                        onBlur={field.onBlur}
+                        name={field.name}
+                      />
+                    )}
                   />
                 </Field>
               ) : null}
@@ -405,13 +417,18 @@ function ProductForm({
                 error={errors.costPesos?.message}
                 hint="Se usará como costo base para compras y márgenes estimados."
               >
-                <Input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  placeholder="15000"
-                  onFocus={(e) => e.target.select()}
-                  {...register('costPesos', { valueAsNumber: true })}
+                <Controller
+                  control={control}
+                  name="costPesos"
+                  render={({ field }) => (
+                    <CurrencyInput
+                      placeholder="15.000"
+                      value={field.value}
+                      onChange={field.onChange}
+                      onBlur={field.onBlur}
+                      name={field.name}
+                    />
+                  )}
                 />
               </Field>
             </div>
@@ -551,17 +568,44 @@ function ProductForm({
 
           <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
             {product && can(user, 'manage_pricing') ? (
-              <Button
-                type="button"
-                variant="ghost"
-                className="text-red-700 hover:bg-red-50 hover:text-red-800"
-                onClick={() => {
-                  onClose();
-                  onDeleteRequest?.(product);
-                }}
-              >
-                <Trash2 className="size-4" /> Eliminar producto
-              </Button>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className={
+                    product.active
+                      ? 'text-amber-800 hover:bg-amber-50 hover:text-amber-900'
+                      : 'text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800'
+                  }
+                  loading={save.isPending}
+                  onClick={() => {
+                    setValue('active', !product.active);
+                    setValue('published', !product.active);
+                    handleSubmit((values) => save.mutate(values))();
+                  }}
+                >
+                  {product.active ? (
+                    <>
+                      <Archive className="size-4" /> Archivar producto
+                    </>
+                  ) : (
+                    <>
+                      <ArchiveRestore className="size-4" /> Desarchivar producto
+                    </>
+                  )}
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="text-red-700 hover:bg-red-50 hover:text-red-800"
+                  onClick={() => {
+                    onClose();
+                    onDeleteRequest?.(product);
+                  }}
+                >
+                  <Trash2 className="size-4" /> Eliminar
+                </Button>
+              </div>
             ) : <div />}
             <div className="flex items-center gap-3">
               <Button type="button" variant="ghost" onClick={onClose}>
@@ -595,6 +639,22 @@ export default function ProductsPage() {
     },
     onSuccess: async () => {
       setProductToDelete(null);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.products }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.inventory }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.dashboard })
+      ]);
+    }
+  });
+
+  const archiveMutation = useMutation({
+    mutationFn: async ({ productId, archived }: { productId: string; archived: boolean }) => {
+      const api = await getBusinessApi();
+      return await api.archiveProduct(productId, archived);
+    },
+    onSuccess: async () => {
+      setProductToDelete(null);
+      deleteMutation.reset();
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: queryKeys.products }),
         queryClient.invalidateQueries({ queryKey: queryKeys.inventory }),
@@ -722,19 +782,58 @@ export default function ProductsPage() {
                   </div>
                 </div>
                 <div className="flex items-center justify-between p-3 sm:px-5">
-                  {can(user, 'manage_pricing') ? (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="text-red-700 hover:bg-red-50 hover:text-red-800"
-                      onClick={() => {
-                        deleteMutation.reset();
-                        setProductToDelete(product);
-                      }}
-                    >
-                      <Trash2 className="size-4" /> Eliminar
-                    </Button>
-                  ) : <div />}
+                  <div className="flex items-center gap-1">
+                    {can(user, 'manage_pricing') ? (
+                      product.active ? (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-amber-800 hover:bg-amber-50 hover:text-amber-900"
+                          title="Archivar producto (ocultar de la tienda sin borrar historial)"
+                          loading={
+                            archiveMutation.isPending &&
+                            archiveMutation.variables?.productId === product.id
+                          }
+                          onClick={() =>
+                            archiveMutation.mutate({ productId: product.id, archived: true })
+                          }
+                        >
+                          <Archive className="size-4" /> Archivar
+                        </Button>
+                      ) : (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800"
+                          title="Desarchivar producto (reactivar en la tienda)"
+                          loading={
+                            archiveMutation.isPending &&
+                            archiveMutation.variables?.productId === product.id
+                          }
+                          onClick={() =>
+                            archiveMutation.mutate({ productId: product.id, archived: false })
+                          }
+                        >
+                          <ArchiveRestore className="size-4" /> Desarchivar
+                        </Button>
+                      )
+                    ) : null}
+
+                    {can(user, 'manage_pricing') ? (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-red-700 hover:bg-red-50 hover:text-red-800"
+                        onClick={() => {
+                          deleteMutation.reset();
+                          setProductToDelete(product);
+                        }}
+                      >
+                        <Trash2 className="size-4" /> Eliminar
+                      </Button>
+                    ) : null}
+                  </div>
+
                   <Button variant="ghost" size="sm" onClick={() => setEditing(product)}>
                     <Edit3 className="size-4" /> Editar
                   </Button>
@@ -809,8 +908,46 @@ export default function ProductsPage() {
               </div>
             </div>
 
+            {/* Opción directa para archivar */}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50/70 p-4 text-amber-950">
+              <div className="text-xs text-amber-900 leading-relaxed">
+                <strong>¿Preferís conservarlo archivado?</strong> Oculta el producto de la tienda y de nuevos pedidos sin alterar los reportes ni borrar las ventas asociadas.
+              </div>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                className="shrink-0 border-amber-300 bg-white text-amber-900 hover:bg-amber-100"
+                loading={archiveMutation.isPending}
+                onClick={() =>
+                  archiveMutation.mutate({
+                    productId: productToDelete.id,
+                    archived: true
+                  })
+                }
+              >
+                <Archive className="size-4" /> Archivar en su lugar
+              </Button>
+            </div>
+
             {deleteMutation.error ? (
-              <ErrorState error={deleteMutation.error} />
+              <div className="space-y-3">
+                <ErrorState error={deleteMutation.error} />
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="w-full border-amber-300 bg-amber-50 font-bold text-amber-900 hover:bg-amber-100"
+                  loading={archiveMutation.isPending}
+                  onClick={() =>
+                    archiveMutation.mutate({
+                      productId: productToDelete.id,
+                      archived: true
+                    })
+                  }
+                >
+                  <Archive className="size-4 mr-1.5" /> Archivar este producto ahora
+                </Button>
+              </div>
             ) : null}
 
             <div className="flex justify-end gap-3 pt-2">

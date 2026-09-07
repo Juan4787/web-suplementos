@@ -343,6 +343,20 @@ export const demoBusinessApi: BusinessApi = {
     state.revision += 1;
   },
 
+  async archiveProduct(productId: string, archived: boolean) {
+    const product = state.products.find((candidate) => candidate.id === productId);
+    if (!product) {
+      throw new AppError('business', 'No encontramos el producto que querías actualizar.');
+    }
+    product.active = !archived;
+    if (archived) {
+      product.published = false;
+      product.featured = false;
+    }
+    state.revision += 1;
+    return latency(product);
+  },
+
   async listInventory() {
     return latency(toDemoInventory(state.products));
   },
