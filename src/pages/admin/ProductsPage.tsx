@@ -37,22 +37,25 @@ import { getBusinessApi, type ProductUpdate } from '@/services/business-api';
 import { cn } from '@/lib/cn';
 
 const formSchema = z.object({
-  sku: z.string().trim().min(2, 'Ingresá un código para el producto (mínimo 2 caracteres).').max(30),
-  slug: z
-    .string()
-    .trim()
-    .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'Usá minúsculas, números y guiones (ej. creatina-300g).'),
-  name: z.string().trim().min(2, 'Ingresá el nombre del producto.').max(100),
-  presentation: z.string().trim().min(2, 'Ingresá la presentación (ej. 300 g · Sin sabor).').max(100),
+  name: z.string().trim().min(2, 'Ingresá el nombre del producto (mínimo 2 caracteres).').max(100),
+  presentation: z.string().trim().min(1, 'Ingresá la presentación (ej. 300 g · Sin sabor).').max(100),
   description: z.string().trim().min(10, 'Describí el producto en al menos 10 caracteres.').max(1000),
   category: z.string().trim().min(2, 'Ingresá una categoría.').max(60),
   pricePesos: z.number().nonnegative('El precio de venta no puede ser negativo.'),
   costPesos: z.number().nonnegative('El costo no puede ser negativo.'),
+  sku: z.string().trim().max(30).optional(),
+  slug: z
+    .string()
+    .trim()
+    .optional()
+    .refine((val) => !val || /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(val), {
+      message: 'Usá minúsculas, números y guiones (ej. creatina-300g).'
+    }),
   reorderPoint: z.number().int().nonnegative('El límite de alerta debe ser 0 o mayor.'),
   safetyStock: z.number().int().nonnegative('El mínimo de emergencia debe ser 0 o mayor.'),
   leadTimeDays: z.number().int().min(0).max(365, 'Los días de demora deben estar entre 0 y 365 días.'),
-  imageUrl: z.string().trim().min(1, 'Agregá o subí una imagen para el producto.'),
-  imageAlt: z.string().trim().min(3, 'Agregá una breve descripción de la foto.'),
+  imageUrl: z.string().trim().optional(),
+  imageAlt: z.string().trim().optional(),
   published: z.boolean(),
   active: z.boolean(),
   featured: z.boolean()
@@ -89,7 +92,7 @@ const defaults: FormValues = {
   reorderPoint: 5,
   safetyStock: 2,
   leadTimeDays: 7,
-  imageUrl: '',
+  imageUrl: '/products/imagen-suplemento.png',
   imageAlt: '',
   published: true,
   active: true,
@@ -188,7 +191,7 @@ function ProductForm({
         ? storagePathFromProductImageUrl(product.imageUrl)
         : null;
       let uploadedStoragePath: string | null = null;
-      let imageUrl = values.imageUrl;
+      let imageUrl = values.imageUrl?.trim() || product?.imageUrl || '/products/imagen-suplemento.png';
 
       if (imageFile) {
         const uploaded = await uploadProductImage(imageFile);
@@ -196,24 +199,29 @@ function ProductForm({
         uploadedStoragePath = uploaded.storagePath;
       }
 
+      const name = values.name.trim();
+      const sku = (values.sku?.trim() || skuFromText(name) || 'PROD').toUpperCase();
+      const slug = values.slug?.trim() || slugify(name) || 'producto';
+      const imageAlt = values.imageAlt?.trim() || `Foto de ${name}`;
+
       const input: ProductUpdate = {
         ...(product ? { id: product.id } : {}),
-        sku: values.sku.toUpperCase().trim(),
-        slug: values.slug.trim(),
-        name: values.name.trim(),
+        sku,
+        slug,
+        name,
         presentation: values.presentation.trim(),
         description: values.description.trim(),
         category: values.category.trim(),
         priceCents: pricing ? pesosToCents(values.pricePesos) : product?.priceCents ?? 0,
         currentCostCents: pricing ? pesosToCents(values.costPesos) : product?.currentCostCents ?? null,
-        reorderPoint: values.reorderPoint,
-        safetyStock: values.safetyStock,
-        leadTimeDays: values.leadTimeDays,
+        reorderPoint: values.reorderPoint ?? 5,
+        safetyStock: values.safetyStock ?? 2,
+        leadTimeDays: values.leadTimeDays ?? 7,
         imageUrl,
-        imageAlt: values.imageAlt.trim(),
-        published: values.published,
-        active: values.active,
-        featured: values.featured
+        imageAlt,
+        published: values.published ?? true,
+        active: values.active ?? true,
+        featured: values.featured ?? false
       };
 
       try {
@@ -261,18 +269,39 @@ function ProductForm({
 
       <form
         className="mt-6 space-y-6"
-        onSubmit={handleSubmit((values) => save.mutate(values))}
+        onSubmit={handleSubmit(
+          (values) => save.mutate(values),
+          (formErrors) => {
+            if (
+              formErrors.sku ||
+              formErrors.slug ||
+              formErrors.reorderPoint ||
+              formErrors.safetyStock ||
+              formErrors.leadTimeDays
+            ) {
+              setShowAdvanced(true);
+            }
+          }
+        )}
         noValidate
       >
           {/* SECCIÓN 1: DATOS BÁSICOS (Siempre visible) */}
           <div className="space-y-4">
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Nombre del suplemento" error={errors.name?.message}>
-                <Input
-                  placeholder="Ej. Creatina Monohidratada"
-                  {...register('name')}
-                  onBlur={handleNameBlur}
-                />
+                {(() => {
+                  const nameField = register('name');
+                  return (
+                    <Input
+                      placeholder="Ej. Creatina Monohidratada"
+                      {...nameField}
+                      onBlur={(e) => {
+                        nameField.onBlur(e);
+                        handleNameBlur();
+                      }}
+                    />
+                  );
+                })()}
               </Field>
               <Field
                 label="Presentación"
@@ -320,8 +349,12 @@ function ProductForm({
               </p>
               <div className="grid gap-4 sm:grid-cols-[6rem_1fr] sm:items-center">
                 <div className="aspect-square size-24 overflow-hidden rounded-2xl bg-cream-100 border border-ink-950/10">
-                  {currentImageUrl ? (
-                    <img src={currentImageUrl} alt="Vista previa" className="size-full object-contain p-1.5" />
+                  {imagePreviewUrl || currentImageUrl ? (
+                    <img
+                      src={imagePreviewUrl || currentImageUrl}
+                      alt="Vista previa"
+                      className="size-full object-contain p-1.5"
+                    />
                   ) : (
                     <div className="grid size-full place-items-center text-ink-400">
                       <ImageIcon className="size-6 text-ink-600/40" />
@@ -350,11 +383,14 @@ function ProductForm({
                     }}
                   />
                   <p className="text-[13px] font-medium text-ink-600">
-                    Fotos en JPG o PNG (fotos de celular o catálogo). El sistema adapta el tamaño automáticamente.
+                    Fotos en JPG o PNG (fotos de celular o catálogo). Si no seleccionás ninguna, se asignará una imagen estándar que podés cambiar luego.
                   </p>
                 </div>
               </div>
               {imageError ? <div className="mt-3"><ErrorState error={imageError} /></div> : null}
+              {errors.imageUrl ? (
+                <p className="mt-2 text-[14px] font-semibold text-red-700">{errors.imageUrl.message}</p>
+              ) : null}
             </div>
           </div>
 
@@ -489,6 +525,27 @@ function ProductForm({
               </div>
             ) : null}
           </div>
+
+          {/* Alerta visible si hay errores de validación de formulario */}
+          {Object.keys(errors).length > 0 ? (
+            <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-red-950">
+              <div className="flex items-center gap-2 font-bold text-red-900 text-sm">
+                <AlertTriangle className="size-4 text-red-600 shrink-0" />
+                Por favor completá los datos requeridos para poder guardar:
+              </div>
+              <ul className="mt-2 list-disc list-inside text-xs text-red-800 space-y-1">
+                {errors.name ? <li><strong>Nombre:</strong> {errors.name.message}</li> : null}
+                {errors.presentation ? <li><strong>Presentación:</strong> {errors.presentation.message}</li> : null}
+                {errors.category ? <li><strong>Categoría:</strong> {errors.category.message}</li> : null}
+                {errors.pricePesos ? <li><strong>Precio:</strong> {errors.pricePesos.message}</li> : null}
+                {errors.description ? <li><strong>Descripción:</strong> {errors.description.message}</li> : null}
+                {errors.costPesos ? <li><strong>Costo:</strong> {errors.costPesos.message}</li> : null}
+                {errors.sku ? <li><strong>Código SKU:</strong> {errors.sku.message}</li> : null}
+                {errors.slug ? <li><strong>Enlace:</strong> {errors.slug.message}</li> : null}
+                {errors.imageUrl ? <li><strong>Imagen:</strong> {errors.imageUrl.message}</li> : null}
+              </ul>
+            </div>
+          ) : null}
 
           {save.error ? <ErrorState error={save.error} /> : null}
 
