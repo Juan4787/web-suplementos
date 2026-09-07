@@ -5,7 +5,9 @@ const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 
 export const PROJECT_ROOT = resolve(scriptDirectory, '..');
 
-export const WORKER_NAME = 'impulso';
+export const WORKER_NAME = 'tienda';
+export const WORKER_DOMAIN = 'tienda.desuplementos.workers.dev';
+export const WORKER_ORIGIN = `https://${WORKER_DOMAIN}`;
 export const CLOUDFLARE_PROFILE = 'impulso';
 export const CLOUDFLARE_ACCOUNT_ID = 'ac3c557ebce16c8392f9199ea0991fb1';
 export const CLOUDFLARE_ACCOUNT_NAME = 'app de suplementos';

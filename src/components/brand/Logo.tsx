@@ -1,26 +1,42 @@
 import { Link } from '@tanstack/react-router';
 import { cn } from '@/lib/cn';
 
-export function Logo({ compact = false, inverted = false }: { compact?: boolean; inverted?: boolean }) {
+export function Logo({
+  compact = false,
+  inverted = false,
+  className,
+  textClassName
+}: {
+  compact?: boolean;
+  inverted?: boolean;
+  className?: string;
+  textClassName?: string;
+}) {
   return (
-    <Link to="/" className="inline-flex items-center gap-2.5" aria-label="Impulso, ir a la tienda">
+    <Link
+      to="/"
+      className={cn('inline-flex items-center gap-2.5 min-w-0', className)}
+      aria-label="TIENDA DE SUPLEMENTOS, ir al inicio"
+    >
+      <img
+        src="/logo-tiendadesuplementos.png"
+        alt="Logo Tienda de Suplementos"
+        className={cn('size-10 object-contain shrink-0', compact && 'size-8')}
+        width="40"
+        height="40"
+      />
       <span
         className={cn(
-          'relative grid size-9 place-items-center overflow-hidden rounded-[0.85rem] bg-brand-600 shadow-sm',
-          compact && 'size-8'
+          'font-display font-black tracking-[-0.03em] whitespace-nowrap',
+          textClassName
+            ? textClassName
+            : compact
+              ? 'text-sm sm:text-base'
+              : 'text-base sm:text-xl',
+          inverted ? 'text-white' : 'text-ink-950'
         )}
       >
-        <span className="absolute h-6 w-2.5 -rotate-35 rounded-full bg-brand-950" />
-        <span className="absolute h-2.5 w-6 rotate-35 rounded-full bg-brand-300" />
-      </span>
-      <span
-        className={cn(
-          'font-display text-xl font-black tracking-[-0.04em]',
-          inverted ? 'text-white' : 'text-ink-950',
-          compact && 'text-lg'
-        )}
-      >
-        IMPULSO<span className="text-brand-500">.</span>
+        TIENDA DE SUPLEMENTOS
       </span>
     </Link>
   );

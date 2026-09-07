@@ -3,7 +3,7 @@
 ## Despliegue
 
 ```text
-Cloudflare Worker: impulso
+Cloudflare Worker: tienda
   ├─ Static Assets: React/Vite
   └─ /api/*: código Worker
           │
@@ -29,7 +29,7 @@ GPT-OSS 120B              GLM 4.7 Flash
           con JWT y require_owner()
 ```
 
-La URL pública es `https://impulso.suplementos.workers.dev`. `wrangler.jsonc` es la fuente de verdad del despliegue. Las Preview URLs están desactivadas y los assets estáticos no ejecutan el Worker salvo las rutas `/api/*`.
+La URL pública es `https://tienda.desuplementos.workers.dev`. `wrangler.jsonc` es la fuente de verdad del despliegue. Las Preview URLs están desactivadas y los assets estáticos no ejecutan el Worker salvo las rutas `/api/*`.
 
 ## Fronteras
 

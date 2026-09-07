@@ -36,5 +36,15 @@ export function OrderStatus({ order, compact = false }: { order: Order; compact?
     chips.push(<StatusChip key="pay" label="Pago pendiente" tone="warning" />);
   }
 
+  // 3. Estado de Stock / Reposición
+  if (order.stockReadiness === 'waiting_incoming') {
+    const etaFormatted = order.expectedArrivalAt
+      ? ` · ${new Intl.DateTimeFormat('es-AR', { day: '2-digit', month: '2-digit' }).format(new Date(order.expectedArrivalAt))}`
+      : '';
+    chips.push(<StatusChip key="stock-incoming" label={`En camino${etaFormatted}`} tone="info" />);
+  } else if (order.stockReadiness === 'uncovered') {
+    chips.push(<StatusChip key="stock-uncovered" label="Faltante proveedor" tone="danger" />);
+  }
+
   return <div className="flex flex-wrap items-center gap-2">{chips}</div>;
 }

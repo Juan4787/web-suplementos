@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { countInputCharacters, parseAIRequest, readBearerToken } from './request';
 
 const request = (body: unknown, headers?: HeadersInit) =>
-  new Request('https://impulso.suplementos.workers.dev/api/ai', {
+  new Request('https://tienda.desuplementos.workers.dev/api/ai', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...headers },
     body: JSON.stringify(body)

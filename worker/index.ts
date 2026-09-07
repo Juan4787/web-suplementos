@@ -54,6 +54,19 @@ export default {
   async fetch(request, env): Promise<Response> {
     const url = new URL(request.url);
     if (url.pathname.startsWith('/api/')) return handleApiRoute(request, env);
-    return env.ASSETS.fetch(request);
+    const response = await env.ASSETS.fetch(request);
+    const contentType = response.headers.get('content-type') || '';
+    if (contentType.includes('text/html')) {
+      const headers = new Headers(response.headers);
+      headers.set('cache-control', 'no-cache, no-store, must-revalidate');
+      headers.set('pragma', 'no-cache');
+      headers.set('expires', '0');
+      return new Response(response.body, {
+        status: response.status,
+        statusText: response.statusText,
+        headers
+      });
+    }
+    return response;
   }
 } satisfies ExportedHandler<Env>;

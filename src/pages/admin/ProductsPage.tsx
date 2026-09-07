@@ -1,6 +1,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
+  AlertTriangle,
   ChevronDown,
   Edit3,
   Image as ImageIcon,
@@ -8,6 +9,7 @@ import {
   Search,
   Sliders,
   Sparkles,
+  Trash2,
   X
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
@@ -94,7 +96,15 @@ const defaults: FormValues = {
   featured: false
 };
 
-function ProductForm({ product, onClose }: { product: AdminProduct | null; onClose: () => void }) {
+function ProductForm({
+  product,
+  onClose,
+  onDeleteRequest
+}: {
+  product: AdminProduct | null;
+  onClose: () => void;
+  onDeleteRequest?: (product: AdminProduct) => void;
+}) {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const pricing = can(user, 'manage_pricing');
@@ -311,7 +321,7 @@ function ProductForm({ product, onClose }: { product: AdminProduct | null; onClo
               <div className="grid gap-4 sm:grid-cols-[6rem_1fr] sm:items-center">
                 <div className="aspect-square size-24 overflow-hidden rounded-2xl bg-cream-100 border border-ink-950/10">
                   {currentImageUrl ? (
-                    <img src={currentImageUrl} alt="Vista previa" className="size-full object-cover" />
+                    <img src={currentImageUrl} alt="Vista previa" className="size-full object-contain p-1.5" />
                   ) : (
                     <div className="grid size-full place-items-center text-ink-400">
                       <ImageIcon className="size-6 text-ink-600/40" />
@@ -482,13 +492,28 @@ function ProductForm({ product, onClose }: { product: AdminProduct | null; onClo
 
           {save.error ? <ErrorState error={save.error} /> : null}
 
-          <div className="flex justify-end gap-3 pt-2">
-            <Button type="button" variant="ghost" onClick={onClose}>
-              Cancelar
-            </Button>
-            <Button type="submit" variant="dark" loading={save.isPending}>
-              Guardar producto
-            </Button>
+          <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+            {product && can(user, 'manage_pricing') ? (
+              <Button
+                type="button"
+                variant="ghost"
+                className="text-red-700 hover:bg-red-50 hover:text-red-800"
+                onClick={() => {
+                  onClose();
+                  onDeleteRequest?.(product);
+                }}
+              >
+                <Trash2 className="size-4" /> Eliminar producto
+              </Button>
+            ) : <div />}
+            <div className="flex items-center gap-3">
+              <Button type="button" variant="ghost" onClick={onClose}>
+                Cancelar
+              </Button>
+              <Button type="submit" variant="dark" loading={save.isPending}>
+                Guardar producto
+              </Button>
+            </div>
           </div>
         </form>
     </Modal>
@@ -497,11 +522,28 @@ function ProductForm({ product, onClose }: { product: AdminProduct | null; onClo
 
 export default function ProductsPage() {
   const { user } = useAuth();
+  const queryClient = useQueryClient();
   const [editing, setEditing] = useState<AdminProduct | null | undefined>(undefined);
+  const [productToDelete, setProductToDelete] = useState<AdminProduct | null>(null);
   const [search, setSearch] = useState('');
   const productsQuery = useBusinessQuery({
     queryKey: queryKeys.products,
     queryFn: (api) => api.listAdminProducts()
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (productId: string) => {
+      const api = await getBusinessApi();
+      await api.deleteProduct(productId);
+    },
+    onSuccess: async () => {
+      setProductToDelete(null);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.products }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.inventory }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.dashboard })
+      ]);
+    }
   });
 
   const filteredProducts = useMemo(() => {
@@ -559,7 +601,8 @@ export default function ProductsPage() {
         <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {filteredProducts.map((product) => {
             const available = product.onHand - product.reserved;
-            const isOutOfStock = available <= 0;
+            const isIncoming = available <= 0 && product.incoming > 0;
+            const isOutOfStock = available <= 0 && !isIncoming;
             const isCritical = available > 0 && available <= product.safetyStock;
             const isLow = available > product.safetyStock && available <= product.reorderPoint;
 
@@ -572,10 +615,13 @@ export default function ProductsPage() {
                   <img
                     src={product.imageUrl}
                     alt={product.imageAlt}
-                    className="aspect-square rounded-xl bg-cream-100 object-cover"
+                    className="aspect-square rounded-xl bg-cream-100 object-contain p-1.5"
                   />
                   <div className="min-w-0">
                     <div className="flex flex-wrap gap-1.5">
+                      {isIncoming ? (
+                        <StatusChip label="En camino" tone="info" />
+                      ) : null}
                       {!product.active ? (
                         <StatusChip label="Archivado" tone="neutral" />
                       ) : null}
@@ -605,6 +651,8 @@ export default function ProductsPage() {
                         'mt-0.5 font-display text-xl font-black',
                         isOutOfStock
                           ? 'text-red-700'
+                          : isIncoming
+                          ? 'text-brand-700'
                           : isCritical
                           ? 'text-red-700'
                           : isLow
@@ -612,11 +660,24 @@ export default function ProductsPage() {
                           : 'text-ink-950'
                       )}
                     >
-                      {available} {available === 0 ? '· Sin stock' : ''}
+                      {available} {isIncoming ? '· En camino' : available === 0 ? '· Sin stock' : ''}
                     </p>
                   </div>
                 </div>
-                <div className="flex items-center justify-end p-3 sm:px-5">
+                <div className="flex items-center justify-between p-3 sm:px-5">
+                  {can(user, 'manage_pricing') ? (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-red-700 hover:bg-red-50 hover:text-red-800"
+                      onClick={() => {
+                        deleteMutation.reset();
+                        setProductToDelete(product);
+                      }}
+                    >
+                      <Trash2 className="size-4" /> Eliminar
+                    </Button>
+                  ) : <div />}
                   <Button variant="ghost" size="sm" onClick={() => setEditing(product)}>
                     <Edit3 className="size-4" /> Editar
                   </Button>
@@ -628,8 +689,97 @@ export default function ProductsPage() {
       ) : null}
 
       {editing !== undefined ? (
-        <ProductForm product={editing} onClose={() => setEditing(undefined)} />
+        <ProductForm
+          product={editing}
+          onClose={() => setEditing(undefined)}
+          onDeleteRequest={(prod) => {
+            deleteMutation.reset();
+            setProductToDelete(prod);
+          }}
+        />
       ) : null}
+
+      {/* Modal de confirmación para evitar borrados accidentales */}
+      <Modal
+        isOpen={Boolean(productToDelete)}
+        onClose={() => {
+          if (!deleteMutation.isPending) {
+            setProductToDelete(null);
+            deleteMutation.reset();
+          }
+        }}
+        maxWidth="lg"
+        ariaLabelledBy="delete-product-title"
+      >
+        {productToDelete ? (
+          <div className="space-y-5">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 id="delete-product-title" className="font-display text-2xl font-black text-ink-950">
+                  Eliminar producto
+                </h2>
+                <p className="mt-1 text-[14.5px] font-medium text-ink-700">
+                  Confirmá si realmente deseás remover este producto del sistema.
+                </p>
+              </div>
+              <button
+                type="button"
+                className="grid size-10 place-items-center rounded-full hover:bg-cream-100 text-ink-600 transition"
+                onClick={() => {
+                  if (!deleteMutation.isPending) {
+                    setProductToDelete(null);
+                    deleteMutation.reset();
+                  }
+                }}
+                aria-label="Cerrar"
+              >
+                <X className="size-5" />
+              </button>
+            </div>
+
+            <div className="flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50 p-4 text-red-950">
+              <AlertTriangle className="size-6 shrink-0 text-red-600 mt-0.5" />
+              <div className="text-sm">
+                <p className="font-bold text-red-900">
+                  ¿Confirmás que querés eliminar definitivamente este producto?
+                </p>
+                <p className="mt-1 text-red-800">
+                  Vas a eliminar <strong>{productToDelete.name}</strong> ({productToDelete.presentation}) con código <strong>{productToDelete.sku}</strong>.
+                </p>
+                <p className="mt-1.5 text-xs text-red-700 leading-relaxed">
+                  Esta acción es irreversible y eliminará el producto del catálogo y balances de inventario. Si el producto ya cuenta con pedidos o ventas asociadas, el sistema impedirá su borrado para proteger el historial financiero (en ese caso podés desactivarlo o archivarlo).
+                </p>
+              </div>
+            </div>
+
+            {deleteMutation.error ? (
+              <ErrorState error={deleteMutation.error} />
+            ) : null}
+
+            <div className="flex justify-end gap-3 pt-2">
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={deleteMutation.isPending}
+                onClick={() => {
+                  setProductToDelete(null);
+                  deleteMutation.reset();
+                }}
+              >
+                Cancelar
+              </Button>
+              <Button
+                type="button"
+                variant="danger"
+                loading={deleteMutation.isPending}
+                onClick={() => deleteMutation.mutate(productToDelete.id)}
+              >
+                <Trash2 className="size-4" /> Sí, eliminar producto
+              </Button>
+            </div>
+          </div>
+        ) : null}
+      </Modal>
     </div>
   );
 }

@@ -43,7 +43,7 @@ type NavItem = {
 
 const operationalNav: NavItem[] = [
   { label: 'Inicio', to: '/app', exact: true, icon: LayoutDashboard },
-  { label: 'Pedidos', to: '/app/pedidos', exact: true, icon: ReceiptText },
+  { label: 'Pedidos', to: '/app/pedidos', matchPrefixes: ['/app/pedidos/nuevo'], icon: ReceiptText },
   { label: 'Importar WhatsApp', to: '/app/pedidos/importar', matchPrefixes: ['/app/pedidos/importar'], icon: MessageCircle },
   { label: 'Productos', to: '/app/productos', matchPrefixes: ['/app/productos'], icon: PackageSearch },
   { label: 'Inventario', to: '/app/inventario', matchPrefixes: ['/app/inventario', '/app/stock', '/app/compras', '/app/movimientos'], icon: Boxes },
@@ -67,7 +67,7 @@ function NavigationItems({ close }: { close?: (() => void) | undefined }) {
     const exact = entry.exact ?? entry.to === '/app';
     const active = exact
       ? pathname === entry.to
-      : (entry.matchPrefixes?.some((prefix) => pathname.startsWith(prefix)) ?? pathname.startsWith(entry.to));
+      : pathname === entry.to || (entry.matchPrefixes?.some((prefix) => pathname.startsWith(prefix)) ?? pathname.startsWith(entry.to));
     const Icon = entry.icon;
     return (
       <Link
@@ -170,14 +170,17 @@ function Sidebar({ mobile = false, close }: { mobile?: boolean; close?: (() => v
   return (
     <aside
       className={cn(
-        'flex h-full w-[18rem] shrink-0 flex-col bg-ink-950 px-4 py-5',
+        'flex h-full w-[18.5rem] shrink-0 flex-col bg-ink-950 px-4 py-5 overflow-hidden',
         !mobile && 'hidden lg:flex'
       )}
     >
-      <div className="mb-8 flex items-center justify-between px-2">
-        <Logo inverted />
+      <div className="mb-8 flex items-center justify-between px-2 min-w-0">
+        <Logo
+          inverted
+          textClassName="text-[14px] font-black tracking-tight leading-tight"
+        />
         {isDemo ? (
-          <span className="rounded-md bg-white/10 px-2 py-0.5 text-[12px] font-black uppercase tracking-wider text-white/75">
+          <span className="shrink-0 rounded-md bg-white/10 px-2 py-0.5 text-[11px] font-black uppercase tracking-wider text-white/75">
             DEMO
           </span>
         ) : null}

@@ -20,7 +20,10 @@ export default function ProductPage() {
     queryFn: (api) => api.getStorefrontProduct(slug)
   });
 
-  const isOutOfStock = productQuery.data?.availability === 'out_of_stock';
+  const isIncoming =
+    productQuery.data?.availability === 'incoming' ||
+    ((productQuery.data?.incomingAvailable ?? 0) > 0 && productQuery.data?.availability !== 'available');
+  const isOutOfStock = productQuery.data?.availability === 'out_of_stock' && !isIncoming;
   const maxAvailable = productQuery.data?.maxOrderQuantity ?? 10;
   const maxAllowed = Math.max(1, maxAvailable);
 
@@ -49,11 +52,11 @@ export default function ProductPage() {
         ) : null}
         {productQuery.data ? (
           <article className="page-enter mt-8 grid gap-8 lg:grid-cols-2 lg:gap-14">
-            <div className="overflow-hidden rounded-[2.5rem] border border-ink-950/7 bg-white p-3 shadow-card sm:p-5">
+            <div className="flex items-center justify-center overflow-hidden rounded-[2.5rem] border border-ink-950/7 bg-white p-3 shadow-card sm:p-5">
               <img
                 src={productQuery.data.imageUrl}
                 alt={productQuery.data.imageAlt}
-                className="aspect-square w-full rounded-[2rem] object-cover"
+                className="aspect-square w-full rounded-[2rem] object-contain"
                 width="720"
                 height="720"
               />
@@ -63,10 +66,22 @@ export default function ProductPage() {
                 <span className="rounded-full bg-brand-50 px-3.5 py-1 text-xs font-black uppercase tracking-[0.16em] text-brand-600 border border-brand-200/60">
                   {productQuery.data.category}
                 </span>
-                {productQuery.data.availability !== 'available' ? (
+                {productQuery.data.availability !== 'available' || isIncoming ? (
                   <StatusChip
-                    label={productQuery.data.availability === 'low' ? 'Últimas unidades' : 'Sin stock'}
-                    tone={productQuery.data.availability === 'low' ? 'warning' : 'danger'}
+                    label={
+                      isIncoming
+                        ? 'En camino'
+                        : productQuery.data.availability === 'low'
+                        ? 'Últimas unidades'
+                        : 'Sin stock'
+                    }
+                    tone={
+                      isIncoming
+                        ? 'info'
+                        : productQuery.data.availability === 'low'
+                        ? 'warning'
+                        : 'danger'
+                    }
                   />
                 ) : null}
               </div>

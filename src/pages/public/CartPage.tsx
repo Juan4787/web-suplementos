@@ -9,6 +9,7 @@ import {
   Plus,
   ShoppingBag,
   Trash2,
+  Truck,
   X
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
@@ -41,10 +42,28 @@ export default function CartPage() {
     queryFn: (api) => api.listStorefrontProducts()
   });
 
+  const cartEtaKey =
+    lines.length > 0
+      ? lines.map((l) => `${l.productId}:${l.quantity}`).join(',')
+      : 'empty';
+
+  const cartEtaQuery = useBusinessQuery({
+    queryKey: ['cart-eta', cartEtaKey],
+    queryFn: (api) =>
+      api.quoteCartEta(lines.map((line) => ({ productId: line.productId, quantity: line.quantity }))),
+    enabled: lines.length > 0
+  });
+
   useEffect(() => {
-    if (productsQuery.data && lines.length > 0) {
+    if (lines.length === 0) {
+      setValidationResult(null);
+      return;
+    }
+    if (productsQuery.data) {
       const result = syncWithLiveCatalog(productsQuery.data);
-      setValidationResult(result);
+      if (result.priceChanges.length > 0) {
+        setValidationResult(result);
+      }
     }
   }, [productsQuery.data, syncWithLiveCatalog, lines.length]);
 
@@ -167,7 +186,7 @@ export default function CartPage() {
                     <img
                       src={line.imageUrl}
                       alt=""
-                      className="aspect-square w-full rounded-2xl bg-cream-100 object-cover"
+                      className="aspect-square w-full rounded-2xl bg-cream-100 object-contain p-1"
                       width="160"
                       height="160"
                     />
@@ -267,6 +286,19 @@ export default function CartPage() {
               <p className="mt-3 text-xs leading-5 text-white/50">
                 El envío, si corresponde, se calcula en el siguiente paso.
               </p>
+
+              {cartEtaQuery.data?.requiresIncoming ? (
+                <div className="mt-5 rounded-2xl bg-amber-400/10 border border-amber-400/20 p-3.5 text-xs text-amber-200 space-y-1">
+                  <p className="font-bold flex items-center gap-1.5 text-amber-300">
+                    <Truck className="size-4 shrink-0" /> Incluye productos en reposición
+                  </p>
+                  <p className="text-white/80 leading-relaxed">
+                    {cartEtaQuery.data.quotedEta
+                      ? `Tu pedido completo se entregará a partir del ${new Intl.DateTimeFormat('es-AR', { day: '2-digit', month: '2-digit' }).format(new Date(cartEtaQuery.data.quotedEta))}.`
+                      : 'Tu pedido completo se entregará apenas arribe la reposición.'}
+                  </p>
+                </div>
+              ) : null}
 
               {hasBlockingIssues ? (
                 <div className="mt-5 rounded-2xl bg-amber-500/20 border border-amber-400/30 p-3 text-xs text-amber-200">

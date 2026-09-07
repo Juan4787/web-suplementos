@@ -4,6 +4,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type PropsWithChildren
 } from 'react';
@@ -192,6 +193,12 @@ export function CartProvider({ children }: PropsWithChildren) {
     initial.wasExpired ? 'Tu carrito anterior venció después de 24 horas sin actividad.' : null
   );
 
+  const linesRef = useRef(lines);
+  linesRef.current = lines;
+
+  const lastActivityAtRef = useRef(lastActivityAt);
+  lastActivityAtRef.current = lastActivityAt;
+
   // Persistir en localStorage únicamente cuando hay estado activo
   useEffect(() => {
     if (lines.length === 0 && !checkoutDraft && !protocolDraft) {
@@ -208,10 +215,11 @@ export function CartProvider({ children }: PropsWithChildren) {
     safeSetStorage(JSON.stringify(payload));
   }, [lines, lastActivityAt, checkoutDraft, protocolDraft]);
 
-  // Expiración por inactividad
+  // Expiración por inactividad estabilizada sin re-crear listeners
   const checkExpiration = useCallback((explicitNow = Date.now()): boolean => {
-    if (lines.length === 0) return false;
-    if (isExpired(lastActivityAt, explicitNow)) {
+    const currentLines = linesRef.current;
+    if (currentLines.length === 0) return false;
+    if (isExpired(lastActivityAtRef.current, explicitNow)) {
       setLines([]);
       setCheckoutDraft(null);
       setProtocolDraftState(null);
@@ -221,7 +229,7 @@ export function CartProvider({ children }: PropsWithChildren) {
       return true;
     }
     return false;
-  }, [lastActivityAt, lines.length]);
+  }, []);
 
   // Comprobar expiración al volver de segundo plano / cambiar de pestaña / recuperar foco
   useEffect(() => {
@@ -236,7 +244,7 @@ export function CartProvider({ children }: PropsWithChildren) {
     const handleStorage = (event: StorageEvent) => {
       if (event.key !== CART_STORAGE_KEY) return;
       if (!event.newValue) {
-        setLines([]);
+        setLines((current) => (current.length === 0 ? current : []));
         setCheckoutDraft(null);
         setProtocolDraftState(null);
         return;
@@ -251,8 +259,15 @@ export function CartProvider({ children }: PropsWithChildren) {
             safeRemoveStorage();
             setExpiredNotice('Tu carrito anterior venció después de 24 horas sin actividad.');
           } else {
-            setLines(updated.lines ?? []);
-            setLastActivityAt(updated.lastActivityAt);
+            // Comparar si cambió efectivamente antes de actualizar para evitar bucles cruzados
+            const currentSerialized = JSON.stringify(linesRef.current);
+            const newSerialized = JSON.stringify(updated.lines ?? []);
+            if (currentSerialized !== newSerialized) {
+              setLines(updated.lines ?? []);
+            }
+            if (lastActivityAtRef.current !== updated.lastActivityAt) {
+              setLastActivityAt(updated.lastActivityAt);
+            }
             setCheckoutDraft(updated.checkoutDraft ?? null);
             setProtocolDraftState(updated.protocolDraft ?? null);
           }
@@ -340,13 +355,7 @@ export function CartProvider({ children }: PropsWithChildren) {
     setLastActivityAt(now);
     setProtocolDraftState(null); // Modificar cantidad invalida el protocolo anterior
     if (quantity <= 0) {
-      setLines((current) => {
-        const next = current.filter((line) => line.productId !== productId);
-        if (next.length === 0) {
-          setProtocolDraftState(null);
-        }
-        return next;
-      });
+      setLines((current) => current.filter((line) => line.productId !== productId));
       return;
     }
     setLines((current) =>
@@ -362,13 +371,7 @@ export function CartProvider({ children }: PropsWithChildren) {
     const now = Date.now();
     setLastActivityAt(now);
     setProtocolDraftState(null);
-    setLines((current) => {
-      const next = current.filter((line) => line.productId !== productId);
-      if (next.length === 0) {
-        setProtocolDraftState(null);
-      }
-      return next;
-    });
+    setLines((current) => current.filter((line) => line.productId !== productId));
   }, []);
 
   const clear = useCallback(() => {
@@ -384,7 +387,7 @@ export function CartProvider({ children }: PropsWithChildren) {
     setExpiredNotice(null);
   }, []);
 
-  // Revalidación visual en vivo contra el catálogo de la base de datos
+  // Revalidación visual en vivo contra el catálogo de la base de datos (referencia 100% estable)
   const syncWithLiveCatalog = useCallback(
     (catalogProducts: StorefrontProduct[]): CartRevalidationResult => {
       const result: CartRevalidationResult = {
@@ -394,10 +397,11 @@ export function CartProvider({ children }: PropsWithChildren) {
         partialStockProducts: []
       };
 
-      if (lines.length === 0 || catalogProducts.length === 0) return result;
+      const currentLines = linesRef.current;
+      if (currentLines.length === 0 || catalogProducts.length === 0) return result;
 
       let hasLinePriceChange = false;
-      const updated = lines.map((line) => {
+      const updated = currentLines.map((line) => {
         const current = catalogProducts.find((p) => p.id === line.productId);
         if (!current) {
           result.unavailableProducts.push(line.name);
@@ -437,7 +441,7 @@ export function CartProvider({ children }: PropsWithChildren) {
 
       return result;
     },
-    [lines]
+    []
   );
 
   const value = useMemo<CartContextValue>(

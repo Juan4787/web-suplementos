@@ -8,6 +8,7 @@ import {
 import { appEnv } from '@/app/env';
 import { AdminShell } from '@/components/layout/AdminShell';
 import { ConfigurationScreen } from '@/components/layout/ConfigurationScreen';
+import { cleanSearchTerm } from '@/lib/search';
 
 function RootComponent() {
   if (appEnv.mode === 'unconfigured') return <ConfigurationScreen />;
@@ -65,6 +66,12 @@ const ordersRoute = createRoute({
   getParentRoute: () => adminRoute,
   path: '/pedidos',
   component: lazyRouteComponent(() => import('@/pages/admin/OrdersPage'))
+});
+
+const createOrderRoute = createRoute({
+  getParentRoute: () => adminRoute,
+  path: '/pedidos/nuevo',
+  component: lazyRouteComponent(() => import('@/pages/admin/CreateOrderPage'))
 });
 
 const importOrderRoute = createRoute({
@@ -148,6 +155,7 @@ const usersRoute = createRoute({
 const adminTree = adminRoute.addChildren([
   dashboardRoute,
   ordersRoute,
+  createOrderRoute,
   importOrderRoute,
   productsRoute,
   inventoryRoute,
@@ -176,7 +184,31 @@ export const router = createRouter({
   routeTree,
   defaultPreload: 'intent',
   defaultPreloadStaleTime: 30_000,
-  scrollRestoration: true
+  scrollRestoration: true,
+  stringifySearch: (search) => {
+    const sp = new URLSearchParams();
+    for (const [key, val] of Object.entries(search)) {
+      if (val !== undefined && val !== null && val !== '') {
+        const cleaned = typeof val === 'string' || typeof val === 'number'
+          ? cleanSearchTerm(val)
+          : String(val);
+        if (cleaned) sp.set(key, cleaned);
+      }
+    }
+    const str = sp.toString();
+    return str ? `?${str}` : '';
+  },
+  parseSearch: (searchStr) => {
+    if (!searchStr) return {};
+    let s = searchStr;
+    if (s.startsWith('?')) s = s.substring(1);
+    const sp = new URLSearchParams(s);
+    const result: Record<string, string> = {};
+    for (const [key, val] of sp.entries()) {
+      result[key] = cleanSearchTerm(val);
+    }
+    return result;
+  }
 });
 
 declare module '@tanstack/react-router' {

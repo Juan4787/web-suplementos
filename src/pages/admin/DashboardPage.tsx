@@ -20,6 +20,7 @@ import { formatMoney } from '@/domain/money';
 import { can } from '@/domain/permissions';
 import { formatUnits } from '@/domain/quantity';
 import { useAuth } from '@/features/auth/AuthProvider';
+import { cn } from '@/lib/cn';
 
 const stockLabel = {
   ok: 'OK',
@@ -196,35 +197,51 @@ export default function DashboardPage() {
                     Todos los productos cuentan con reposición cubierta o stock en orden.
                   </p>
                 ) : (
-                  summaryQuery.data.priorityInventory.map((item) => (
-                    <article
-                      key={item.id}
-                      className="rounded-2xl border border-amber-200/70 bg-amber-50/30 p-3.5"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <h3 className="text-sm font-black text-ink-950">{item.name}</h3>
-                          <p className="mt-0.5 text-xs font-semibold text-ink-600">
-                            {formatUnits(item.available)}{' '}
-                            {item.available === 1 ? 'disponible' : 'disponibles'}
-                            {item.incoming > 0 ? ` · ${item.incoming} en camino` : ''}
-                          </p>
+                  summaryQuery.data.priorityInventory.map((item) => {
+                    const isIncoming = item.available <= 0 && item.incoming > 0;
+                    return (
+                      <article
+                        key={item.id}
+                        className={cn(
+                          'rounded-2xl border p-3.5',
+                          isIncoming
+                            ? 'border-brand-200/70 bg-brand-50/30'
+                            : 'border-amber-200/70 bg-amber-50/30'
+                        )}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <h3 className="text-sm font-black text-ink-950">{item.name}</h3>
+                            <p className="mt-0.5 text-xs font-semibold text-ink-600">
+                              {formatUnits(item.available)}{' '}
+                              {item.available === 1 ? 'disponible' : 'disponibles'}
+                              {item.incoming > 0 ? ` · ${item.incoming} en camino` : ''}
+                            </p>
+                          </div>
+                          <StatusChip
+                            label={isIncoming ? 'En camino' : stockLabel[item.status]}
+                            tone={
+                              isIncoming
+                                ? 'info'
+                                : item.status === 'out' || item.status === 'critical'
+                                ? 'danger'
+                                : 'warning'
+                            }
+                          />
                         </div>
-                        <StatusChip
-                          label={stockLabel[item.status]}
-                          tone={
-                            item.status === 'out' || item.status === 'critical'
-                              ? 'danger'
-                              : 'warning'
-                          }
-                        />
-                      </div>
-                      <p className="mt-2 flex items-center gap-1.5 text-xs font-black text-amber-800">
-                        <Sparkles className="size-3.5 shrink-0 text-amber-600" /> Comprar{' '}
-                        {item.suggestedPurchase} unidades
-                      </p>
-                    </article>
-                  ))
+                        {isIncoming ? (
+                          <p className="mt-2 flex items-center gap-1.5 text-xs font-black text-brand-800">
+                            <PackageCheck className="size-3.5 shrink-0 text-brand-600" /> {item.incoming} unidades en camino
+                          </p>
+                        ) : (
+                          <p className="mt-2 flex items-center gap-1.5 text-xs font-black text-amber-800">
+                            <Sparkles className="size-3.5 shrink-0 text-amber-600" /> Comprar{' '}
+                            {item.suggestedPurchase} unidades
+                          </p>
+                        )}
+                      </article>
+                    );
+                  })
                 )}
               </div>
             </section>

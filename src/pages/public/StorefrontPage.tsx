@@ -9,6 +9,48 @@ import { queryKeys } from '@/app/query-keys';
 import { useBusinessQuery } from '@/app/use-business-query';
 import { useCart } from '@/features/cart/CartProvider';
 
+const TARRO_SLUGS = new Set([
+  'acid-support',
+  'andro-support',
+  'b-complex-active',
+  'climateric-support',
+  'd-40-support',
+  'deep-dreams-x-100',
+  'deep-dreams-x-30',
+  'femme-balance',
+  'gastro-support',
+  'hepato-support',
+  'magnesio-dual-action',
+  'metaboglyc',
+  'sleep-support',
+  'vitality-support'
+]);
+
+const AFTER_THYROID_SLUGS = new Set([
+  'msm',
+  'omega-3',
+  'omega-pure-nutrition-ultra',
+  'probiovance-i5'
+]);
+
+const SACHET_SLUGS = new Set([
+  'colageno-hidrolizado',
+  'creatina',
+  'glicina',
+  'glutamina',
+  'inositol-care',
+  'ormux-ar',
+  'vitamina-c'
+]);
+
+function getProductSortPriority(slug: string): number {
+  if (TARRO_SLUGS.has(slug)) return 1;
+  if (slug === 'thyroid-support') return 2;
+  if (AFTER_THYROID_SLUGS.has(slug)) return 3;
+  if (SACHET_SLUGS.has(slug)) return 4;
+  return 5;
+}
+
 export default function StorefrontPage() {
   const { itemCount } = useCart();
   const hasItems = itemCount > 0;
@@ -22,19 +64,27 @@ export default function StorefrontPage() {
   const products = useMemo(() => {
     if (!productsQuery.data) return [];
     const query = searchQuery.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-    if (!query) return productsQuery.data;
+    let list = productsQuery.data;
+    if (query) {
+      list = list.filter((product) => {
+        const name = product.name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        const description = (product.description || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        const presentation = (product.presentation || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        const category = (product.category || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        return (
+          name.includes(query) ||
+          description.includes(query) ||
+          presentation.includes(query) ||
+          category.includes(query)
+        );
+      });
+    }
 
-    return productsQuery.data.filter((product) => {
-      const name = product.name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-      const description = (product.description || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-      const presentation = (product.presentation || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-      const category = (product.category || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-      return (
-        name.includes(query) ||
-        description.includes(query) ||
-        presentation.includes(query) ||
-        category.includes(query)
-      );
+    return [...list].sort((a, b) => {
+      const pA = getProductSortPriority(a.slug);
+      const pB = getProductSortPriority(b.slug);
+      if (pA !== pB) return pA - pB;
+      return a.name.localeCompare(b.name, 'es', { sensitivity: 'base' });
     });
   }, [productsQuery.data, searchQuery]);
 
@@ -42,35 +92,57 @@ export default function StorefrontPage() {
     <PublicShell>
       <section className="relative overflow-hidden bg-brand-950 text-white">
         <div className="surface-grid absolute inset-0 opacity-25" />
-        <div className="absolute -right-24 -top-16 size-80 rounded-full bg-brand-600/30 blur-3xl sm:size-[28rem]" />
+        <div className="pointer-events-none absolute -left-24 top-20 size-80 rounded-full bg-brand-500/15 blur-3xl sm:size-[30rem]" />
+        <div className="pointer-events-none absolute -right-24 -top-16 size-80 rounded-full bg-brand-600/30 blur-3xl sm:size-[28rem]" />
         <div className="absolute right-[18%] top-[18%] hidden size-28 rotate-12 rounded-[2rem] border-[18px] border-brand-500/20 lg:block" />
         <div className="relative mx-auto grid min-h-[42rem] max-w-7xl items-center gap-10 px-4 py-16 sm:px-6 lg:grid-cols-[1.15fr_0.85fr] lg:px-8 lg:py-20">
           <div className="max-w-3xl">
-            <span className="inline-flex items-center gap-2 rounded-full border border-brand-400/20 bg-brand-500/10 px-4 py-2 text-xs font-black uppercase tracking-[0.15em] text-brand-300 backdrop-blur">
-              <span className="size-2 rounded-full bg-brand-400" /> Suplementos a medida
-            </span>
-            <h1 className="mt-7 font-display text-[clamp(3.4rem,8vw,7.4rem)] font-black leading-[0.88] tracking-[-0.075em]">
-              TU RUTINA,
-              <span className="block text-brand-400">BIEN EQUIPADA.</span>
+            <div className="inline-flex items-center gap-2.5 rounded-full border border-brand-400/30 bg-gradient-to-r from-brand-500/20 via-brand-500/10 to-brand-400/5 px-4 py-2 text-xs font-black uppercase tracking-[0.2em] text-brand-300 shadow-[0_0_20px_rgba(59,130,246,0.2)] backdrop-blur-md">
+              <span className="relative flex size-2">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-brand-400 opacity-75" />
+                <span className="relative inline-flex size-2 rounded-full bg-brand-400 shadow-[0_0_8px_rgba(96,165,250,0.9)]" />
+              </span>
+              <span>Nutrición celular</span>
+            </div>
+            <h1 className="mt-6 font-display text-[clamp(3.2rem,7.5vw,6.8rem)] font-black leading-[0.92] tracking-[-0.055em] text-white">
+              TU BIENESTAR,
+              <span className="mt-1 block bg-gradient-to-r from-brand-300 via-brand-400 to-sky-200 bg-clip-text text-transparent drop-shadow-[0_4px_24px_rgba(96,165,250,0.3)]">
+                DESDE ADENTRO.
+              </span>
             </h1>
-            <p className="mt-7 max-w-xl text-base leading-7 text-white/75 sm:text-lg">
-              Lo que necesitás para entrenar, recuperarte y sostener el hábito. Elegí tranquilo; el pedido se confirma con una persona por WhatsApp.
+            <p className="mt-6 max-w-xl text-base leading-relaxed text-white/80 sm:text-lg lg:text-xl">
+              Fórmulas seleccionadas para acompañar tu{' '}
+              <span className="font-semibold text-white">salud</span>, tu{' '}
+              <span className="font-semibold text-white">vitalidad</span> y tu{' '}
+              <span className="font-semibold text-white">bienestar</span> en cada etapa de tu vida.
             </p>
-            <div className="mt-9 flex flex-wrap gap-3">
-              <a href="#productos" className={buttonStyles({ size: 'lg' })}>
+            <div className="mt-9 flex flex-wrap items-center gap-3.5">
+              <a href="#productos" className={buttonStyles({ size: 'lg', className: 'shadow-lg shadow-brand-600/30 hover:shadow-brand-600/50 hover:scale-[1.02] transition-all' })}>
                 Ver productos <ArrowDown className="size-4" />
               </a>
-              <a href="#como-comprar" className={buttonStyles({ variant: 'secondary', size: 'lg', className: 'border-white/15 bg-white/8 text-white hover:bg-white/15' })}>
+              <a
+                href="#como-comprar"
+                className="inline-flex min-h-13 items-center justify-center rounded-full border border-white/25 bg-white/10 px-7 py-3.5 text-base font-extrabold text-white shadow-sm backdrop-blur-md transition-all hover:scale-[1.02] hover:border-white/50 hover:bg-white/20 hover:text-white active:scale-[0.98]"
+              >
                 Cómo comprar
               </a>
+            </div>
+            <div className="mt-8 flex justify-center lg:hidden" aria-hidden="true">
+              <img
+                src="/logo-tiendadesuplementos.png"
+                alt="Tienda de Suplementos"
+                className="size-48 object-contain drop-shadow-[0_15px_25px_rgba(0,0,0,0.35)]"
+                width="192"
+                height="192"
+              />
             </div>
           </div>
           <div className="relative mx-auto hidden w-full max-w-md lg:block" aria-hidden="true">
             <div className="absolute -inset-8 rotate-6 rounded-[4rem] border-2 border-dashed border-brand-500/20" />
             <img
-              src="/image-hero.png"
-              alt="Suplementos deportivos de calidad premium Impulso"
-              className="relative aspect-square w-full -rotate-3 rounded-[3rem] object-cover shadow-2xl"
+              src="/logo-tiendadesuplementos.png"
+              alt="Tienda de Suplementos"
+              className="relative aspect-square w-full -rotate-3 object-contain drop-shadow-[0_25px_35px_rgba(0,0,0,0.4)] transition-transform duration-500 hover:scale-105"
               width="720"
               height="720"
             />

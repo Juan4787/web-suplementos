@@ -9,12 +9,16 @@ import { useCart } from '@/features/cart/CartProvider';
 const availabilityLabel: Record<StorefrontProduct['availability'], string> = {
   available: 'Disponible',
   low: 'Últimas unidades',
+  incoming: 'En camino',
   out_of_stock: 'Sin stock'
 };
 
 export function ProductCard({ product }: { product: StorefrontProduct }) {
   const { lines, add, setQuantity } = useCart();
-  const soldOut = product.availability === 'out_of_stock';
+  const isIncoming =
+    product.availability === 'incoming' ||
+    ((product.incomingAvailable ?? 0) > 0 && product.availability !== 'available');
+  const soldOut = product.availability === 'out_of_stock' && !isIncoming;
 
   const currentLine = lines.find((line) => line.productId === product.id);
   const cartQty = currentLine?.quantity ?? 0;
@@ -43,13 +47,13 @@ export function ProductCard({ product }: { product: StorefrontProduct }) {
       <Link
         to="/producto/$slug"
         params={{ slug: product.slug }}
-        className="relative block aspect-[1.05] overflow-hidden bg-cream-100"
+        className="relative flex aspect-[1.05] items-center justify-center overflow-hidden bg-cream-100 p-2.5"
         aria-label={`Ver ${product.name}`}
       >
         <img
           src={product.imageUrl}
           alt={product.imageAlt}
-          className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.04]"
+          className="h-full w-full object-contain transition duration-500 group-hover:scale-[1.04]"
           loading="lazy"
           width="720"
           height="720"
@@ -61,10 +65,10 @@ export function ProductCard({ product }: { product: StorefrontProduct }) {
       <div className="flex flex-1 flex-col p-5 sm:p-6">
         <div className="flex items-center justify-between gap-3">
           <span className="text-[13px] font-bold text-ink-600">{product.category}</span>
-          {product.availability !== 'available' ? (
+          {product.availability !== 'available' || isIncoming ? (
             <StatusChip
-              label={availabilityLabel[product.availability]}
-              tone={product.availability === 'low' ? 'warning' : 'danger'}
+              label={isIncoming ? 'En camino' : availabilityLabel[product.availability]}
+              tone={isIncoming ? 'info' : product.availability === 'low' ? 'warning' : 'danger'}
             />
           ) : null}
         </div>

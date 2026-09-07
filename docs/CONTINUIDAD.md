@@ -31,7 +31,7 @@ Este archivo existe para que una compactación de contexto no convierta decision
 
 ## Alertas externas vigentes al 01/09/2026
 
-- El hosting elegido y publicado es Cloudflare Worker + Static Assets. El dominio operativo es `https://impulso.suplementos.workers.dev`; las Preview URLs están desactivadas.
+- El hosting elegido y publicado es Cloudflare Worker + Static Assets. El dominio operativo es `https://tienda.desuplementos.workers.dev`; las Preview URLs están desactivadas.
 - Supabase Free puede pausar proyectos con muy poca actividad durante siete días. La interfaz debe explicar cómo reanudarlo; no se crearán pings artificiales para evadir esa política.
 - Supabase Free no incluye transformación de imágenes. El navegador dimensiona y convierte cada archivo a WebP antes de subir; Storage guarda el archivo ya optimizado.
 - La ruta certificada es Groq `openai/gpt-oss-120b` como primario y Workers AI `@cf/zai-org/glm-4.7-flash` como respaldo. Nemotron 3 fue rechazado por tool calls inestables; GPT-OSS mediante el binding AI fue rechazado por incompatibilidad en el round-trip de tools.
@@ -41,14 +41,14 @@ Este archivo existe para que una compactación de contexto no convierta decision
 ## Actualización verificable del 01/09/2026
 
 - Toolchain local migrado a Node `24.20.0`, Wrangler `4.127.1` y Supabase CLI de proyecto `2.116.0`.
-- `wrangler.jsonc` apunta exclusivamente al Worker `impulso`, usa Static Assets para `dist`, ejecuta el Worker solo en `/api/*` y declara el binding `AI`.
+- `wrangler.jsonc` apunta exclusivamente al Worker `tienda`, usa Static Assets para `dist`, ejecuta el Worker solo en `/api/*` y declara el binding `AI`.
 - Antes de cualquier escritura remota, `scripts/validate-worker-target.mjs` exige el perfil `impulso`, el directorio exacto, una única cuenta llamada `app de suplementos` y su ID esperado.
 - Las migraciones `20260901000000_ai_infrastructure.sql`, `20260901190000_ai_quota_policy.sql` y `20260901200000_ai_conversation_quota.sql` completan `ai_usage_counters` y `ai_request_audit`, implementan cuota atómica de 20 solicitudes por minuto y 100 por día, y mantienen las RPC de hechos read-only.
 - Las RPC de IA no devuelven clientes, teléfonos, direcciones, notas ni descripciones. Ventas y márgenes se calculan en PostgreSQL; inventario y rendimiento devuelven como máximo 20 y 10 productos respectivamente.
 - La migración se aplicó al proyecto Supabase vinculado `web-suplementos` después de comparar el esquema. Los conteos comerciales antes y después permanecieron iguales: 25 productos, 1 compra, 21 movimientos, 0 pedidos y 1 usuario.
 - La suite SQL específica aprobó 23/23 y la suite SQL completa 75/75; el conjunto web aprobó 117/117 en 19 archivos. La certificación real aprobó 6/6 casos en GPT-OSS/Groq y 6/6 en GLM 4.7 Flash/Workers AI.
 - La primera consulta real con tools, `¿Qué productos tengo?`, expuso dos salidas de modelo rechazadas correctamente: GPT-OSS escribió cantidades con palabras y GLM omitió el prefijo `fact:`. Se reforzó el prompt, se normalizan solo referencias que coinciden exactamente con facts existentes y el caso quedó incorporado a la certificación permanente.
-- El Worker `impulso` se publicó en `https://impulso.suplementos.workers.dev`. La versión verificada al cierre es `8fedfbd8-7d36-4174-9920-d73a674181d0`, activa al 100 %.
+- El Worker `tienda` se publicó en `https://tienda.desuplementos.workers.dev`.
 - Producción sirve el mismo `index.html` y asset JavaScript que el build local según SHA-256. `/`, una ruta SPA, `/api/health`, método inválido, origen cruzado y el cierre seguro de `/api/ai` fueron comprobados contra la URL pública.
 
 ## Estado de implementación
@@ -59,7 +59,7 @@ Al cierre local del 28/08/2026, el núcleo está implementado y verificado: tien
 
 La infraestructura de IA está implementada, migrada, certificada, desplegada y activa en modo `Automático`. Global ZDR fue comprobado antes de habilitar los tres flags. Las conversaciones no se persisten y el núcleo comercial continúa independiente de la IA.
 
-La infraestructura remota de Impulso está separada y verificada: perfil Cloudflare `impulso`, cuenta única `app de suplementos`, Worker `impulso` y proyecto Supabase `web-suplementos`. No usar ninguna otra cuenta, perfil, repositorio, dominio ni proyecto Supabase para esta aplicación.
+La infraestructura remota de Impulso está separada y verificada: perfil Cloudflare `impulso`, cuenta única `app de suplementos`, Worker `tienda` y proyecto Supabase `web-suplementos`. No usar ninguna otra cuenta, perfil, repositorio, dominio ni proyecto Supabase para esta aplicación.
 
 ## Punto de reanudación
 

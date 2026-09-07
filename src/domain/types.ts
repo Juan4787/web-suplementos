@@ -8,7 +8,7 @@ export type AppUser = {
   active: boolean;
 };
 
-export type AvailabilityStatus = 'available' | 'low' | 'out_of_stock';
+export type AvailabilityStatus = 'available' | 'low' | 'out_of_stock' | 'incoming';
 
 export type StorefrontProduct = {
   id: string;
@@ -22,6 +22,8 @@ export type StorefrontProduct = {
   imageAlt: string;
   availability: AvailabilityStatus;
   maxOrderQuantity: number;
+  incomingAvailable?: number;
+  incomingExpectedAt?: string | null;
   category: string;
   featured: boolean;
 };
@@ -90,6 +92,8 @@ export type CheckoutData = {
   phone: string | null;
 };
 
+export type StockReadiness = 'ready' | 'waiting_incoming' | 'uncovered';
+
 export type OrderItem = {
   id: string;
   productId: string;
@@ -99,6 +103,7 @@ export type OrderItem = {
   quantity: number;
   unitPriceCents: number;
   unitCostCents: number | null;
+  costTotalCents?: number | null;
   subtotalCents: number;
 };
 
@@ -116,6 +121,8 @@ export type Order = {
   paymentState: PaymentState;
   preparationState: PreparationState;
   fulfillmentState: FulfillmentState;
+  stockReadiness?: StockReadiness;
+  expectedArrivalAt?: string | null;
   subtotalCents: number;
   shippingFeeCents: number;
   totalCents: number;
@@ -145,6 +152,8 @@ export type PurchaseItem = {
   productId: string;
   productName: string;
   quantity: number;
+  receivedQuantity: number;
+  shortageQuantity: number;
   unitCostCents: number;
 };
 
@@ -159,6 +168,24 @@ export type Purchase = {
   totalCostCents: number;
   notes: string | null;
   items: PurchaseItem[];
+};
+
+export type ReceivePurchaseItemInput = {
+  purchaseItemId: string;
+  receivedQuantity: number;
+};
+
+export type ReceivePurchaseResult = {
+  purchase: Purchase;
+  unblockedOrders: Array<{ id: string; number: number }>;
+};
+
+export type QuoteCartEtaResult = {
+  ok: boolean;
+  requiresIncoming: boolean;
+  quotedEta: string | null;
+  hasUnspecifiedEta: boolean;
+  error?: string;
 };
 
 export type Customer = {
@@ -294,9 +321,13 @@ export type ExportDataset = {
   reservations: Array<{
     id: string;
     orderId: string;
+    orderItemId?: string | null;
     productId: string;
     quantity: number;
     state: 'active' | 'consumed' | 'released';
+    sourceType?: 'physical' | 'incoming' | 'uncovered';
+    purchaseItemId?: string | null;
+    costSnapshotCents?: number | null;
     createdAt: string;
     resolvedAt: string | null;
   }>;

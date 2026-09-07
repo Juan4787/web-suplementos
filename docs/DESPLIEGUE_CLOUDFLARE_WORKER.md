@@ -5,7 +5,7 @@ Impulso Suplementos se publica como un único Cloudflare Worker:
 - React/Vite se sirve mediante Static Assets;
 - únicamente `/api/*` ejecuta el Worker;
 - Workers AI se consume mediante el binding `AI`;
-- el dominio operativo es `https://impulso.suplementos.workers.dev`.
+- el dominio operativo es `https://tienda.desuplementos.workers.dev`.
 
 ## Fuente de verdad
 
@@ -26,8 +26,8 @@ Impulso Suplementos se publica como un único Cloudflare Worker:
 ```text
 perfil Wrangler: impulso
 cuenta Cloudflare: app de suplementos
-Worker: impulso
-URL: https://impulso.suplementos.workers.dev
+Worker: tienda
+URL: https://tienda.desuplementos.workers.dev
 ```
 
 El guard también exige ejecutar desde la raíz exacta de este repositorio, que la sesión muestre una sola cuenta, que Static Assets ejecute código solo en `/api/*`, que las Preview URLs estén cerradas y que los flags de IA coincidan. El build y la sincronización de secretos rechazan cualquier host de Supabase distinto de `web-suplementos`. Si cualquier dato difiere, el proceso termina antes de compilar o escribir en Cloudflare.
@@ -87,7 +87,7 @@ env.GROQ_ZDR_CONFIRMED
 
 Después del despliegue, comprobar:
 
-1. `wrangler --profile impulso deployments list --name impulso`: una sola versión al 100 %;
+1. `wrangler --profile impulso deployments list --name tienda`: una sola versión al 100 %;
 2. `/`: 200 y el mismo SHA-256 que `dist/index.html`;
 3. una ruta SPA: 200 y el mismo HTML;
 4. el asset JavaScript principal: 200, tipo JavaScript y mismo SHA-256;
@@ -119,8 +119,8 @@ Los flags de runtime y `VITE_AI_ENABLED=true` deben cambiar siempre juntos. Si c
 Listar despliegues y elegir una versión exacta conocida:
 
 ```bash
-pnpm exec wrangler --profile impulso deployments list --name impulso
-pnpm exec wrangler --profile impulso rollback VERSION_ID --name impulso
+pnpm exec wrangler --profile impulso deployments list --name tienda
+pnpm exec wrangler --profile impulso rollback VERSION_ID --name tienda
 ```
 
 Verificar nuevamente URL, hash del build y cierre de `/api/ai`. Un rollback de Worker no revierte migraciones de Supabase; las migraciones deben mantenerse compatibles hacia atrás.

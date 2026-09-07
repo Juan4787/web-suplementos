@@ -115,6 +115,29 @@ describe('order actions state machine', () => {
     expect(actions).toEqual(['cancel']);
   });
 
+  it('blocks fulfillment actions when stockReadiness is waiting_incoming', () => {
+    const order: Order = {
+      ...baseOrder,
+      deliveryMethod: 'shipping',
+      stockReadiness: 'waiting_incoming'
+    };
+    const actions = availableOrderActions(order);
+    expect(actions).toContain('mark_paid');
+    expect(actions).not.toContain('mark_delivered');
+    expect(actions).not.toContain('mark_shipped');
+  });
+
+  it('blocks fulfillment actions when stockReadiness is uncovered', () => {
+    const order: Order = {
+      ...baseOrder,
+      deliveryMethod: 'pickup',
+      stockReadiness: 'uncovered'
+    };
+    const actions = availableOrderActions(order);
+    expect(actions).not.toContain('mark_delivered');
+    expect(actions).toContain('cancel');
+  });
+
   it('has human-friendly Spanish labels for all actions', () => {
     expect(ORDER_ACTION_LABELS.mark_paid).toBe('Marcar como cobrado');
     expect(ORDER_ACTION_LABELS.mark_refunded).toBe('Marcar reintegro realizado');

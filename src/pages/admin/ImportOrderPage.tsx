@@ -22,6 +22,7 @@ import { AppError } from '@/domain/errors';
 import { formatMoney } from '@/domain/money';
 import type { CartLine, ImportOrderInput, Order } from '@/domain/types';
 import { parseWhatsAppProtocol, type ParsedWhatsAppOrder } from '@/domain/whatsapp';
+import { cleanSearchTerm } from '@/lib/search';
 import { getBusinessApi } from '@/services/business-api';
 
 type Review = {
@@ -196,7 +197,7 @@ export default function ImportOrderPage() {
             <div className="mt-7 flex flex-col gap-3 sm:flex-row sm:items-center">
               <Link
                 to="/app/pedidos"
-                search={{ search: created.number.toString() } as any}
+                search={{ search: cleanSearchTerm(created.number) } as any}
                 className={buttonStyles({
                   variant: 'primary',
                   size: 'lg',
@@ -320,7 +321,7 @@ export default function ImportOrderPage() {
                       <img
                         src={line.imageUrl}
                         alt={line.name}
-                        className="size-14 shrink-0 rounded-xl bg-cream-100 object-cover border border-ink-950/6"
+                        className="size-14 shrink-0 rounded-xl bg-cream-100 object-contain p-1 border border-ink-950/6"
                       />
                       <div className="min-w-0">
                         <h3 className="text-[17.5px] font-black text-ink-950 leading-tight">
@@ -329,6 +330,23 @@ export default function ImportOrderPage() {
                         <p className="mt-0.5 text-[14.5px] font-medium text-ink-600 truncate">
                           {line.presentation}
                         </p>
+                        {(() => {
+                          const prod = productsQuery.data?.find((p) => p.id === line.productId);
+                          const phys = prod ? Math.max(0, prod.onHand - prod.reserved) : 0;
+                          const incomingNeeded = Math.max(0, line.quantity - phys);
+                          if (incomingNeeded > 0) {
+                            return (
+                              <span className="mt-1 inline-flex items-center gap-1 text-[11px] font-bold text-amber-900 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md">
+                                <span>🟠</span> Asigna {incomingNeeded} u. de compra en camino
+                              </span>
+                            );
+                          }
+                          return (
+                            <span className="mt-1 inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200/60 px-2 py-0.5 rounded-md">
+                              <span>🟢</span> Stock físico ({phys} disp.)
+                            </span>
+                          );
+                        })()}
                       </div>
                     </div>
 

@@ -149,4 +149,60 @@ $ 1.000
     // La UI no debe crear un segundo pedido; debe advertir que ya fue importado
     await expect(page.getByText(/ya fue importado/i).first()).toBeVisible();
   });
+
+  test('2.4: Navegación desde "Ver pedido #..." busca sin comillas y detecta el pedido', async ({ page }) => {
+    const lines: CartLine[] = [
+      {
+        productId: '10000000-0000-4000-8000-000000000002',
+        sku: 'WHEY908',
+        name: 'Whey Protein',
+        presentation: '908 g · Vainilla',
+        quantity: 1,
+        unitPriceCents: 3950000,
+        imageUrl: '/demo/whey.svg'
+      }
+    ];
+
+    const checkout: CheckoutData = {
+      customerName: 'Santiago Sin Comillas',
+      phone: '1198765432',
+      paymentMethod: 'cash',
+      deliveryMethod: 'pickup',
+      shippingType: null,
+      address: null,
+      addressNumber: null,
+      notes: null,
+      protocolOrderId: '44444444-5555-6666-8777-888888888888'
+    };
+
+    const whatsappMessage = buildWhatsAppProtocol(checkout, lines, demoSettings).message;
+    await page.locator('textarea').fill(whatsappMessage);
+    await page.getByRole('button', { name: /analizar y revisar pedido|analizar/i }).click();
+    await page.getByRole('button', { name: /confirmar y reservar stock|confirmar pedido/i }).click();
+
+    const viewOrderBtn = page.getByRole('link', { name: /ver pedido #\d+/i });
+    await expect(viewOrderBtn).toBeVisible();
+
+    const btnText = await viewOrderBtn.innerText();
+    const orderNumMatch = btnText.match(/#(\d+)/);
+    expect(orderNumMatch).not.toBeNull();
+    const orderNumber = orderNumMatch![1]!;
+
+    // Hacer clic en Ver pedido #...
+    await viewOrderBtn.click();
+    await page.waitForURL(/\/app\/pedidos/, { timeout: 10000 });
+
+    // La URL debe contener el número limpio sin comillas ni %22
+    expect(page.url()).not.toContain('%22');
+    expect(page.url()).not.toContain('"');
+
+    // El input de búsqueda debe tener el número LIMPIO sin comillas
+    const searchInput = page.locator('input[type="search"]');
+    await expect(searchInput).toHaveValue(orderNumber);
+
+    // La tarjeta del pedido debe estar visible y detectada (no vacío)
+    await expect(page.getByText('No hay pedidos en esta vista')).toBeHidden();
+    const orderCard = page.locator('article').filter({ hasText: `#${orderNumber}` });
+    await expect(orderCard).toBeVisible();
+  });
 });

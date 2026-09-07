@@ -88,6 +88,18 @@ export default function CheckoutPage() {
     queryFn: (api) => api.listStorefrontProducts()
   });
 
+  const cartEtaKey =
+    cart.lines.length > 0
+      ? cart.lines.map((l) => `${l.productId}:${l.quantity}`).join(',')
+      : 'empty';
+
+  const cartEtaQuery = useBusinessQuery({
+    queryKey: ['cart-eta', cartEtaKey],
+    queryFn: (api) =>
+      api.quoteCartEta(cart.lines.map((line) => ({ productId: line.productId, quantity: line.quantity }))),
+    enabled: cart.lines.length > 0
+  });
+
   const {
     register,
     handleSubmit,
@@ -264,6 +276,22 @@ export default function CheckoutPage() {
               <div className="mt-5 flex items-start gap-3 rounded-2xl border border-blue-200 bg-blue-50 p-4 text-sm font-bold text-blue-950">
                 <Info className="mt-0.5 size-5 shrink-0 text-blue-600" />
                 <p>{priceNotice}</p>
+              </div>
+            ) : null}
+
+            {cartEtaQuery.data?.requiresIncoming ? (
+              <div className="mt-5 flex items-start gap-3.5 rounded-2xl border border-amber-200 bg-amber-50/90 p-4 text-sm text-amber-950 shadow-sm">
+                <Truck className="mt-0.5 size-5 shrink-0 text-amber-600" />
+                <div>
+                  <strong className="block font-black text-amber-900">
+                    Tu pedido incluye productos en reposición
+                  </strong>
+                  <p className="mt-1 font-medium text-amber-800 leading-relaxed">
+                    {cartEtaQuery.data.quotedEta
+                      ? `Para optimizar tu envío y recibir todo junto, el pedido completo se despachará a partir del ${new Intl.DateTimeFormat('es-AR', { dateStyle: 'long' }).format(new Date(cartEtaQuery.data.quotedEta))}.`
+                      : 'Uno o más productos están ingresando desde el distribuidor y se entregarán apenas arriben al depósito.'}
+                  </p>
+                </div>
               </div>
             ) : null}
 
@@ -451,6 +479,18 @@ export default function CheckoutPage() {
                 {formatMoney(cart.subtotalCents + shippingFee)}
               </strong>
             </div>
+
+            {cartEtaQuery.data?.requiresIncoming ? (
+              <div className="mt-4 rounded-xl bg-amber-400/10 border border-amber-400/20 p-3 text-xs text-amber-200 flex items-center gap-2">
+                <Truck className="size-4 shrink-0 text-amber-300" />
+                <span>
+                  Entrega unificada:{' '}
+                  {cartEtaQuery.data.quotedEta
+                    ? `Desde el ${new Intl.DateTimeFormat('es-AR', { day: '2-digit', month: '2-digit' }).format(new Date(cartEtaQuery.data.quotedEta))}`
+                    : 'Sujeta a arribo'}
+                </span>
+              </div>
+            ) : null}
           </aside>
         </div>
       </div>

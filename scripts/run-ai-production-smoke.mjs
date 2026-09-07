@@ -1,15 +1,21 @@
 import { loadEnv } from 'vite';
 import { chromium } from '@playwright/test';
-import { PROJECT_ROOT, SUPABASE_API_HOST, SUPABASE_PROJECT_REF } from './project-targets.mjs';
+import {
+  PROJECT_ROOT,
+  SUPABASE_API_HOST,
+  SUPABASE_PROJECT_REF,
+  WORKER_DOMAIN,
+  WORKER_ORIGIN
+} from './project-targets.mjs';
 
-const PRODUCTION_ORIGIN = 'https://impulso.suplementos.workers.dev';
+const PRODUCTION_ORIGIN = WORKER_ORIGIN;
 const supabaseUrl = `https://${SUPABASE_API_HOST}`;
 const fileEnv = loadEnv('production', PROJECT_ROOT, '');
 const anonKey = (process.env.VITE_SUPABASE_ANON_KEY || fileEnv.VITE_SUPABASE_ANON_KEY || '').trim();
 const email = (process.env.E2E_EMAIL || fileEnv.E2E_EMAIL || '').trim();
 const password = (process.env.E2E_PASSWORD || fileEnv.E2E_PASSWORD || '').trim();
 
-if (new URL(PRODUCTION_ORIGIN).hostname !== 'impulso.suplementos.workers.dev') {
+if (new URL(PRODUCTION_ORIGIN).hostname !== WORKER_DOMAIN) {
   throw new Error('production smoke target guard failed');
 }
 if (!anonKey || !email || !password) throw new Error('production smoke credentials are missing');

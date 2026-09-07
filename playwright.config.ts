@@ -1,18 +1,21 @@
 import { defineConfig, devices } from '@playwright/test';
 
+const baseURL = process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:5173';
+const isRemoteUrl = baseURL.startsWith('https://');
+
 export default defineConfig({
   testDir: './e2e',
   fullyParallel: false,
   workers: 1,
   forbidOnly: !!process.env.CI,
   retries: 0,
-  timeout: 45000,
+  timeout: 60000,
   expect: {
-    timeout: 10000
+    timeout: 15000
   },
   reporter: [['list'], ['html', { open: 'never' }]],
   use: {
-    baseURL: 'http://localhost:5173',
+    baseURL,
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     video: 'off',
@@ -33,10 +36,12 @@ export default defineConfig({
       testMatch: /01-storefront-checkout\.spec\.ts|02-import-order\.spec\.ts/
     }
   ],
-  webServer: {
-    command: 'npm run dev',
-    url: 'http://localhost:5173',
-    reuseExistingServer: true,
-    timeout: 120000
-  }
+  webServer: isRemoteUrl
+    ? undefined
+    : {
+        command: 'VITE_APP_MODE=demo npm run dev',
+        url: baseURL,
+        reuseExistingServer: false,
+        timeout: 120000
+      }
 });

@@ -13,13 +13,17 @@ export const availableOrderActions = (order: Order): OrderAction[] => {
   if (order.paymentState === 'pending') {
     actions.push('mark_paid');
   }
-  if (order.fulfillmentState === 'pending') {
-    actions.push('mark_delivered');
-    if (order.deliveryMethod === 'shipping') {
-      actions.push('mark_shipped');
+
+  const canFulfill = !order.stockReadiness || order.stockReadiness === 'ready';
+  if (canFulfill) {
+    if (order.fulfillmentState === 'pending') {
+      actions.push('mark_delivered');
+      if (order.deliveryMethod === 'shipping') {
+        actions.push('mark_shipped');
+      }
+    } else if (order.fulfillmentState === 'shipped') {
+      actions.push('mark_delivered');
     }
-  } else if (order.fulfillmentState === 'shipped') {
-    actions.push('mark_delivered');
   }
 
   // 2. Acciones de excepción / reversión al final

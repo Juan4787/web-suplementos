@@ -60,7 +60,7 @@ export function PublicShell({ children }: PropsWithChildren) {
               Suplementos diseñados a medida en laboratorio.
             </p>
           </div>
-          <p className="text-xs font-semibold text-white/45">© 2026 Impulso Suplementos</p>
+          <p className="text-xs font-semibold text-white/45">© 2026 Tienda de Suplementos</p>
         </div>
       </footer>
     </div>

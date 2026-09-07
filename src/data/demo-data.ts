@@ -337,6 +337,8 @@ export const demoPurchases: Purchase[] = [
         productId: demoProducts[2]!.id,
         productName: demoProducts[2]!.name,
         quantity: 12,
+        receivedQuantity: 0,
+        shortageQuantity: 0,
         unitCostCents: demoProducts[2]!.currentCostCents ?? 0
       },
       {
@@ -344,6 +346,8 @@ export const demoPurchases: Purchase[] = [
         productId: demoProducts[3]!.id,
         productName: demoProducts[3]!.name,
         quantity: 6,
+        receivedQuantity: 0,
+        shortageQuantity: 0,
         unitCostCents: demoProducts[3]!.currentCostCents ?? 0
       }
     ]
@@ -364,6 +368,8 @@ export const demoPurchases: Purchase[] = [
         productId: demoProducts[1]!.id,
         productName: demoProducts[1]!.name,
         quantity: 8,
+        receivedQuantity: 8,
+        shortageQuantity: 0,
         unitCostCents: demoProducts[1]!.currentCostCents ?? 0
       }
     ]

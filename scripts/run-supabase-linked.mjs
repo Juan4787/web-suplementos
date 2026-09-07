@@ -8,7 +8,7 @@ import {
 } from './validate-supabase-target.mjs';
 
 const mode = process.argv[2];
-if (!['list', 'diff', 'lint', 'dry-run', 'push'].includes(mode)) {
+if (!['list', 'diff', 'lint', 'dry-run', 'push', 'test'].includes(mode)) {
   throw new Error('[supabase-linked] Modo no permitido.');
 }
 
@@ -28,13 +28,16 @@ const connectionArgs = usePooler
     ]
   : ['--linked'];
 
-const args = mode === 'list'
-  ? ['exec', 'supabase', 'migration', 'list', ...connectionArgs]
-  : mode === 'diff'
-    ? ['exec', 'supabase', 'db', 'diff', ...connectionArgs, '--schema', 'public,private']
-    : mode === 'lint'
-      ? ['exec', 'supabase', 'db', 'lint', ...connectionArgs, '--level', 'warning']
-      : [
+const testFile = process.argv[3] || 'supabase/tests/database/incoming_allocations.test.sql';
+const args = mode === 'test'
+  ? ['exec', 'supabase', 'test', 'db', ...connectionArgs, testFile]
+  : mode === 'list'
+    ? ['exec', 'supabase', 'migration', 'list', ...connectionArgs]
+    : mode === 'diff'
+      ? ['exec', 'supabase', 'db', 'diff', ...connectionArgs, '--schema', 'public,private']
+      : mode === 'lint'
+        ? ['exec', 'supabase', 'db', 'lint', ...connectionArgs, '--level', 'warning']
+        : [
           'exec',
           'supabase',
           'db',

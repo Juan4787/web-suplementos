@@ -125,7 +125,6 @@ Esta evidencia es local. No acredita todavía Supabase remoto, datos reales, dom
 - Suite web completa: 19 archivos y 117/117 pruebas aprobadas.
 - Suite SQL completa: 3 archivos y 75/75 pruebas aprobadas.
 - Certificación remota: GPT-OSS/Groq 6/6 y GLM 4.7 Flash/Workers AI 6/6. Incluye `¿Qué productos tengo?`, selección de tools, hechos exactos y rechazo de escrituras. Nemotron 3 y GPT-OSS mediante el binding AI quedaron fuera del registry activo por fallos reproducibles de contrato.
-- Secrets remotos presentes por nombre: `GROQ_API_KEY`, `SUPABASE_URL` y `SUPABASE_ANON_KEY`; sus valores no se imprimieron.
-- Worker publicado en `https://impulso.suplementos.workers.dev`, versión `8fedfbd8-7d36-4174-9920-d73a674181d0` activa al 100 %, Preview URLs desactivadas.
+- Worker publicado en `https://tienda.desuplementos.workers.dev`, Preview URLs desactivadas.
 - Smoke test remoto aprobado: raíz, ruta SPA y asset coinciden por SHA-256 con el build local; salud, método inválido, origen cruzado y cierre seguro de IA responden según contrato.
 - Global ZDR fue comprobado en Groq antes de activar juntos `VITE_AI_ENABLED=true`, `AI_ENABLED=true` y `GROQ_ZDR_CONFIRMED=true`.

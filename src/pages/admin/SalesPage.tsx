@@ -368,7 +368,7 @@ export default function SalesPage() {
                                     <div key={item.id} className="flex justify-between items-center text-[14.5px] font-semibold">
                                       <span className="text-ink-950 font-bold">{item.productName} · {item.presentation} × {item.quantity}</span>
                                       <div className="flex gap-4">
-                                        <span className="text-ink-700">Costo: {formatMoney((item.unitCostCents ?? 0) * item.quantity)}</span>
+                                        <span className="text-ink-700">Costo: {formatMoney(item.costTotalCents ?? ((item.unitCostCents ?? 0) * item.quantity))}</span>
                                         <span className="text-ink-950 font-black">Venta: {formatMoney(item.subtotalCents)}</span>
                                       </div>
                                     </div>

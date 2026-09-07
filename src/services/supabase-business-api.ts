@@ -8,6 +8,8 @@ import type {
   ExportDataset,
   Order,
   Purchase,
+  QuoteCartEtaResult,
+  ReceivePurchaseResult,
   StorefrontProduct,
   StoreSettings
 } from '@/domain/types';
@@ -58,6 +60,15 @@ const translateDatabaseError = (error: { message?: string; code?: string }): App
     return new AppError('business', 'Ya existe un producto con ese código o enlace.', {
       nextAction: 'Usá valores distintos o editá el producto existente.'
     });
+  }
+  if (/PRODUCT_HAS_ORDERS/i.test(diagnostic)) {
+    return new AppError(
+      'business',
+      'No se puede eliminar un producto que tiene pedidos asociados.',
+      {
+        nextAction: 'Podés archivarlo o desactivarlo desde la edición para que no aparezca en la tienda.'
+      }
+    );
   }
   if (/PRODUCT_NOT_FOUND/i.test(diagnostic)) {
     return new AppError('business', 'Uno de los productos ya no está disponible.', {
@@ -110,10 +121,23 @@ const translateDatabaseError = (error: { message?: string; code?: string }): App
       nextAction: 'Volvé a exportar para obtener un corte completo.'
     });
   }
-  return new AppError('temporary', 'No pudimos comunicarnos con la tienda.', {
+  if (/23514|check constraint/i.test(diagnostic)) {
+    return new AppError('business', 'Los datos o importes del pedido no son consistentes.', {
+      cause: error,
+      nextAction: 'Revisá los importes, método de entrega y productos antes de confirmarlo.'
+    });
+  }
+  if (/Failed to fetch|NetworkError|Network request failed|net::ERR/i.test(diagnostic)) {
+    return new AppError('temporary', 'No pudimos comunicarnos con la tienda.', {
+      cause: error,
+      retryable: true,
+      nextAction: 'Revisá tu conexión y volvé a intentarlo.'
+    });
+  }
+  return new AppError('temporary', 'Ocurrió un error al procesar la operación en la tienda.', {
     cause: error,
     retryable: true,
-    nextAction: 'Revisá tu conexión y volvé a intentarlo.'
+    nextAction: 'Revisá los datos o volvé a intentarlo en unos instantes.'
   });
 };
 
@@ -154,9 +178,14 @@ export const supabaseBusinessApi: BusinessApi = {
     rpc<StorefrontProduct | null>('get_storefront_product', { p_slug: slug }),
   validateAvailability: (lines) =>
     rpc<AvailabilityCheck>('check_cart_availability', { p_lines: lines }),
+  quoteCartEta: (lines) =>
+    rpc<QuoteCartEtaResult>('quote_cart_eta', { p_lines: lines }),
   getDashboard: () => rpc<DashboardSummary>('get_dashboard_summary'),
   listAdminProducts: () => rpc<AdminProduct[]>('list_admin_products'),
   saveProduct: (input) => rpc<AdminProduct>('save_product', { p_product: input }),
+  deleteProduct: async (productId) => {
+    await rpc('delete_product', { p_product_id: productId });
+  },
   listInventory: () => rpc('list_inventory_status'),
   adjustStock: async (productId, delta, reason) => {
     await rpc('adjust_product_stock', {
@@ -221,8 +250,31 @@ export const supabaseBusinessApi: BusinessApi = {
   listPurchases: (page = 1, pageSize = 20) =>
     rpc<Page<Purchase>>('list_purchases', { p_page: page, p_page_size: pageSize }),
   createPurchase: (input) => rpc<Purchase>('create_purchase', { p_purchase: input }),
-  receivePurchase: (purchaseId) =>
-    rpc<Purchase>('receive_purchase', { p_purchase_id: purchaseId }),
+  receivePurchase: async (purchaseId, items, operationId) => {
+    let itemsPayload = items;
+    if (!itemsPayload || itemsPayload.length === 0) {
+      const purchasePage = await rpc<Page<Purchase>>('list_purchases', { p_page: 1, p_page_size: 100 });
+      const current = purchasePage.items.find((p) => p.id === purchaseId);
+      if (current) {
+        itemsPayload = current.items.map((pi) => ({
+          purchaseItemId: pi.id,
+          receivedQuantity: Math.max(0, pi.quantity - (pi.receivedQuantity ?? 0) - (pi.shortageQuantity ?? 0))
+        }));
+      } else {
+        itemsPayload = [];
+      }
+    }
+    return rpc<ReceivePurchaseResult>('receive_purchase', {
+      p_purchase_id: purchaseId,
+      p_items: itemsPayload,
+      p_operation_id: operationId ?? crypto.randomUUID()
+    });
+  },
+  closePurchaseWithShortage: (purchaseId, notes) =>
+    rpc<ReceivePurchaseResult>('close_purchase_with_shortage', {
+      p_purchase_id: purchaseId,
+      p_notes: notes ?? 'Cerrado con faltante definitivo de distribuidor'
+    }),
   listMovements: (page = 1, pageSize = 30) =>
     rpc('list_stock_movements', { p_page: page, p_page_size: pageSize }),
   listCustomers: (page = 1, pageSize = 30) =>

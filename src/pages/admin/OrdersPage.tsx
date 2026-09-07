@@ -6,6 +6,7 @@ import {
   ChevronRight,
   MessageCircle,
   MoreHorizontal,
+  Plus,
   Search,
   ShoppingBasket
 } from 'lucide-react';
@@ -27,10 +28,7 @@ import { cn } from '@/lib/cn';
 import { buildWhatsAppUrl } from '@/lib/whatsapp-url';
 import { getBusinessApi } from '@/services/business-api';
 
-function cleanSearchTerm(val: string | null | undefined): string {
-  if (!val) return '';
-  return val.replace(/^["']|["']$/g, '').trim();
-}
+import { cleanSearchTerm } from '@/lib/search';
 
 function OrderTimeline({ order }: { order: Order }) {
   const steps = [
@@ -88,20 +86,30 @@ function OrderTimeline({ order }: { order: Order }) {
 export default function OrdersPage() {
   const queryClient = useQueryClient();
   const [page, setPage] = useState(1);
-  const [filter, setFilter] = useState<'pending' | 'completed' | 'all'>('pending');
-  const routeSearchParams = useSearch({ strict: false }) as { search?: string } | undefined;
-  const [search, setSearch] = useState(() => {
+  const routeSearchParams = useSearch({ strict: false }) as { search?: string | number } | undefined;
+  const initialSearch = useMemo(() => {
+    if (routeSearchParams?.search !== undefined && routeSearchParams?.search !== null) {
+      return cleanSearchTerm(routeSearchParams.search);
+    }
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
       return cleanSearchTerm(params.get('search'));
     }
     return '';
+  }, [routeSearchParams?.search]);
+
+  const [search, setSearch] = useState(initialSearch);
+  const [filter, setFilter] = useState<'pending' | 'completed' | 'all'>(() => {
+    return initialSearch ? 'all' : 'pending';
   });
 
   useEffect(() => {
-    if (routeSearchParams?.search) {
+    if (routeSearchParams?.search !== undefined && routeSearchParams?.search !== null) {
       const cleaned = cleanSearchTerm(routeSearchParams.search);
-      if (cleaned) setSearch(cleaned);
+      setSearch(cleaned);
+      if (cleaned) {
+        setFilter('all');
+      }
     }
   }, [routeSearchParams?.search]);
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -175,9 +183,14 @@ export default function OrdersPage() {
         title="Pedidos"
         description="Revisá los pedidos que necesitan atención, confirmá pagos pendientes y gestioná las entregas."
         action={
-          <Link to="/app/pedidos/importar" className={buttonStyles({ size: 'lg' })}>
-            <ShoppingBasket className="size-5" /> Importar WhatsApp
-          </Link>
+          <div className="flex flex-wrap items-center gap-3">
+            <Link to="/app/pedidos/nuevo" className={buttonStyles({ size: 'lg' })}>
+              <Plus className="size-5" /> Cargar pedido manual
+            </Link>
+            <Link to="/app/pedidos/importar" className={buttonStyles({ variant: 'secondary', size: 'lg' })}>
+              <ShoppingBasket className="size-5" /> Importar WhatsApp
+            </Link>
+          </div>
         }
       />
 
@@ -228,7 +241,10 @@ export default function OrdersPage() {
             type="search"
             placeholder="Buscar pedido, cliente, tel…"
             value={search}
-            onChange={(e) => setSearch(cleanSearchTerm(e.target.value))}
+            onChange={(e) => {
+              const val = e.target.value.replace(/^["'“”`\\]+|["'“”`\\]+$/g, '');
+              setSearch(val);
+            }}
             className="h-11 w-full rounded-full border border-ink-950/15 bg-white pl-10 pr-4 text-[14.5px] font-semibold text-ink-950 placeholder:text-ink-600/70 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
           />
         </div>
@@ -426,6 +442,27 @@ export default function OrdersPage() {
                             <div className="flex items-center gap-2 rounded-xl bg-emerald-50 border border-emerald-200 px-3.5 py-2.5 text-[14px] font-black text-emerald-800">
                               <Check className="size-4 shrink-0 text-emerald-600" />
                               <span>Entregado</span>
+                            </div>
+                          ) : order.stockReadiness === 'waiting_incoming' ? (
+                            <div className="rounded-xl bg-brand-50 border border-brand-200 p-3 text-xs font-semibold text-brand-950 space-y-1">
+                              <p className="font-black flex items-center gap-1.5 text-brand-900">
+                                <span>📦</span> En camino
+                              </p>
+                              <p className="text-brand-800">
+                                {order.expectedArrivalAt
+                                  ? `Llegada estimada: ${new Intl.DateTimeFormat('es-AR', { dateStyle: 'medium' }).format(new Date(order.expectedArrivalAt))}.`
+                                  : 'Stock asignado a compras en camino.'}{' '}
+                                Recibí la compra en Inventario para habilitar la entrega.
+                              </p>
+                            </div>
+                          ) : order.stockReadiness === 'uncovered' ? (
+                            <div className="rounded-xl bg-rose-50 border border-rose-200 p-3 text-xs font-semibold text-rose-950 space-y-1">
+                              <p className="font-black flex items-center gap-1.5 text-rose-900">
+                                <span>🔴</span> Faltante de proveedor
+                              </p>
+                              <p className="text-rose-800">
+                                La compra del proveedor cerró con faltante definitivo. Contactá al cliente para acordar un reemplazo o cancelar el pedido.
+                              </p>
                             </div>
                           ) : actions.includes('mark_delivered') ? (
                             <Button

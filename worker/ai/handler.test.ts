@@ -12,7 +12,7 @@ const env = (enabled: boolean) =>
   }) as unknown as Env;
 
 const request = (authorization?: string) =>
-  new Request('https://impulso.suplementos.workers.dev/api/ai', {
+  new Request('https://tienda.desuplementos.workers.dev/api/ai', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

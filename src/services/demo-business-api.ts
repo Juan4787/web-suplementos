@@ -24,6 +24,9 @@ import type {
   Order,
   ProductPerformance,
   Purchase,
+  QuoteCartEtaResult,
+  ReceivePurchaseItemInput,
+  ReceivePurchaseResult,
   StockMovement,
   StoreSettings
 } from '@/domain/types';
@@ -44,6 +47,11 @@ const state: {
   users: Array<import('@/domain/types').AppUser>;
   inflation: InflationIndex[];
   importedProtocolIds: Set<string>;
+  purchaseReceipts: Map<string, {
+    purchaseId: string;
+    canonicalPayload: string;
+    result: { purchase: Purchase; unblockedOrders: Array<{ id: string; number: number }> };
+  }>;
   revision: number;
 } = {
   settings: structuredClone(demoSettings),
@@ -55,6 +63,7 @@ const state: {
   users: structuredClone([demoOwner, demoStaff]),
   inflation: structuredClone(demoInflation),
   importedProtocolIds: new Set(),
+  purchaseReceipts: new Map(),
   revision: 1
 };
 
@@ -148,7 +157,9 @@ export const demoBusinessApi: BusinessApi = {
   async validateAvailability(lines) {
     const issues = lines.flatMap((line) => {
       const product = state.products.find((candidate) => candidate.id === line.productId);
-      const available = product ? Math.max(0, product.onHand - product.reserved) : 0;
+      const physAvail = product ? Math.max(0, product.onHand - product.reserved) : 0;
+      const incomingAvail = product ? Math.max(0, product.incoming) : 0;
+      const available = physAvail + incomingAvail;
       return !product || !product.active || line.quantity > available
         ? [
             {
@@ -161,6 +172,73 @@ export const demoBusinessApi: BusinessApi = {
         : [];
     });
     return latency({ ok: issues.length === 0, issues });
+  },
+
+  async quoteCartEta(lines) {
+    let requiresIncoming = false;
+    let maxEta: string | null = null;
+    let hasUnspecifiedEta = false;
+
+    for (const line of lines) {
+      const product = state.products.find((candidate) => candidate.id === line.productId);
+      if (!product || !product.active || !product.published) {
+        return latency({
+          ok: false,
+          requiresIncoming: false,
+          quotedEta: null,
+          hasUnspecifiedEta: false,
+          error: 'PRODUCT_UNAVAILABLE'
+        });
+      }
+
+      const physAvail = Math.max(0, product.onHand - product.reserved);
+      const remainingNeeded = Math.max(0, line.quantity - physAvail);
+      if (remainingNeeded > 0) {
+        requiresIncoming = true;
+        let openCapacity = 0;
+        const relevantPurchases = state.purchases
+          .filter((p) => p.state === 'ordered')
+          .sort((a, b) => {
+            if (!a.expectedAt && !b.expectedAt) return 0;
+            if (!a.expectedAt) return 1;
+            if (!b.expectedAt) return -1;
+            return a.expectedAt.localeCompare(b.expectedAt);
+          });
+
+        for (const pu of relevantPurchases) {
+          for (const item of pu.items.filter((i) => i.productId === line.productId)) {
+            const free = Math.max(0, item.quantity - (item.receivedQuantity ?? 0) - (item.shortageQuantity ?? 0));
+            if (free > 0) {
+              openCapacity += free;
+              if (pu.expectedAt) {
+                if (!maxEta || pu.expectedAt > maxEta) {
+                  maxEta = pu.expectedAt;
+                }
+              } else {
+                hasUnspecifiedEta = true;
+              }
+            }
+          }
+        }
+
+        if (openCapacity < remainingNeeded) {
+          return latency({
+            ok: false,
+            requiresIncoming: true,
+            quotedEta: null,
+            hasUnspecifiedEta: false,
+            error: 'INSUFFICIENT_STOCK'
+          });
+        }
+      }
+    }
+
+    return latency({
+      ok: true,
+      requiresIncoming,
+      quotedEta: maxEta,
+      hasUnspecifiedEta
+    });
   },
 
   async getDashboard() {
@@ -242,6 +320,27 @@ export const demoBusinessApi: BusinessApi = {
     state.products.unshift(created);
     state.revision += 1;
     return latency(created);
+  },
+
+  async deleteProduct(productId: string) {
+    const index = state.products.findIndex((candidate) => candidate.id === productId);
+    if (index === -1) {
+      throw new AppError('business', 'No encontramos el producto que querías eliminar.');
+    }
+    const hasOrders = (state.orders ?? []).some((order) =>
+      (order.items ?? []).some((item) => item.productId === productId)
+    );
+    if (hasOrders) {
+      throw new AppError(
+        'business',
+        'No se puede eliminar un producto que tiene pedidos asociados.',
+        {
+          nextAction: 'Podés archivarlo o desactivarlo desde la edición para que no aparezca en la tienda.'
+        }
+      );
+    }
+    state.products.splice(index, 1);
+    state.revision += 1;
   },
 
   async listInventory() {
@@ -346,6 +445,22 @@ export const demoBusinessApi: BusinessApi = {
     );
     const customerId = existingCustomer ? existingCustomer.id : nextUuid();
 
+    let requiresIncoming = false;
+    let expectedArrivalAt: string | null = null;
+    for (const item of items) {
+      const product = state.products.find((candidate) => candidate.id === item.productId)!;
+      const physAvail = Math.max(0, product.onHand - product.reserved);
+      if (item.quantity > physAvail) {
+        requiresIncoming = true;
+        const pu = state.purchases.find(
+          (p) => p.state === 'ordered' && p.items.some((i) => i.productId === item.productId)
+        );
+        if (pu?.expectedAt && (!expectedArrivalAt || pu.expectedAt > expectedArrivalAt)) {
+          expectedArrivalAt = pu.expectedAt;
+        }
+      }
+    }
+
     const order: Order = {
       id: nextUuid(),
       number,
@@ -363,6 +478,8 @@ export const demoBusinessApi: BusinessApi = {
       paymentState: 'pending',
       preparationState: 'ready',
       fulfillmentState: 'pending',
+      stockReadiness: requiresIncoming ? 'waiting_incoming' : 'ready',
+      expectedArrivalAt,
       subtotalCents,
       shippingFeeCents: input.shippingFeeCents,
       totalCents: subtotalCents + input.shippingFeeCents,
@@ -454,6 +571,9 @@ export const demoBusinessApi: BusinessApi = {
     if (action === 'start_preparing') order.preparationState = 'preparing';
     if (action === 'mark_ready') order.preparationState = 'ready';
     if (action === 'mark_shipped' || action === 'mark_delivered') {
+      if (order.stockReadiness === 'waiting_incoming') {
+        throw new AppError('business', 'No se puede entregar un pedido en espera de mercadería.');
+      }
       order.preparationState = 'ready';
       const inventoryLeaves =
         action === 'mark_shipped' ||
@@ -521,6 +641,8 @@ export const demoBusinessApi: BusinessApi = {
         productId: product.id,
         productName: product.name,
         quantity: item.quantity,
+        receivedQuantity: 0,
+        shortageQuantity: 0,
         unitCostCents: item.unitCostCents
       };
     });
@@ -550,37 +672,119 @@ export const demoBusinessApi: BusinessApi = {
     return latency(purchase);
   },
 
-  async receivePurchase(purchaseId) {
+  async receivePurchase(purchaseId, itemsInput, operationId) {
+    const canonicalPayload = JSON.stringify(
+      (itemsInput ?? [])
+        .map((i) => ({ purchaseItemId: i.purchaseItemId, receivedQuantity: i.receivedQuantity }))
+        .sort((a, b) => a.purchaseItemId.localeCompare(b.purchaseItemId))
+    );
+
+    if (operationId) {
+      const existing = state.purchaseReceipts.get(operationId);
+      if (existing) {
+        if (existing.purchaseId !== purchaseId || existing.canonicalPayload !== canonicalPayload) {
+          throw new AppError('business', 'IDEMPOTENCY_KEY_REUSE_MISMATCH');
+        }
+        return latency(existing.result);
+      }
+    }
+
     const purchase = state.purchases.find((candidate) => candidate.id === purchaseId);
     if (!purchase) throw new AppError('business', 'No encontramos la compra.');
     if (purchase.state !== 'ordered') {
       throw new AppError('business', 'Esta compra ya no está esperando recepción.');
     }
     const now = new Date().toISOString();
-    purchase.state = 'received';
-    purchase.receivedAt = now;
+    const unblockedOrders: Array<{ id: string; number: number }> = [];
+
     for (const item of purchase.items) {
-      const product = state.products.find((candidate) => candidate.id === item.productId)!;
-      product.incoming -= item.quantity;
-      product.onHand += item.quantity;
-      product.currentCostCents = item.unitCostCents;
-      refreshProductAvailability(product);
-      state.movements.unshift({
-        id: nextUuid(),
-        productId: product.id,
-        productName: product.name,
-        kind: 'purchase_received',
-        physicalDelta: item.quantity,
-        reservedDelta: 0,
-        reason: `Compra #${purchase.number} recibida`,
-        orderId: null,
-        purchaseId: purchase.id,
-        createdAt: now,
-        createdByName: 'Sofía'
+      let qtyToReceive = 0;
+      if (itemsInput && itemsInput.length > 0) {
+        const inputItem = itemsInput.find((i) => i.purchaseItemId === item.id);
+        qtyToReceive = inputItem ? inputItem.receivedQuantity : 0;
+      } else {
+        qtyToReceive = Math.max(0, item.quantity - (item.receivedQuantity ?? 0) - (item.shortageQuantity ?? 0));
+      }
+
+      if (qtyToReceive > 0) {
+        item.receivedQuantity = (item.receivedQuantity ?? 0) + qtyToReceive;
+        const product = state.products.find((candidate) => candidate.id === item.productId)!;
+        product.incoming = Math.max(0, product.incoming - qtyToReceive);
+        product.onHand += qtyToReceive;
+        product.currentCostCents = item.unitCostCents;
+        refreshProductAvailability(product);
+        state.movements.unshift({
+          id: nextUuid(),
+          productId: product.id,
+          productName: product.name,
+          kind: 'purchase_received',
+          physicalDelta: qtyToReceive,
+          reservedDelta: 0,
+          reason: `Compra #${purchase.number} recibida (${qtyToReceive} un.)`,
+          orderId: null,
+          purchaseId: purchase.id,
+          createdAt: now,
+          createdByName: 'Sofía'
+        });
+      }
+    }
+
+    const allCompleted = purchase.items.every(
+      (item) => (item.receivedQuantity ?? 0) + (item.shortageQuantity ?? 0) >= item.quantity
+    );
+    if (allCompleted) {
+      purchase.state = 'received';
+      purchase.receivedAt = now;
+    }
+
+    if (allCompleted) {
+      for (const order of state.orders) {
+        if (order.stockReadiness === 'waiting_incoming') {
+          order.stockReadiness = 'ready';
+          order.expectedArrivalAt = null;
+          unblockedOrders.push({ id: order.id, number: order.number });
+        }
+      }
+    }
+
+    const result = { purchase, unblockedOrders };
+    if (operationId) {
+      state.purchaseReceipts.set(operationId, {
+        purchaseId,
+        canonicalPayload,
+        result: structuredClone(result)
       });
     }
+
     state.revision += 1;
-    return latency(purchase);
+    return latency(result);
+  },
+
+  async closePurchaseWithShortage(purchaseId, notes) {
+    const purchase = state.purchases.find((candidate) => candidate.id === purchaseId);
+    if (!purchase) throw new AppError('business', 'No encontramos la compra.');
+    if (purchase.state !== 'ordered') {
+      throw new AppError('business', 'Esta compra ya no está esperando recepción.');
+    }
+    const now = new Date().toISOString();
+    for (const item of purchase.items) {
+      const remaining = Math.max(0, item.quantity - (item.receivedQuantity ?? 0) - (item.shortageQuantity ?? 0));
+      if (remaining > 0) {
+        const product = state.products.find((candidate) => candidate.id === item.productId);
+        if (product) {
+          product.incoming = Math.max(0, product.incoming - remaining);
+          refreshProductAvailability(product);
+        }
+        item.shortageQuantity = (item.shortageQuantity ?? 0) + remaining;
+      }
+    }
+    purchase.state = 'received';
+    purchase.receivedAt = now;
+    if (notes) {
+      purchase.notes = purchase.notes ? `${purchase.notes} | ${notes}` : notes;
+    }
+    state.revision += 1;
+    return latency({ purchase, unblockedOrders: [] });
   },
 
   async listMovements(page = 1, pageSize = 30) {

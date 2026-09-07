@@ -14,6 +14,9 @@ import type {
   Order,
   OrderAction,
   Purchase,
+  QuoteCartEtaResult,
+  ReceivePurchaseItemInput,
+  ReceivePurchaseResult,
   StockMovement,
   StorefrontProduct,
   StoreSettings
@@ -81,9 +84,11 @@ export interface BusinessApi {
   listStorefrontProducts(): Promise<StorefrontProduct[]>;
   getStorefrontProduct(slug: string): Promise<StorefrontProduct | null>;
   validateAvailability(lines: Pick<CartLine, 'productId' | 'quantity'>[]): Promise<AvailabilityCheck>;
+  quoteCartEta(lines: Pick<CartLine, 'productId' | 'quantity'>[]): Promise<QuoteCartEtaResult>;
   getDashboard(): Promise<DashboardSummary>;
   listAdminProducts(): Promise<AdminProduct[]>;
   saveProduct(input: ProductUpdate): Promise<AdminProduct>;
+  deleteProduct(productId: string): Promise<void>;
   listInventory(): Promise<InventoryItem[]>;
   adjustStock(productId: string, delta: number, reason: string): Promise<void>;
   updateStockThresholds(input: UpdateStockThresholdsInput): Promise<void>;
@@ -93,7 +98,8 @@ export interface BusinessApi {
   transitionOrder(orderId: string, action: OrderAction): Promise<Order>;
   listPurchases(page?: number, pageSize?: number): Promise<Page<Purchase>>;
   createPurchase(input: PurchaseCreateInput): Promise<Purchase>;
-  receivePurchase(purchaseId: string): Promise<Purchase>;
+  receivePurchase(purchaseId: string, items?: ReceivePurchaseItemInput[], operationId?: string): Promise<ReceivePurchaseResult>;
+  closePurchaseWithShortage(purchaseId: string, notes?: string): Promise<ReceivePurchaseResult>;
   listMovements(page?: number, pageSize?: number): Promise<Page<StockMovement>>;
   listCustomers(page?: number, pageSize?: number): Promise<Page<Customer>>;
   getAnalytics(from: string, to: string): Promise<AnalyticsSummary>;

@@ -13,6 +13,7 @@ import {
   ChevronUp,
   History,
   Info,
+  PackageCheck,
   PackagePlus,
   Plus,
   Search,
@@ -37,7 +38,7 @@ import { inventoryStatus, sanitizeDecimalInput, sanitizeIntegerInput } from '@/d
 import { formatMoney, pesosToCents } from '@/domain/money';
 import { can } from '@/domain/permissions';
 import { formatProducts, formatUnits } from '@/domain/quantity';
-import type { InventoryItem } from '@/domain/types';
+import type { InventoryItem, Purchase } from '@/domain/types';
 import { useAuth } from '@/features/auth/AuthProvider';
 import { cn } from '@/lib/cn';
 import { getBusinessApi } from '@/services/business-api';
@@ -284,6 +285,249 @@ function PurchaseFormModal({ onClose }: { onClose: () => void }) {
   );
 }
 
+function ReceivePurchaseModal({
+  purchase,
+  onClose,
+  onUnblocked
+}: {
+  purchase: Purchase;
+  onClose: () => void;
+  onUnblocked: (orders: Array<{ id: string; number: number }>) => void;
+}) {
+  const queryClient = useQueryClient();
+  const [quantities, setQuantities] = useState<Record<string, number>>(() => {
+    const initial: Record<string, number> = {};
+    for (const item of purchase.items) {
+      initial[item.id] = Math.max(0, item.quantity - (item.receivedQuantity ?? 0) - (item.shortageQuantity ?? 0));
+    }
+    return initial;
+  });
+  const [shortageNotes, setShortageNotes] = useState('');
+  const [confirmShortageMode, setConfirmShortageMode] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [operationId] = useState(() => crypto.randomUUID());
+
+  const receive = useMutation({
+    mutationFn: async () => {
+      const api = await getBusinessApi();
+      const itemsPayload = purchase.items.map((item) => ({
+        purchaseItemId: item.id,
+        receivedQuantity: quantities[item.id] ?? 0
+      }));
+      return api.receivePurchase(purchase.id, itemsPayload, operationId);
+    },
+    onSuccess: async (data) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.purchasesRoot }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.inventory }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.ordersRoot }),
+        queryClient.invalidateQueries({ queryKey: ['movements'] }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.dashboard }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.products })
+      ]);
+      onClose();
+      if (data.unblockedOrders && data.unblockedOrders.length > 0) {
+        onUnblocked(data.unblockedOrders);
+      }
+    },
+    onError: (err: unknown) => {
+      setError(err instanceof Error ? err.message : 'Error al registrar la recepción');
+    }
+  });
+
+  const closeShortage = useMutation({
+    mutationFn: async () => {
+      const api = await getBusinessApi();
+      return api.closePurchaseWithShortage(
+        purchase.id,
+        shortageNotes.trim() || 'Cerrado con faltante definitivo de distribuidor'
+      );
+    },
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.purchasesRoot }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.inventory }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.ordersRoot }),
+        queryClient.invalidateQueries({ queryKey: ['movements'] }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.dashboard }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.products })
+      ]);
+      onClose();
+    },
+    onError: (err: unknown) => {
+      setError(err instanceof Error ? err.message : 'Error al cerrar la compra');
+    }
+  });
+
+  const totalToReceive = Object.values(quantities).reduce((sum, q) => sum + (q || 0), 0);
+  const totalRemaining = purchase.items.reduce(
+    (sum, item) => sum + Math.max(0, item.quantity - (item.receivedQuantity ?? 0) - (item.shortageQuantity ?? 0)),
+    0
+  );
+  const isPartial = totalToReceive < totalRemaining;
+
+  return (
+    <Modal
+      isOpen={true}
+      onClose={onClose}
+      ariaLabelledBy="receive-modal-title"
+      maxWidth="lg"
+      className="p-0 flex flex-col max-h-[90vh] overflow-hidden"
+    >
+      <div className="flex items-start justify-between border-b border-ink-950/6 bg-white px-6 pt-6 pb-4 sm:px-8 sm:pt-8 shrink-0">
+        <div>
+          <h2 id="receive-modal-title" className="font-display text-2xl sm:text-3xl font-black text-ink-950">
+            Recepción de Compra #{purchase.number}
+          </h2>
+          <p className="mt-1 text-[14.5px] font-medium text-ink-700">
+            Proveedor: <strong className="text-ink-950">{purchase.supplierName}</strong>
+          </p>
+        </div>
+        <button
+          className="grid size-11 shrink-0 place-items-center rounded-full hover:bg-cream-100 text-ink-600 transition"
+          onClick={onClose}
+          aria-label="Cerrar modal"
+        >
+          <X className="size-5" />
+        </button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto px-6 py-5 sm:px-8 space-y-5 custom-scrollbar">
+        {error && (
+          <div className="rounded-xl bg-red-50 border border-red-200 p-3 text-sm font-semibold text-red-800">
+            {error}
+          </div>
+        )}
+
+        <div className="rounded-2xl bg-cream-50 p-4 border border-ink-950/6 text-xs text-ink-700 space-y-1">
+          <p className="font-bold text-ink-900">Control de mercadería recibida:</p>
+          <p>
+            Verificá las unidades físicas recibidas del distribuidor. Al confirmar la recepción, el stock físico se incrementa y los pedidos que aguardaban reposición quedarán habilitados para entrega.
+          </p>
+        </div>
+
+        <div className="space-y-3">
+          <p className="text-xs font-black uppercase tracking-wider text-ink-500">
+            Productos a ingresar
+          </p>
+          {purchase.items.map((item) => {
+            const pending = Math.max(0, item.quantity - (item.receivedQuantity ?? 0) - (item.shortageQuantity ?? 0));
+            const currentVal = quantities[item.id] ?? pending;
+
+            return (
+              <div
+                key={item.id}
+                className="rounded-2xl border border-ink-950/8 bg-white p-4 shadow-sm space-y-2"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h4 className="text-[15px] font-black text-ink-950">{item.productName}</h4>
+                    <p className="text-xs font-semibold text-ink-600">
+                      Pedido total: {item.quantity} u.
+                      {item.receivedQuantity > 0 ? ` · Ya recibidas: ${item.receivedQuantity} u.` : ''}
+                      {item.shortageQuantity > 0 ? ` · Faltante previo: ${item.shortageQuantity} u.` : ''}
+                      {' '}(Pendientes: {pending} u.)
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-xs font-bold text-ink-500 block">Costo unitario</span>
+                    <span className="text-sm font-bold text-ink-800">{formatMoney(item.unitCostCents)}</span>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between gap-4 pt-2 border-t border-ink-950/6">
+                  <label htmlFor={`receive-qty-${item.id}`} className="text-xs font-bold text-ink-800">
+                    Unidades a ingresar en esta entrega:
+                  </label>
+                  <input
+                    id={`receive-qty-${item.id}`}
+                    type="number"
+                    min="0"
+                    max={pending}
+                    value={currentVal}
+                    onChange={(e) => {
+                      const val = Math.max(0, Math.min(pending, parseInt(e.target.value, 10) || 0));
+                      setQuantities((prev) => ({ ...prev, [item.id]: val }));
+                    }}
+                    className="h-10 w-24 rounded-xl border border-ink-950/15 text-center font-black text-ink-950 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+                  />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {confirmShortageMode ? (
+          <div className="rounded-2xl bg-red-50 border border-red-200 p-4 space-y-3">
+            <h4 className="text-sm font-black text-red-950">Confirmar cierre con faltante definitivo</h4>
+            <p className="text-xs font-medium text-red-900 leading-relaxed">
+              Esta acción marcará las unidades pendientes como faltante definitivo de distribuidor y cerrará la compra. Si hay pedidos de clientes esperando estas unidades, quedarán marcados como faltante para acordar cambios.
+            </p>
+            <Field label="Aclaración del proveedor">
+              <Input
+                placeholder="Ej. Quiebre de stock en fábrica sin fecha de reingreso"
+                value={shortageNotes}
+                onChange={(e) => setShortageNotes(e.target.value)}
+              />
+            </Field>
+            <div className="flex items-center gap-2 pt-1">
+              <Button
+                variant="primary"
+                size="sm"
+                className="bg-red-600 hover:bg-red-700 text-white font-bold"
+                loading={closeShortage.isPending}
+                onClick={() => closeShortage.mutate()}
+              >
+                Confirmar cierre definitivo
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setConfirmShortageMode(false)}
+              >
+                Cancelar
+              </Button>
+            </div>
+          </div>
+        ) : isPartial ? (
+          <div className="rounded-xl bg-amber-50 border border-amber-200 p-3 text-xs text-amber-900 flex items-start justify-between gap-3">
+            <div>
+              <p className="font-bold">Recepción parcial ({totalToReceive} de {totalRemaining} pendientes)</p>
+              <p className="mt-0.5">
+                La compra permanecerá abierta esperando el resto de las unidades. Si el distribuidor no entregará el resto, podés cerrarla con faltante.
+              </p>
+            </div>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setConfirmShortageMode(true)}
+              className="shrink-0 text-[11px] font-bold"
+            >
+              Declarar faltante
+            </Button>
+          </div>
+        ) : null}
+      </div>
+
+      <div className="flex items-center justify-end gap-3 border-t border-ink-950/6 bg-white px-6 py-4 sm:px-8 shrink-0">
+        <Button variant="ghost" size="md" onClick={onClose} disabled={receive.isPending || closeShortage.isPending}>
+          Cancelar
+        </Button>
+        <Button
+          variant="primary"
+          size="md"
+          loading={receive.isPending}
+          disabled={totalToReceive <= 0}
+          onClick={() => receive.mutate()}
+          className="font-black"
+        >
+          <CheckCircle2 className="size-4" /> Ingresar {totalToReceive} unidades
+        </Button>
+      </div>
+    </Modal>
+  );
+}
+
 function getExclusiveRanges(reorderPoint: number, safetyStock: number) {
   const okMin = Math.max(reorderPoint, safetyStock) + 1;
   const okText = `${okMin}+`;
@@ -406,7 +650,11 @@ function StockDetailDrawer({
           </h2>
           <div className="mt-1.5 flex items-center gap-2.5">
             <p className="text-[14px] font-bold text-ink-700">{item.presentation}</p>
-            <StatusChip label={statusLabels[item.status]} tone={statusTones[item.status]} />
+            {item.available <= 0 && item.incoming > 0 ? (
+              <StatusChip label="En camino" tone="info" />
+            ) : (
+              <StatusChip label={statusLabels[item.status]} tone={statusTones[item.status]} />
+            )}
           </div>
         </div>
         <button
@@ -426,10 +674,21 @@ function StockDetailDrawer({
               'rounded-2xl p-4 text-[13.5px] border font-medium leading-relaxed shadow-sm',
               item.status === 'low' && 'bg-amber-50 text-amber-950 border-amber-200',
               item.status === 'critical' && 'bg-rose-50 text-rose-950 border-rose-200',
-              item.status === 'out' && 'bg-red-50 text-red-950 border-red-200'
+              item.status === 'out' && (item.incoming > 0 ? 'bg-brand-50 text-brand-950 border-brand-200' : 'bg-red-50 text-red-950 border-red-200')
             )}
           >
-            {item.status === 'out' && (
+            {item.status === 'out' && item.incoming > 0 && (
+              <div className="flex items-start gap-2.5">
+                <PackageCheck className="size-5 shrink-0 text-brand-700 mt-0.5" />
+                <div>
+                  <p className="font-bold text-brand-950">En camino</p>
+                  <p className="text-[12.5px] text-brand-800 mt-0.5">
+                    Hay <strong>{item.incoming} {item.incoming === 1 ? 'unidad' : 'unidades'}</strong> en tránsito de compra. Al recibirlas en Inventario se sumarán al stock disponible.
+                  </p>
+                </div>
+              </div>
+            )}
+            {item.status === 'out' && item.incoming <= 0 && (
               <div className="flex items-start gap-2.5">
                 <AlertTriangle className="size-5 shrink-0 text-red-700 mt-0.5" />
                 <div>
@@ -822,6 +1081,8 @@ export default function InventoryPage() {
   // Purchases State
   const [purchasesPage, setPurchasesPage] = useState(1);
   const [expandedPurchases, setExpandedPurchases] = useState<Record<string, boolean>>({});
+  const [receivingPurchase, setReceivingPurchase] = useState<Purchase | null>(null);
+  const [unblockedNotice, setUnblockedNotice] = useState<Array<{ id: string; number: number }> | null>(null);
 
   // Movements Filter State
   const [movementFilter, setMovementFilter] = useState<'all' | 'sales' | 'purchases' | 'adjustments'>('all');
@@ -1107,14 +1368,27 @@ export default function InventoryPage() {
 
                       {/* Quantity available */}
                       <div>
-                        <span className={cn('text-[16px] font-black', item.available <= 0 ? 'text-red-700' : 'text-ink-950')}>
+                        <span
+                          className={cn(
+                            'text-[16px] font-black',
+                            item.available <= 0
+                              ? item.incoming > 0
+                                ? 'text-brand-700'
+                                : 'text-red-700'
+                              : 'text-ink-950'
+                          )}
+                        >
                           {item.available} u.
                         </span>
                       </div>
 
                       {/* Status Chip */}
                       <div>
-                        <StatusChip label={statusLabels[item.status]} tone={statusTones[item.status]} />
+                        {item.available <= 0 && item.incoming > 0 ? (
+                          <StatusChip label="En camino" tone="info" />
+                        ) : (
+                          <StatusChip label={statusLabels[item.status]} tone={statusTones[item.status]} />
+                        )}
                       </div>
 
                       {/* Chevron affordance */}
@@ -1182,6 +1456,25 @@ export default function InventoryPage() {
               <Plus className="size-4" /> Nuevo pedido
             </Button>
           </div>
+
+          {unblockedNotice && (
+            <div className="mb-4 flex items-center justify-between rounded-2xl bg-emerald-50 border border-emerald-200 p-4 text-emerald-950 shadow-sm">
+              <div className="flex items-center gap-3">
+                <CheckCircle2 className="size-5 text-emerald-600 shrink-0" />
+                <p className="text-sm font-bold">
+                  ¡Stock ingresado con éxito! Los pedidos {unblockedNotice.map((o) => `#${o.number}`).join(', ')} ahora tienen stock físico completo y están listos para empaque.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setUnblockedNotice(null)}
+                className="text-xs font-bold text-emerald-800 hover:text-emerald-950 px-2 py-1 rounded-lg"
+              >
+                Cerrar
+              </button>
+            </div>
+          )}
+
           {purchasesQuery.isPending ? <LoadingState label="Cargando pedidos al proveedor…" /> : null}
           {purchasesQuery.isError ? <ErrorState error={purchasesQuery.error} onRetry={() => void purchasesQuery.refetch()} /> : null}
 
@@ -1265,11 +1558,10 @@ export default function InventoryPage() {
                               <Button
                                 variant="secondary"
                                 size="sm"
-                                loading={receivePurchase.isPending && receivePurchase.variables === purchase.id}
-                                onClick={() => receivePurchase.mutate(purchase.id)}
+                                onClick={() => setReceivingPurchase(purchase)}
                                 className="font-bold text-xs rounded-xl min-h-9 px-4"
                               >
-                                <CheckCircle2 className="size-4 text-emerald-600" /> Marcar como recibido
+                                <CheckCircle2 className="size-4 text-emerald-600" /> Recibir mercadería
                               </Button>
                             ) : (
                               <span className="inline-flex items-center gap-1.5 text-xs font-black text-emerald-700 bg-emerald-50 border border-emerald-200/60 px-3 py-1.5 rounded-xl">
@@ -1297,7 +1589,9 @@ export default function InventoryPage() {
                                   <div>
                                     <p className="font-bold text-ink-950">{item.productName}</p>
                                     <p className="text-xs font-semibold text-ink-600">
-                                      {item.quantity} {item.quantity === 1 ? 'unidad' : 'unidades'}
+                                      {item.quantity} {item.quantity === 1 ? 'unidad pedida' : 'unidades pedidas'}
+                                      {item.receivedQuantity > 0 ? ` · ${item.receivedQuantity} recibidas` : ''}
+                                      {item.shortageQuantity > 0 ? ` · ${item.shortageQuantity} faltante` : ''}
                                     </p>
                                   </div>
                                   {can(user, 'view_financials') && (
@@ -1583,6 +1877,15 @@ export default function InventoryPage() {
 
       {/* Modal: Nueva Compra */}
       {showPurchaseForm ? <PurchaseFormModal onClose={() => setShowPurchaseForm(false)} /> : null}
+
+      {/* Modal: Recepción de Compra */}
+      {receivingPurchase ? (
+        <ReceivePurchaseModal
+          purchase={receivingPurchase}
+          onClose={() => setReceivingPurchase(null)}
+          onUnblocked={(orders) => setUnblockedNotice(orders)}
+        />
+      ) : null}
     </div>
   );
 }

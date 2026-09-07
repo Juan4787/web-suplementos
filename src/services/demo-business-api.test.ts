@@ -107,9 +107,18 @@ describe('demoBusinessApi lifecycle and domain guarantees', () => {
       reorderPoint: 10,
       safetyStock: 2
     });
-    inventory = await demoBusinessApi.listInventory();
-    item = inventory.find((i) => i.id === created.id);
-    expect(item?.status).toBe('ok');
+    // Delete product successfully
+    await demoBusinessApi.deleteProduct(created.id);
+    const updatedProducts = await demoBusinessApi.listAdminProducts();
+    expect(updatedProducts.find((p) => p.id === created.id)).toBeUndefined();
+  });
+
+  it('rejects deleting a product that has associated orders', async () => {
+    const products = await demoBusinessApi.listAdminProducts();
+    const productWithOrders = products[0]!;
+    await expect(demoBusinessApi.deleteProduct(productWithOrders.id)).rejects.toThrow(
+      'No se puede eliminar un producto que tiene pedidos asociados'
+    );
   });
 
   it('confirms imported WhatsApp order, reserves stock, and rejects duplicate protocol ID', async () => {
@@ -352,7 +361,7 @@ describe('demoBusinessApi lifecycle and domain guarantees', () => {
 
     // Receiving purchase
     const received = await demoBusinessApi.receivePurchase(purchase.id);
-    expect(received.state).toBe('received');
+    expect(received.purchase.state).toBe('received');
 
     // Product stock should have increased
     const afterProducts = await demoBusinessApi.listAdminProducts();

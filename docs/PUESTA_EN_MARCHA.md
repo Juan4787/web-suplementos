@@ -95,8 +95,8 @@ El hosting elegido es Cloudflare Worker + Static Assets. La fuente de verdad es 
 ```text
 perfil: impulso
 cuenta: app de suplementos
-Worker: impulso
-URL: https://impulso.suplementos.workers.dev
+Worker: tienda
+URL: https://tienda.desuplementos.workers.dev
 ```
 
 Usar Node `24.20.0` y ejecutar en orden:
