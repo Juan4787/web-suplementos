@@ -9,7 +9,7 @@ Prioridad acordada: uso diario de Natalia (dueña) y Florencia (personal), venta
 - **Datos:** 25 productos, 23 publicados. Tras confirmación expresa del usuario se retiraron tres entradas ficticias: dos «Item Test 41» y una «Item Test 45». El resto del catálogo, precios, descripciones, costos, imágenes y configuración se conservaron exactamente; no se cambió su visibilidad.
 - **Operaciones ficticias retiradas:** cero pedidos, compras, clientes, movimientos y reservas. Nunca hubo clientes reales, según lo informado por el usuario.
 - **Stock:** todas las cantidades físicas y reservadas en cero. Falta recibir y cargar el inventario real. No tratar los productos sin stock como disponibles para vender.
-- **Frontend:** correcciones en el árbol local; no se hizo commit, push ni publicación del Worker durante esta auditoría. Los HTTP 200 de la URL pública corresponden a la versión ya existente.
+- **Frontend publicado:** commit `c0c1b5aa6b1116578c2298769055b3d87a70cdf0` está en `origin/main` y el Worker `tienda` quedó publicado con la versión `4641aa0f-25da-4166-ac66-62c7646ab0dc`.
 
 ## Correcciones del uso cotidiano
 
@@ -54,6 +54,7 @@ La corrección de renovación de sesión sigue la advertencia oficial de [Supaba
 - Build final: `REQUIRE_SUPABASE_ENV=1 NODE_OPTIONS=--max-old-space-size=768 pnpm build`, aprobado; incluye TypeScript. Log `output/audit/build-final.log`.
 - Dependencias: `pnpm audit --audit-level=low`, **sin vulnerabilidades conocidas**. Se actualizó `fflate` de 0.8.2 a 0.8.3, incluida la resolución que utiliza la exportación Excel; [el proyecto documenta la corrección de lectura Zip64](https://github.com/101arrowz/fflate/releases/tag/v0.8.3). Se verificó nuevamente el libro exportado.
 - Acceso real con Florencia usando el build local conectado a Supabase: ingreso, navegación por pedidos/clientes/inventario, recarga de ruta interna y cierre de sesión aprobados. Una ruta privada después de salir vuelve al ingreso. En 375 px, Pedidos no presenta desborde horizontal. No se crearon operaciones remotas para esta comprobación.
+- Smoke público posterior al deploy: `/`, `/app`, `/app/pedidos` y `/api/health` respondieron correctamente; las páginas HTML contienen el asset de esta compilación y la API devolvió `{"status":"ok"}`. El deploy fue realizado sin modificar operaciones comerciales.
 - El empaquetado `NODE_OPTIONS=--max-old-space-size=768 pnpm worker:deploy:dry` aprobó para `tienda`, perfil `impulso`, sin publicar. Recompiló y conservó las huellas de todos los archivos del manifest; Worker 643,36 KiB (104,44 KiB gzip). Log `output/audit/worker-package-final.log`.
 - La repetición con Florencia sobre el build final confirmó cero solicitudes fallidas, cero consultas innecesarias a compras, ausencia de los productos «Item Test», mensaje inicial de Clientes, recarga y cierre de sesión. Log `output/audit/staff-final-browser.log`.
 - El paquete generado no contiene coincidencias con las credenciales privadas del entorno. Manifest local: `output/audit/artifact-manifest.json`, 179 archivos, 33.459.214 bytes; SHA-256 de `index.html`: `e965e272cc4c9e124ebce20a644fc94e25e10811e8702e5e5a8e41057fcccf4e`. Huella del listado ordenado de archivos: `3c0a935a83ae91d143718606f3c28f3902a2137a9e6d56c72bf019311ab5ddaa`.
@@ -96,6 +97,6 @@ Estas huellas se usan para detectar cambios, no como garantía criptográfica de
 
 ## Límite de esta entrega
 
-Falta recibir el stock real y publicar el frontend corregido. No se certificó un cobro bancario ni el envío efectivo de un mensaje a un cliente: WhatsApp se interceptó en las pruebas y los datos comerciales de pago solo se verificaron por formato. La IA sigue siendo auxiliar; no se renovó aquí su certificación de respuestas factuales en producción. Una indisponibilidad de IA no debe impedir pedidos, inventario ni ventas.
+Falta recibir el stock real y cargarlo antes de habilitar ventas con existencias. No se certificó un cobro bancario ni el envío efectivo de un mensaje a un cliente: WhatsApp se interceptó en las pruebas y los datos comerciales de pago solo se verificaron por formato. La IA sigue siendo auxiliar; no se renovó aquí su certificación de respuestas factuales en producción. Una indisponibilidad de IA no debe impedir pedidos, inventario ni ventas.
 
 No se promete ausencia absoluta de errores. La evidencia cubre los recorridos normales revisados y sus regresiones concretas; grandes volúmenes, una restauración completa y fallos de red prolongados no quedaron certificados por esta ronda.
