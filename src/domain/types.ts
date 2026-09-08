@@ -256,6 +256,7 @@ export type ProductPerformance = {
   name: string;
   units: number;
   revenueCents: number;
+  costCents?: number;
   estimatedMarginCents: number;
 };
 

@@ -114,12 +114,14 @@ const buildProductPerformance = (orders: Order[]): ProductPerformance[] => {
         name: item.productName,
         units: 0,
         revenueCents: 0,
+        costCents: 0,
         estimatedMarginCents: 0
       };
+      const itemCost = (item.unitCostCents ?? 0) * item.quantity;
       current.units += item.quantity;
       current.revenueCents += item.subtotalCents;
-      current.estimatedMarginCents +=
-        item.subtotalCents - (item.unitCostCents ?? 0) * item.quantity;
+      current.costCents = (current.costCents ?? 0) + itemCost;
+      current.estimatedMarginCents += item.subtotalCents - itemCost;
       products.set(item.productId, current);
     }
   }

@@ -157,20 +157,14 @@ export default function SalesPage() {
     });
   }, [analyticsQuery.data?.topProducts, analyticsQuery.data?.revenueCents, productSortField, productSortAsc]);
 
-  // Reconciliación matemática: la suma de la ganancia por producto coincide exactamente con la Ganancia Estimada global
+  // Ganancia real por producto: consume el margen snapshot real de cada producto calculado por la analítica
   const gainByProduct = useMemo(() => {
     const raw = analyticsQuery.data?.topProducts ?? [];
-    const totalRev = analyticsQuery.data?.revenueCents ?? 0;
-    const totalCost = analyticsQuery.data?.costCents ?? 0;
-    const totalTax = analyticsQuery.data?.taxCents ?? 0;
-
-    if (totalRev <= 0) return [];
+    if (raw.length === 0) return [];
 
     return raw.map((p) => {
-      const share = p.revenueCents / totalRev;
-      const costCents = Math.round(totalCost * share);
-      const taxCents = Math.round(totalTax * share);
-      const gainCents = p.revenueCents - costCents - taxCents;
+      const gainCents = p.estimatedMarginCents;
+      const costCents = p.costCents ?? Math.max(0, p.revenueCents - p.estimatedMarginCents);
       const gainPct = p.revenueCents > 0 ? (gainCents / p.revenueCents) * 100 : 0;
       return {
         ...p,
@@ -180,7 +174,7 @@ export default function SalesPage() {
         gainPct
       };
     }).sort((a, b) => b.gainCents - a.gainCents);
-  }, [analyticsQuery.data]);
+  }, [analyticsQuery.data?.topProducts]);
 
   return (
     <RoleGate capability="view_financials">
