@@ -29,6 +29,12 @@ export type Page<T> = {
   total: number;
 };
 
+export type PurchasesPage = Page<Purchase> & {
+  pendingTotal?: number;
+  receivedTotal?: number;
+  filteredTotal?: number;
+};
+
 export type ProductUpdate = {
   id?: string;
   sku: string;
@@ -46,14 +52,25 @@ export type ProductUpdate = {
   imageAlt: string;
   published: boolean;
   active: boolean;
-  featured: boolean;
+  featured?: boolean;
 };
 
+export interface UpdateStockThresholdsInput {
+  productId: string;
+  reorderPoint: number;
+  safetyStock: number;
+  leadTimeDays?: number | null;
+}
+
 export type PurchaseCreateInput = {
-  supplierName: string;
-  expectedAt: string | null;
-  notes: string | null;
-  items: Array<{ productId: string; quantity: number; unitCostCents: number }>;
+  supplierName?: string;
+  expectedAt?: string | null;
+  notes?: string | null;
+  items: Array<{
+    productId: string;
+    quantity: number;
+    unitCostCents: number;
+  }>;
 };
 
 export type AIAnswerEvidence = {
@@ -69,13 +86,6 @@ export type AIAnswer = {
   fallback: boolean;
   usedTools: string[];
   evidence: AIAnswerEvidence[];
-};
-
-export type UpdateStockThresholdsInput = {
-  productId: string;
-  reorderPoint: number;
-  safetyStock: number;
-  leadTimeDays?: number;
 };
 
 export interface BusinessApi {
@@ -97,11 +107,11 @@ export interface BusinessApi {
   listPaidOrders(page?: number, pageSize?: number): Promise<Page<Order>>;
   confirmImportedOrder(input: ImportOrderInput): Promise<Order>;
   transitionOrder(orderId: string, action: OrderAction): Promise<Order>;
-  listPurchases(page?: number, pageSize?: number): Promise<Page<Purchase>>;
+  listPurchases(page?: number, pageSize?: number, state?: 'ordered' | 'received' | 'all'): Promise<PurchasesPage>;
   createPurchase(input: PurchaseCreateInput): Promise<Purchase>;
   receivePurchase(purchaseId: string, items?: ReceivePurchaseItemInput[], operationId?: string): Promise<ReceivePurchaseResult>;
   closePurchaseWithShortage(purchaseId: string, notes?: string): Promise<ReceivePurchaseResult>;
-  listMovements(page?: number, pageSize?: number): Promise<Page<StockMovement>>;
+  listMovements(page?: number, pageSize?: number, search?: string, filter?: 'all' | 'sales' | 'purchases' | 'adjustments'): Promise<Page<StockMovement>>;
   listCustomers(page?: number, pageSize?: number, search?: string): Promise<Page<Customer>>;
   getAnalytics(from: string, to: string): Promise<AnalyticsSummary>;
   listInflationIndices(): Promise<InflationIndex[]>;

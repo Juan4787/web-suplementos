@@ -311,6 +311,7 @@ export const demoBusinessApi: BusinessApi = {
     }
     const created: AdminProduct = {
       ...input,
+      featured: input.featured ?? false,
       id: nextUuid(),
       onHand: 0,
       reserved: 0,
@@ -644,12 +645,42 @@ export const demoBusinessApi: BusinessApi = {
     return latency(order);
   },
 
-  async listPurchases(page = 1, pageSize = 20) {
-    return latency(paginate(state.purchases, page, pageSize));
+  async listPurchases(page = 1, pageSize = 20, stateFilter = 'all') {
+    const all = state.purchases;
+    const filtered = stateFilter === 'all'
+      ? all
+      : all.filter((p) => p.state === stateFilter);
+    const paginated = paginate(filtered, page, pageSize);
+    return latency({
+      ...paginated,
+      total: all.length,
+      pendingTotal: all.filter((p) => p.state === 'ordered').length,
+      receivedTotal: all.filter((p) => p.state === 'received').length,
+      filteredTotal: filtered.length
+    });
   },
 
   async createPurchase(input: PurchaseCreateInput) {
-    const items = input.items.map((item) => {
+    const consolidatedMap = new Map<string, { quantity: number; totalCost: number }>();
+    for (const item of input.items) {
+      const existing = consolidatedMap.get(item.productId);
+      if (existing) {
+        existing.quantity += item.quantity;
+        existing.totalCost += item.quantity * item.unitCostCents;
+      } else {
+        consolidatedMap.set(item.productId, {
+          quantity: item.quantity,
+          totalCost: item.quantity * item.unitCostCents
+        });
+      }
+    }
+    const consolidatedItems = Array.from(consolidatedMap.entries()).map(([productId, data]) => ({
+      productId,
+      quantity: data.quantity,
+      unitCostCents: Math.round(data.totalCost / (data.quantity || 1))
+    }));
+
+    const items = consolidatedItems.map((item) => {
       const product = state.products.find((candidate) => candidate.id === item.productId);
       if (!product) throw new AppError('business', 'Uno de los productos ya no está disponible.');
       return {
@@ -669,13 +700,13 @@ export const demoBusinessApi: BusinessApi = {
       supplierName: input.supplierName?.trim() || 'Proveedor no informado',
       state: 'ordered',
       orderedAt: now,
-      expectedAt: input.expectedAt,
+      expectedAt: input.expectedAt ?? null,
       receivedAt: null,
       totalCostCents: items.reduce(
         (sum, item) => sum + item.quantity * item.unitCostCents,
         0
       ),
-      notes: input.notes,
+      notes: input.notes ?? null,
       items
     };
     for (const item of items) {
@@ -803,8 +834,25 @@ export const demoBusinessApi: BusinessApi = {
     return latency({ purchase, unblockedOrders: [] });
   },
 
-  async listMovements(page = 1, pageSize = 30) {
-    return latency(paginate(state.movements, page, pageSize));
+  async listMovements(page = 1, pageSize = 30, search = '', filter = 'all') {
+    let list = state.movements;
+    if (search) {
+      const term = search.toLowerCase();
+      list = list.filter(
+        (m) =>
+          m.productName.toLowerCase().includes(term) ||
+          m.reason.toLowerCase().includes(term) ||
+          m.createdByName.toLowerCase().includes(term)
+      );
+    }
+    if (filter === 'sales') {
+      list = list.filter((m) => m.kind === 'sale' || m.kind === 'reservation' || m.kind === 'reservation_release');
+    } else if (filter === 'purchases') {
+      list = list.filter((m) => m.kind === 'purchase_received');
+    } else if (filter === 'adjustments') {
+      list = list.filter((m) => m.kind === 'adjustment' || m.kind === 'return');
+    }
+    return latency(paginate(list, page, pageSize));
   },
 
   async listCustomers(page = 1, pageSize = 30, search?: string) {

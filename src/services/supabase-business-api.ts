@@ -10,11 +10,12 @@ import type {
   Purchase,
   QuoteCartEtaResult,
   ReceivePurchaseResult,
+  StockMovement,
   StorefrontProduct,
   StoreSettings
 } from '@/domain/types';
 import { getSupabaseClient } from '@/lib/supabase';
-import type { AIAnswer, BusinessApi, Page } from './business-api';
+import type { AIAnswer, BusinessApi, Page, PurchasesPage } from './business-api';
 import { requestBusinessAI } from './business-ai-client';
 
 type RpcArgs = Record<string, unknown>;
@@ -282,13 +283,17 @@ export const supabaseBusinessApi: BusinessApi = {
     rpc<Order>('confirm_imported_order', { p_order: input }),
   transitionOrder: (orderId, action) =>
     rpc<Order>('transition_order', { p_order_id: orderId, p_action: action }),
-  listPurchases: (page = 1, pageSize = 20) =>
-    rpc<Page<Purchase>>('list_purchases', { p_page: page, p_page_size: pageSize }),
+  listPurchases: (page = 1, pageSize = 20, state = 'all') =>
+    rpc<PurchasesPage>('list_purchases', {
+      p_page: page,
+      p_page_size: pageSize,
+      p_state: state === 'all' ? null : state
+    }),
   createPurchase: (input) => rpc<Purchase>('create_purchase', { p_purchase: input }),
   receivePurchase: async (purchaseId, items, operationId) => {
     let itemsPayload = items;
     if (!itemsPayload || itemsPayload.length === 0) {
-      const purchasePage = await rpc<Page<Purchase>>('list_purchases', { p_page: 1, p_page_size: 100 });
+      const purchasePage = await rpc<PurchasesPage>('list_purchases', { p_page: 1, p_page_size: 100 });
       const current = purchasePage.items.find((p) => p.id === purchaseId);
       if (current) {
         itemsPayload = current.items.map((pi) => ({
@@ -310,8 +315,13 @@ export const supabaseBusinessApi: BusinessApi = {
       p_purchase_id: purchaseId,
       p_notes: notes ?? 'Cerrado con faltante definitivo de distribuidor'
     }),
-  listMovements: (page = 1, pageSize = 30) =>
-    rpc('list_stock_movements', { p_page: page, p_page_size: pageSize }),
+  listMovements: (page = 1, pageSize = 30, search = '', filter = 'all') =>
+    rpc<Page<StockMovement>>('list_stock_movements', {
+      p_page: page,
+      p_page_size: pageSize,
+      p_search: search || null,
+      p_filter: filter === 'all' ? null : filter
+    }),
   listCustomers: (page = 1, pageSize = 30, search?: string) =>
     rpc('list_customers', { p_page: page, p_page_size: pageSize, p_search: search || null }),
   getAnalytics: (from, to) =>

@@ -76,12 +76,34 @@ function PurchaseFormModal({ onClose }: { onClose: () => void }) {
   const [lines, setLines] = useState<DraftLine[]>([{ productId: '', quantity: 1, unitCostPesos: 0 }]);
   const productsQuery = useBusinessQuery({ queryKey: queryKeys.products, queryFn: (api) => api.listAdminProducts() });
   const create = useMutation({
-    mutationFn: async () => (await getBusinessApi()).createPurchase({
-      supplierName: supplier.trim() || 'Sin proveedor',
-      expectedAt: expectedAt ? new Date(`${expectedAt}T12:00:00-03:00`).toISOString() : null,
-      notes: notes.trim() || null,
-      items: lines.map((line) => ({ productId: line.productId, quantity: line.quantity, unitCostCents: pesosToCents(line.unitCostPesos) }))
-    }),
+    mutationFn: async () => {
+      const consolidated = new Map<string, { quantity: number; totalCostPesos: number }>();
+      for (const line of lines) {
+        if (!line.productId || line.quantity <= 0) continue;
+        const current = consolidated.get(line.productId);
+        if (current) {
+          current.quantity += line.quantity;
+          current.totalCostPesos += line.quantity * (line.unitCostPesos || 0);
+        } else {
+          consolidated.set(line.productId, {
+            quantity: line.quantity,
+            totalCostPesos: line.quantity * (line.unitCostPesos || 0)
+          });
+        }
+      }
+      const mergedItems = Array.from(consolidated.entries()).map(([productId, data]) => ({
+        productId,
+        quantity: data.quantity,
+        unitCostCents: pesosToCents(data.totalCostPesos / (data.quantity || 1))
+      }));
+
+      return (await getBusinessApi()).createPurchase({
+        supplierName: supplier.trim() || 'Sin proveedor',
+        expectedAt: expectedAt ? new Date(`${expectedAt}T12:00:00-03:00`).toISOString() : null,
+        notes: notes.trim() || null,
+        items: mergedItems
+      });
+    },
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: queryKeys.inventory }),
@@ -178,11 +200,14 @@ function PurchaseFormModal({ onClose }: { onClose: () => void }) {
                       }}
                     >
                       <option value="">Seleccionar producto…</option>
-                      {productsQuery.data?.filter((p) => p.active !== false).map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.name} {p.presentation ? `(${p.presentation})` : ''}
-                        </option>
-                      ))}
+                      {productsQuery.data?.filter((p) => p.active !== false).map((p) => {
+                        const isDuplicate = lines.some((l, i) => i !== index && l.productId === p.id);
+                        return (
+                          <option key={p.id} value={p.id} disabled={isDuplicate}>
+                            {p.name} {p.presentation ? `(${p.presentation})` : ''} {isDuplicate ? '— (Ya agregado)' : ''}
+                          </option>
+                        );
+                      })}
                     </Select>
                   </div>
                   {lines.length > 1 && (
@@ -562,6 +587,7 @@ function StockDetailDrawer({
   onOpenAdjust: (item: InventoryItem) => void;
   onNavigateToMovements: () => void;
 }) {
+  const { user } = useAuth();
   const queryClient = useQueryClient();
   const [reorderPointStr, setReorderPointStr] = useState(
     item.reorderPoint > 0 ? String(item.reorderPoint) : ''
@@ -1038,15 +1064,17 @@ function StockDetailDrawer({
           )}
         </div>
 
-        {/* 8. ACCIÓN DIRECTA (Botón con área táctil cómoda de 44px de alto) */}
-        <Button
-          variant="secondary"
-          size="sm"
-          className="w-full justify-center text-xs font-bold min-h-11"
-          onClick={() => onOpenAdjust(item)}
-        >
-          <SlidersHorizontal className="size-4" /> Corregir stock
-        </Button>
+        {/* 8. ACCIÓN DIRECTA (Solo Dueña con permiso de ajuste) */}
+        {can(user, 'adjust_stock') ? (
+          <Button
+            variant="secondary"
+            size="sm"
+            className="w-full justify-center text-xs font-bold min-h-11"
+            onClick={() => onOpenAdjust(item)}
+          >
+            <SlidersHorizontal className="size-4" /> Corregir stock
+          </Button>
+        ) : null}
       </div>
 
       <div className="mt-8 flex justify-end border-t border-ink-950/8 pt-4">
@@ -1075,18 +1103,26 @@ export default function InventoryPage() {
   const [reason, setReason] = useState('');
   const [showPurchaseForm, setShowPurchaseForm] = useState(false);
 
-  // Movements State
-  const [movementPage, setMovementPage] = useState(1);
-
   // Purchases State
   const [purchasesPage, setPurchasesPage] = useState(1);
+  const [purchaseFilter, setPurchaseFilter] = useState<'pending' | 'received' | 'all'>('pending');
   const [expandedPurchases, setExpandedPurchases] = useState<Record<string, boolean>>({});
   const [receivingPurchase, setReceivingPurchase] = useState<Purchase | null>(null);
   const [unblockedNotice, setUnblockedNotice] = useState<Array<{ id: string; number: number }> | null>(null);
 
   // Movements Filter State
+  const [movementPage, setMovementPage] = useState(1);
   const [movementFilter, setMovementFilter] = useState<'all' | 'sales' | 'purchases' | 'adjustments'>('all');
   const [movementSearch, setMovementSearch] = useState('');
+  const [debouncedMovementSearch, setDebouncedMovementSearch] = useState('');
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedMovementSearch(movementSearch.trim());
+      setMovementPage(1);
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [movementSearch]);
 
   // Queries
   const inventoryQuery = useBusinessQuery({
@@ -1095,13 +1131,18 @@ export default function InventoryPage() {
   });
 
   const movementsQuery = useBusinessQuery({
-    queryKey: queryKeys.movements(movementPage),
-    queryFn: (api) => api.listMovements(movementPage, 25)
+    queryKey: queryKeys.movements(movementPage, debouncedMovementSearch, movementFilter),
+    queryFn: (api) => api.listMovements(movementPage, 25, debouncedMovementSearch, movementFilter)
   });
 
   const purchasesQuery = useBusinessQuery({
-    queryKey: queryKeys.purchases(purchasesPage),
-    queryFn: (api) => api.listPurchases(purchasesPage, 15)
+    queryKey: queryKeys.purchases(purchasesPage, purchaseFilter),
+    queryFn: (api) =>
+      api.listPurchases(
+        purchasesPage,
+        15,
+        purchaseFilter === 'all' ? 'all' : purchaseFilter === 'pending' ? 'ordered' : 'received'
+      )
   });
 
   // Stock Adjustment Mutation
@@ -1162,29 +1203,11 @@ export default function InventoryPage() {
       });
   }, [inventoryQuery.data, stockSearch, stockFilter]);
 
-  const [purchaseFilter, setPurchaseFilter] = useState<'pending' | 'received' | 'all'>('pending');
-
   const allPurchases = useMemo(() => purchasesQuery.data?.items ?? [], [purchasesQuery.data?.items]);
-
-  const pendingPurchasesCount = useMemo(
-    () => allPurchases.filter((purchase) => purchase.state === 'ordered').length,
-    [allPurchases]
-  );
-
-  const receivedPurchasesCount = useMemo(
-    () => allPurchases.filter((purchase) => purchase.state === 'received').length,
-    [allPurchases]
-  );
-
-  const totalPurchasesCount = allPurchases.length;
-
-  const filteredPurchases = useMemo(() => {
-    return allPurchases.filter((purchase) => {
-      if (purchaseFilter === 'pending') return purchase.state === 'ordered';
-      if (purchaseFilter === 'received') return purchase.state === 'received';
-      return true;
-    });
-  }, [allPurchases, purchaseFilter]);
+  const pendingPurchasesCount = purchasesQuery.data?.pendingTotal ?? 0;
+  const receivedPurchasesCount = purchasesQuery.data?.receivedTotal ?? 0;
+  const totalPurchasesCount = purchasesQuery.data?.total ?? 0;
+  const filteredPurchases = allPurchases;
 
   const attentionCount = useMemo(
     () => (inventoryQuery.data ?? []).filter((i) => i.status !== 'ok').length,
@@ -1196,33 +1219,7 @@ export default function InventoryPage() {
     [inventoryQuery.data]
   );
 
-  const filteredMovements = useMemo(() => {
-    const raw = movementsQuery.data?.items ?? [];
-    return raw
-      .filter((mov) => {
-        if (movementSearch) {
-          const term = movementSearch.toLowerCase();
-          const matches =
-            mov.productName.toLowerCase().includes(term) ||
-            mov.reason.toLowerCase().includes(term) ||
-            mov.createdByName.toLowerCase().includes(term);
-          if (!matches) return false;
-        }
-        if (movementFilter === 'sales') {
-          return (
-            mov.kind === 'sale' || mov.kind === 'reservation' || mov.kind === 'reservation_release'
-          );
-        }
-        if (movementFilter === 'purchases') {
-          return mov.kind === 'purchase_received';
-        }
-        if (movementFilter === 'adjustments') {
-          return mov.kind === 'adjustment' || mov.kind === 'return';
-        }
-        return true;
-      })
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-  }, [movementsQuery.data?.items, movementFilter, movementSearch]);
+  const filteredMovements = useMemo(() => movementsQuery.data?.items ?? [], [movementsQuery.data?.items]);
 
   return (
     <div className="page-enter">
@@ -1421,7 +1418,10 @@ export default function InventoryPage() {
                       ? 'bg-brand-600 text-white shadow-sm'
                       : 'border border-ink-950/12 bg-white text-ink-700 hover:border-ink-950/25'
                   )}
-                  onClick={() => setPurchaseFilter('pending')}
+                  onClick={() => {
+                    setPurchaseFilter('pending');
+                    setPurchasesPage(1);
+                  }}
                 >
                   Pendientes ({pendingPurchasesCount})
                 </button>
@@ -1433,7 +1433,10 @@ export default function InventoryPage() {
                       ? 'bg-brand-600 text-white shadow-sm'
                       : 'border border-ink-950/12 bg-white text-ink-700 hover:border-ink-950/25'
                   )}
-                  onClick={() => setPurchaseFilter('received')}
+                  onClick={() => {
+                    setPurchaseFilter('received');
+                    setPurchasesPage(1);
+                  }}
                 >
                   Recibidos ({receivedPurchasesCount})
                 </button>
@@ -1445,7 +1448,10 @@ export default function InventoryPage() {
                       ? 'bg-brand-600 text-white shadow-sm'
                       : 'border border-ink-950/12 bg-white text-ink-700 hover:border-ink-950/25'
                   )}
-                  onClick={() => setPurchaseFilter('all')}
+                  onClick={() => {
+                    setPurchaseFilter('all');
+                    setPurchasesPage(1);
+                  }}
                 >
                   Todos ({totalPurchasesCount})
                 </button>
@@ -1616,17 +1622,22 @@ export default function InventoryPage() {
                 </div>
               ) : null}
 
-              {purchasesQuery.data.total > purchasesQuery.data.pageSize ? (
-                <nav className="mt-4 flex items-center justify-between rounded-xl border border-ink-950/8 bg-white p-3">
-                  <Button variant="ghost" size="sm" disabled={purchasesPage === 1} onClick={() => setPurchasesPage((p) => Math.max(1, p - 1))}>
-                    <ChevronLeft className="size-4" /> Anterior
-                  </Button>
-                  <span className="text-xs font-bold text-ink-600">Página {purchasesPage} de {Math.ceil(purchasesQuery.data.total / purchasesQuery.data.pageSize)}</span>
-                  <Button variant="ghost" size="sm" disabled={purchasesPage * purchasesQuery.data.pageSize >= purchasesQuery.data.total} onClick={() => setPurchasesPage((p) => p + 1)}>
-                    Siguiente <ChevronRight className="size-4" />
-                  </Button>
-                </nav>
-              ) : null}
+              {(() => {
+                const totalFiltered = purchasesQuery.data.filteredTotal ?? purchasesQuery.data.total;
+                const totalPages = Math.max(1, Math.ceil(totalFiltered / purchasesQuery.data.pageSize));
+                if (totalFiltered <= purchasesQuery.data.pageSize) return null;
+                return (
+                  <nav className="mt-4 flex items-center justify-between rounded-xl border border-ink-950/8 bg-white p-3">
+                    <Button variant="ghost" size="sm" disabled={purchasesPage === 1} onClick={() => setPurchasesPage((p) => Math.max(1, p - 1))}>
+                      <ChevronLeft className="size-4" /> Anterior
+                    </Button>
+                    <span className="text-xs font-bold text-ink-600">Página {purchasesPage} de {totalPages}</span>
+                    <Button variant="ghost" size="sm" disabled={purchasesPage >= totalPages} onClick={() => setPurchasesPage((p) => p + 1)}>
+                      Siguiente <ChevronRight className="size-4" />
+                    </Button>
+                  </nav>
+                );
+              })()}
             </>
           ) : null}
         </section>
@@ -1648,7 +1659,10 @@ export default function InventoryPage() {
                     ? 'bg-brand-600 text-white shadow-sm'
                     : 'border border-ink-950/12 bg-white text-ink-700 hover:border-ink-950/25'
                 )}
-                onClick={() => setMovementFilter('all')}
+                onClick={() => {
+                  setMovementFilter('all');
+                  setMovementPage(1);
+                }}
               >
                 Todos
               </button>
@@ -1660,7 +1674,10 @@ export default function InventoryPage() {
                     ? 'bg-brand-600 text-white shadow-sm'
                     : 'border border-ink-950/12 bg-white text-ink-700 hover:border-ink-950/25'
                 )}
-                onClick={() => setMovementFilter('sales')}
+                onClick={() => {
+                  setMovementFilter('sales');
+                  setMovementPage(1);
+                }}
               >
                 Ventas
               </button>
@@ -1672,7 +1689,10 @@ export default function InventoryPage() {
                     ? 'bg-brand-600 text-white shadow-sm'
                     : 'border border-ink-950/12 bg-white text-ink-700 hover:border-ink-950/25'
                 )}
-                onClick={() => setMovementFilter('purchases')}
+                onClick={() => {
+                  setMovementFilter('purchases');
+                  setMovementPage(1);
+                }}
               >
                 Compras
               </button>
@@ -1684,7 +1704,10 @@ export default function InventoryPage() {
                     ? 'bg-brand-600 text-white shadow-sm'
                     : 'border border-ink-950/12 bg-white text-ink-700 hover:border-ink-950/25'
                 )}
-                onClick={() => setMovementFilter('adjustments')}
+                onClick={() => {
+                  setMovementFilter('adjustments');
+                  setMovementPage(1);
+                }}
               >
                 Ajustes
               </button>
