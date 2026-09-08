@@ -1,88 +1,51 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 
-test.describe('Pilar 3 y 4: Ciclo de Vida del Pedido y Cancelación', () => {
-  test('3.1: Ciclo completo: Preparar -> Listo -> Cobrar -> Entregar (descuenta stock físico)', async ({ page }) => {
-    await page.goto('/app/pedidos');
+async function createDailyOrder(page: Page, customer: string) {
+  await page.goto('/app/pedidos/nuevo');
+  // This suite only writes to the browser's disposable demo.
+  await expect(page.getByText('DEMO', { exact: true }).filter({ visible: true }).first()).toBeVisible();
+  await page.getByPlaceholder('Buscar creatina, proteína, colágeno, SKU…').fill('Creatina');
+  await page.getByRole('button', { name: 'Agregar', exact: true }).click();
+  await page.getByPlaceholder('Ej. Marta Gómez').fill(customer);
+  await page.getByRole('button', { name: 'Confirmar pedido manual' }).click();
+  await page.getByRole('link', { name: /Ver pedido #\d+ en la lista/ }).click();
+  const order = page.locator('article').filter({ has: page.getByRole('heading', { name: customer, exact: true }) });
+  await expect(order.getByRole('button', { name: 'Marcar como cobrado' })).toBeVisible();
+  return order;
+}
 
-    // Abre el primer pedido disponible en pendientes
-    const orderCard = page.locator('article').first();
-    await expect(orderCard).toBeVisible();
+async function expectStock(page: Page, onHand: number, reserved: number) {
+  const menu = page.getByRole('button', { name: 'Abrir navegación' });
+  if (await menu.isVisible()) await menu.click();
+  await page.getByRole('link', { name: 'Inventario', exact: true }).filter({ visible: true }).click();
+  await page.getByRole('button', { name: /Creatina Monohidratada.*u\./ }).click();
+  const drawer = page.getByRole('dialog', { name: 'Creatina Monohidratada' });
+  await expect(drawer.getByText('Total', { exact: true }).locator('..')).toHaveText(`Total${onHand}u.`);
+  await expect(drawer.getByText('Reservado', { exact: true }).locator('..')).toHaveText(`Reservado${reserved}u.`);
+}
 
-    // Expande el acordeón del pedido
-    await orderCard.locator('button[aria-expanded]').first().click();
-
-    // 1. Cobrar si está pendiente
-    const payBtn = orderCard.getByRole('button', { name: /marcar como cobrado/i });
-    if (await payBtn.isVisible()) {
-      await payBtn.click();
-      await page.waitForTimeout(400);
-    }
-
-    // 2. Empezar a preparar si está pendiente
-    const prepBtn = orderCard.getByRole('button', { name: /empezar a preparar/i });
-    if (await prepBtn.isVisible()) {
-      await prepBtn.click();
-      await page.waitForTimeout(400);
-    }
-
-    // 3. Marcar como listo
-    const readyBtn = orderCard.getByRole('button', { name: /marcar como listo/i });
-    if (await readyBtn.isVisible()) {
-      await readyBtn.click();
-      await page.waitForTimeout(400);
-    }
-
-    // 4. Marcar como enviado si corresponde
-    const shipBtn = orderCard.getByRole('button', { name: /marcar como enviado/i });
-    if (await shipBtn.isVisible()) {
-      await shipBtn.click();
-      await page.waitForTimeout(400);
-    }
-
-    // 5. Marcar como entregado si corresponde
-    const deliverBtn = orderCard.getByRole('button', { name: /marcar como entregado/i });
-    if (await deliverBtn.isVisible()) {
-      await deliverBtn.click();
-      await page.waitForTimeout(400);
-    }
-
-    // Cambia al filtro Todos o Completados para verificar el badge de completado
-    const todosBtn = page.getByRole('button', { name: /todos|completados/i }).first();
-    if (await todosBtn.isVisible()) {
-      await todosBtn.click();
-      await page.waitForTimeout(300);
-    }
-
-    // Verifica que el badge de estado refleje completado / entregado / pagado / enviado
-    await expect(page.locator('article').first().getByText(/completado|entregado|enviado/i).first()).toBeVisible();
+test.describe('Operación diaria de pedidos', () => {
+  test('cobrar y entregar completa el pedido, libera la reserva y descuenta una unidad física', async ({ page }) => {
+    const order = await createDailyOrder(page, 'Cliente entrega auditoría');
+    await order.getByRole('button', { name: 'Marcar como cobrado' }).click();
+    await expect(order.getByRole('button', { name: 'Marcar como cobrado' })).toHaveCount(0);
+    await order.getByRole('button', { name: 'Marcar como entregado' }).click();
+    await page.getByRole('button', { name: /^Completados/ }).click();
+    await expect(order).toBeVisible();
+    await expect(order.getByText('Pedido completado y stock actualizado.')).toBeVisible();
+    await expectStock(page, 6, 3);
   });
 
-  test('3.2: Cancelación de pedido: libera reserva sin descontar stock físico', async ({ page }) => {
-    await page.goto('/app/pedidos');
-
-    // Busca un pedido con filtro de pendientes
-    const pendingFilter = page.getByRole('button', { name: /pendientes de acción/i });
-    if (await pendingFilter.isVisible()) {
-      await pendingFilter.click();
-    }
-
-    const orderCard = page.locator('article').first();
-    if (await orderCard.isVisible()) {
-      await orderCard.locator('button[aria-expanded]').first().click();
-
-      // Si el pedido tiene acción de cancelar
-      const moreBtn = orderCard.getByRole('button', { name: /más opciones/i });
-      if (await moreBtn.isVisible()) {
-        await moreBtn.click();
-        await page.waitForTimeout(100);
-      }
-
-      const cancelBtn = orderCard.getByRole('button', { name: /cancelar pedido/i });
-      if (await cancelBtn.isVisible()) {
-        await cancelBtn.click();
-        await page.waitForTimeout(300);
-        await expect(orderCard.getByText(/cancelado/i).first()).toBeVisible();
-      }
-    }
+  test('cancelar solicita confirmación, libera la reserva y conserva las unidades físicas', async ({ page }) => {
+    const order = await createDailyOrder(page, 'Cliente cancelación auditoría');
+    await order.getByRole('button', { name: 'Más opciones' }).click();
+    await order.getByRole('button', { name: 'Cancelar pedido', exact: true }).click();
+    const confirmation = page.getByRole('dialog');
+    await expect(confirmation).toBeVisible();
+    await confirmation.getByRole('button', { name: 'Sí, cancelar pedido' }).click();
+    await expect(confirmation).toHaveCount(0);
+    await page.getByRole('button', { name: /^Completados/ }).click();
+    await expect(order.getByText('Cancelado', { exact: true })).toBeVisible();
+    await expectStock(page, 7, 3);
   });
 });

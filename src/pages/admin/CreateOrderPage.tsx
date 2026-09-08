@@ -18,7 +18,7 @@ import {
   Trash2,
   Truck
 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { queryKeys } from '@/app/query-keys';
 import { useBusinessQuery } from '@/app/use-business-query';
 import { PageHeader } from '@/components/layout/AdminShell';
@@ -36,7 +36,7 @@ import type {
   PaymentMethod,
   ShippingType
 } from '@/domain/types';
-import { buildWhatsAppProtocol } from '@/domain/whatsapp';
+import { buildWhatsAppProtocol, createOrderFingerprint } from '@/domain/whatsapp';
 import { cn } from '@/lib/cn';
 import { cleanSearchTerm } from '@/lib/search';
 import { getBusinessApi } from '@/services/business-api';
@@ -79,6 +79,7 @@ export default function CreateOrderPage() {
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
 
   // Estado de finalización y errores
+  const protocolDraft = useRef<{ orderId: string; fingerprint: string } | null>(null);
   const [createdOrder, setCreatedOrder] = useState<Order | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
 
@@ -98,7 +99,7 @@ export default function CreateOrderPage() {
   const filteredProducts = useMemo(() => {
     const term = searchProduct.trim().toLowerCase();
     return products.filter((p) => {
-      if (!p.active) return false;
+      if (!p.active || !p.published) return false;
       if (selectedCategory !== 'all' && p.category !== selectedCategory) return false;
       if (!term) return true;
       return (
@@ -218,6 +219,7 @@ export default function CreateOrderPage() {
 
   // Validación y envío del formulario
   const handleSubmit = () => {
+    if (confirmMutation.isPending) return;
     setValidationError(null);
 
     if (items.length === 0) {
@@ -256,6 +258,11 @@ export default function CreateOrderPage() {
       return;
     }
 
+    if (trimmedName.length > 100) {
+      setValidationError('El nombre del cliente debe tener como máximo 100 caracteres.');
+      return;
+    }
+
     // Armar líneas de carrito limpias
     const lines: CartLine[] = items.map((i) => ({
       productId: i.productId,
@@ -279,7 +286,10 @@ export default function CreateOrderPage() {
     };
 
     // Generar protocolo determinista válido para la API
-    const protocol = buildWhatsAppProtocol(checkoutData, lines, settings);
+    const fingerprint = `${createOrderFingerprint(checkoutData, lines, totals.shipping)}__${trimmedPhone}`;
+    const previousId = protocolDraft.current?.fingerprint === fingerprint ? protocolDraft.current.orderId : undefined;
+    const protocol = buildWhatsAppProtocol(checkoutData, lines, settings, previousId);
+    protocolDraft.current = { fingerprint, orderId: protocol.orderId };
 
     const payload: ImportOrderInput = {
       ...checkoutData,
@@ -295,6 +305,8 @@ export default function CreateOrderPage() {
   };
 
   const handleReset = () => {
+    protocolDraft.current = null;
+    confirmMutation.reset();
     setCreatedOrder(null);
     setItems([]);
     setCustomerName('');
@@ -312,8 +324,10 @@ export default function CreateOrderPage() {
   }
 
   if (productsQuery.isError) {
-    return <ErrorState error={productsQuery.error} />;
+    return <ErrorState error={productsQuery.error} onRetry={() => void productsQuery.refetch()} />;
   }
+
+  if (settingsQuery.isError) return <ErrorState error={settingsQuery.error} onRetry={() => void settingsQuery.refetch()} />;
 
   return (
     <div className="page-enter">
@@ -430,7 +444,7 @@ export default function CreateOrderPage() {
                     1. Elegir productos del catálogo
                   </h2>
                   <p className="text-xs font-semibold text-ink-600 mt-0.5">
-                    Buscá suplementos por nombre, código o categoría.
+                    Buscá suplementos por nombre, código o categoría. Solo aparecen productos activos y publicados; podés revisar su visibilidad en Productos.
                   </p>
                 </div>
                 {categories.length > 0 ? (

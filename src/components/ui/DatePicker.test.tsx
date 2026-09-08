@@ -34,6 +34,7 @@ describe('DatePicker component', () => {
 
     // Click next month
     const nextBtn = getByLabelText('Mes siguiente');
+    fireEvent.mouseDown(nextBtn);
     fireEvent.click(nextBtn);
 
     // Should now display October 2026 without closing

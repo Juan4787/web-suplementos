@@ -290,13 +290,13 @@ export const parseWhatsAppProtocol = (message: string): ParsedWhatsAppOrder => {
 
 export const whatsappCheckoutSchema = z
   .object({
-    customerName: z.string().trim().min(2, 'Ingresá el nombre de quien hace el pedido.').max(100),
+    customerName: z.string().trim().min(2, 'Ingresá el nombre de quien hace el pedido.').max(100, 'El nombre admite hasta 100 caracteres. Acortalo para continuar.'),
     paymentMethod: z.enum(['cash', 'transfer']),
     deliveryMethod: z.enum(['pickup', 'shipping']),
     shippingType: z.enum(['standard', 'express']).nullable(),
-    address: z.string().trim().max(160).nullable(),
-    addressNumber: z.string().trim().max(20).nullable(),
-    phone: z.string().trim().max(40).nullable()
+    address: z.string().trim().max(160, 'La dirección admite hasta 160 caracteres. Quitá las indicaciones adicionales.').nullable(),
+    addressNumber: z.string().trim().max(20, 'La altura admite hasta 20 caracteres. Ingresá solo el número o S/N.').nullable(),
+    phone: z.string().trim().max(40, 'El teléfono es demasiado largo. Ingresá solo el número de contacto.').nullable()
   })
   .superRefine((data, context) => {
     if (data.deliveryMethod !== 'shipping') return;

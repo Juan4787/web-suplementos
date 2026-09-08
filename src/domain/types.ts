@@ -228,7 +228,7 @@ export type StoreSettings = {
   transferAccount: string;
   standardShippingCents: number;
   expressShippingCents: number;
-  taxRateBasisPoints: number;
+  taxRateBasisPoints: number | null;
   currency: 'ARS';
 };
 

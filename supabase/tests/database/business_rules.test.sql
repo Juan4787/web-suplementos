@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set search_path = public, extensions, pg_temp;
 
-select plan(36);
+select plan(37);
 
 select ok(
   has_function_privilege('anon', 'public.get_public_store_settings()', 'execute'),
@@ -136,7 +136,7 @@ select is(
   'confirmar reserva stock sin descontar físico'
 );
 
-select throws_ok(
+select lives_ok(
   $$
     select public.confirm_imported_order(jsonb_build_object(
       'customerName', 'Cliente Test', 'paymentMethod', 'cash', 'deliveryMethod', 'pickup',
@@ -149,10 +149,20 @@ select throws_ok(
       'protocolOrderId', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'protocolChecksum', 'ABCDEF12'
     ))
   $$,
-  'P0001',
-  'ORDER_ALREADY_IMPORTED',
-  'el código idempotente rechaza una reimportación'
+  'el reintento idéntico recupera el pedido existente sin duplicarlo'
 );
+
+select is(
+  (public.confirm_imported_order(jsonb_build_object(
+    'customerName', 'Cliente Test', 'paymentMethod', 'cash', 'deliveryMethod', 'pickup',
+    'shippingType', null, 'address', null, 'addressNumber', null, 'phone', null,
+    'lines', jsonb_build_array(jsonb_build_object(
+      'productId', (select id from products where sku='TEST300'), 'quantity',2,'unitPriceCents',100000
+    )), 'shippingFeeCents',0,'quotedSubtotalCents',200000,'quotedTotalCents',200000,
+    'protocolOrderId','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','protocolChecksum','ABCDEF12'
+  ))->>'costTotalCents'),null::text,'Personal no recibe costos al confirmar ni al reintentar un pedido'
+);
+
 
 select is(
   (public.check_cart_availability(jsonb_build_array(jsonb_build_object(
@@ -187,8 +197,6 @@ declare
   v_order_id uuid := (select id from public.orders limit 1);
 begin
   perform public.transition_order(v_order_id, 'mark_paid');
-  perform public.transition_order(v_order_id, 'start_preparing');
-  perform public.transition_order(v_order_id, 'mark_ready');
   perform public.transition_order(v_order_id, 'mark_delivered');
 end;
 $advance_order$;

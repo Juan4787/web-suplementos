@@ -5,6 +5,11 @@ import { defineConfig } from 'vite';
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  // The Excel worker loads on demand; discover its dependency before the first
+  // export so Vite does not reload the page while creating the backup.
+  optimizeDeps: {
+    include: ['write-excel-file/browser']
+  },
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url))
@@ -24,4 +29,3 @@ export default defineConfig({
     }
   }
 });
-

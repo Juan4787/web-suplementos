@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Link, useNavigate } from '@tanstack/react-router';
+import { Link, Navigate } from '@tanstack/react-router';
 import {
   AlertCircle,
   ArrowLeft,
@@ -13,11 +13,12 @@ import {
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
+import { useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from '@/app/query-keys';
 import { useBusinessQuery } from '@/app/use-business-query';
 import { PublicShell } from '@/components/layout/PublicShell';
 import { Button } from '@/components/ui/Button';
-import { ErrorState } from '@/components/ui/DataState';
+import { ErrorState, LoadingState } from '@/components/ui/DataState';
 import { Field, Input } from '@/components/ui/Field';
 import { formatMoney } from '@/domain/money';
 import type { CheckoutData } from '@/domain/types';
@@ -66,8 +67,8 @@ const RadioCard = ({
 );
 
 export default function CheckoutPage() {
+  const queryClient = useQueryClient();
   const cart = useCart();
-  const navigate = useNavigate();
   const [submitError, setSubmitError] = useState<unknown>(null);
   const [priceNotice, setPriceNotice] = useState<string | null>(null);
   const [isDebouncingClick, setIsDebouncingClick] = useState(false);
@@ -168,18 +169,23 @@ export default function CheckoutPage() {
     try {
       const api = await getBusinessApi();
 
+      const liveProducts = await api.listStorefrontProducts();
+      const liveSettings = await api.getSettings();
+      queryClient.setQueryData(queryKeys.settings, liveSettings);
       const submission = await prepareCheckoutSubmission({
         values,
         lines: cart.lines,
-        catalogProducts: productsQuery.data,
-        settings: settingsQuery.data,
+        catalogProducts: liveProducts,
+        settings: liveSettings,
         protocolDraft: cart.protocolDraft,
         validateAvailability: (lines) => api.validateAvailability(lines),
         syncWithLiveCatalog: (products) => cart.syncWithLiveCatalog(products)
       });
 
-      if (submission.priceNotice) {
-        setPriceNotice(submission.priceNotice);
+      if (submission.priceNotice || submission.shippingFeeCents !== shippingFee) {
+        setPriceNotice(`${submission.priceNotice ?? 'Cambió la tarifa de envío y actualizamos el total.'} Revisá el nuevo importe y volvé a continuar por WhatsApp.`);
+        desktopWindow?.close();
+        return;
       }
 
       // Guardar el borrador del protocolo para reutilizar si no hay cambios
@@ -203,8 +209,7 @@ export default function CheckoutPage() {
   });
 
   if (cart.lines.length === 0) {
-    void navigate({ to: '/carrito', replace: true });
-    return null;
+    return <Navigate to="/carrito" replace />;
   }
 
   return (
@@ -362,6 +367,7 @@ export default function CheckoutPage() {
                       <Field
                         label="Altura"
                         htmlFor="addressNumber"
+                        error={errors.addressNumber?.message}
                         hint="Opcional"
                       >
                         <Input
@@ -389,13 +395,16 @@ export default function CheckoutPage() {
                 ) : null}
               </section>
 
+              {settingsQuery.isPending || productsQuery.isPending ? <LoadingState label="Comprobando precios y datos de la tienda…" /> : null}
+              {settingsQuery.isError ? <ErrorState error={settingsQuery.error} onRetry={() => void settingsQuery.refetch()} /> : null}
+              {productsQuery.isError ? <ErrorState error={productsQuery.error} onRetry={() => void productsQuery.refetch()} /> : null}
               {submitError ? <ErrorState error={submitError} /> : null}
               <Button
                 type="submit"
                 size="lg"
                 className="w-full sm:w-auto"
                 loading={isSubmitting || isDebouncingClick}
-                disabled={!settingsQuery.data}
+                disabled={!settingsQuery.data || productsQuery.isPending || settingsQuery.isError || productsQuery.isError}
               >
                 <MessageCircle className="size-5" /> Continuar por WhatsApp
               </Button>
@@ -449,4 +458,3 @@ export default function CheckoutPage() {
     </PublicShell>
   );
 }
-

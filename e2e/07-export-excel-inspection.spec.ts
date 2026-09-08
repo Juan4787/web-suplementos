@@ -26,7 +26,7 @@ test.describe('Pilar 11: Exportación y Verificación de Excel (.xlsx)', () => {
 
     // Verifica que el libro contenga las 13 hojas del modelo
     const sheetNames = workbook.worksheets.map((sheet) => sheet.name);
-    expect(sheetNames.length).toBeGreaterThanOrEqual(5);
+    expect(sheetNames).toHaveLength(13);
 
     // Valida que existan hojas clave del negocio
     const hasProductsSheet = sheetNames.some((name) => /productos/i.test(name));
@@ -41,6 +41,7 @@ test.describe('Pilar 11: Exportación y Verificación de Excel (.xlsx)', () => {
     for (const worksheet of workbook.worksheets) {
       worksheet.eachRow((row) => {
         row.eachCell((cell) => {
+          expect(cell.type).not.toBe(ExcelJS.ValueType.Formula);
           if (typeof cell.value === 'string') {
             expect(cell.value.startsWith('=CMD')).toBe(false);
           }

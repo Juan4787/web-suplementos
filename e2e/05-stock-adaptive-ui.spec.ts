@@ -8,7 +8,7 @@ test.describe('Pilar 9: Stock y Exception-Driven UI', () => {
     await expect(page.getByRole('heading', { name: /inventario|stock/i }).first()).toBeVisible();
 
     // Filtros rápidos: "Todos", "Requieren atención", "En orden"
-    const attentionFilter = page.getByRole('button', { name: /requieren atención/i });
+    const attentionFilter = page.getByRole('button', { name: /necesitan atención/i });
     if (await attentionFilter.isVisible()) {
       await attentionFilter.click();
       await page.waitForTimeout(200);
@@ -21,13 +21,15 @@ test.describe('Pilar 9: Stock y Exception-Driven UI', () => {
     }
 
     // Abre el Drawer de detalles del primer producto
-    const detailBtn = page.getByRole('button', { name: /detalles|ver detalle completo/i }).first();
+    const detailBtn = page.getByRole('button', { name: /creatina monohidratada.*u\./i });
     await expect(detailBtn).toBeVisible();
     await detailBtn.click();
 
     // Verifica que el Drawer muestre la radiografía de stock
-    await expect(page.getByText(/físico|stock real/i).first()).toBeVisible();
-    await expect(page.getByText(/reservado/i).first()).toBeVisible();
-    await expect(page.getByText(/stock proyectado/i)).toBeVisible();
+    const drawer = page.getByRole('dialog', { name: 'Creatina Monohidratada' });
+    await expect(drawer.getByRole('heading', { name: 'Stock hoy' })).toBeVisible();
+    await expect(drawer.getByText('Disponible', { exact: true }).locator('..')).toHaveText('Disponible4u.');
+    await expect(drawer.getByText('Reservado', { exact: true }).locator('..')).toHaveText('Reservado3u.');
+    await expect(drawer.getByText('Total', { exact: true }).locator('..')).toHaveText('Total7u.');
   });
 });

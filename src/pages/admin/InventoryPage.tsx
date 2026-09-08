@@ -34,6 +34,7 @@ import { ErrorState, LoadingState } from '@/components/ui/DataState';
 import { DatePicker, Field, Input, Select, Textarea } from '@/components/ui/Field';
 import { Drawer, Modal } from '@/components/ui/Modal';
 import { StatusChip } from '@/components/ui/StatusChip';
+import { AppError } from '@/domain/errors';
 import { inventoryStatus, sanitizeDecimalInput, sanitizeIntegerInput } from '@/domain/inventory';
 import { formatMoney, pesosToCents } from '@/domain/money';
 import { can } from '@/domain/permissions';
@@ -66,28 +67,29 @@ const movementKindLabels = {
   reservation_release: 'Reserva cancelada'
 } as const;
 
-type DraftLine = { productId: string; quantity: number; unitCostPesos: number };
+type DraftLine = { productId: string; quantity: number; unitCostPesos: string };
 
-function PurchaseFormModal({ onClose }: { onClose: () => void }) {
+export function PurchaseFormModal({ onClose }: { onClose: () => void }) {
   const queryClient = useQueryClient();
   const [supplier, setSupplier] = useState('');
   const [expectedAt, setExpectedAt] = useState('');
   const [notes, setNotes] = useState('');
-  const [lines, setLines] = useState<DraftLine[]>([{ productId: '', quantity: 1, unitCostPesos: 0 }]);
+  const [lines, setLines] = useState<DraftLine[]>([{ productId: '', quantity: 1, unitCostPesos: '0' }]);
   const productsQuery = useBusinessQuery({ queryKey: queryKeys.products, queryFn: (api) => api.listAdminProducts() });
   const create = useMutation({
     mutationFn: async () => {
+      if (purchaseIssue) throw new AppError('validation', purchaseIssue);
       const consolidated = new Map<string, { quantity: number; totalCostPesos: number }>();
       for (const line of lines) {
         if (!line.productId || line.quantity <= 0) continue;
         const current = consolidated.get(line.productId);
         if (current) {
           current.quantity += line.quantity;
-          current.totalCostPesos += line.quantity * (line.unitCostPesos || 0);
+          current.totalCostPesos += line.quantity * (Number(line.unitCostPesos.replace(',', '.')) || 0);
         } else {
           consolidated.set(line.productId, {
             quantity: line.quantity,
-            totalCostPesos: line.quantity * (line.unitCostPesos || 0)
+            totalCostPesos: line.quantity * (Number(line.unitCostPesos.replace(',', '.')) || 0)
           });
         }
       }
@@ -107,20 +109,32 @@ function PurchaseFormModal({ onClose }: { onClose: () => void }) {
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: queryKeys.inventory }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.purchases(1) }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.dashboard })
+        queryClient.invalidateQueries({ queryKey: queryKeys.purchasesRoot }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.dashboard }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.products }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.storefrontProducts })
       ]);
       onClose();
     }
   });
-  const valid = lines.length > 0 && lines.every((line) => line.productId && line.quantity > 0);
+  const incomplete = lines.findIndex(line => !line.productId || !Number.isInteger(line.quantity) || line.quantity < 1 || line.quantity > 100000);
+  const purchaseIssue = productsQuery.isPending ? 'Esperá a que se carguen los productos.'
+    : productsQuery.isError ? 'No pudimos cargar los productos. Usá “Intentar de nuevo”.'
+    : !productsQuery.data?.some(p => p.active) ? 'Primero creá un producto activo desde Productos.'
+    : supplier.trim().length === 1 || supplier.trim().length > 120 ? 'El proveedor debe tener entre 2 y 120 caracteres; también podés dejarlo vacío.'
+    : notes.trim().length > 2000 ? 'Acortá las notas a un máximo de 2000 caracteres.'
+    : lines.length > 100 ? 'La compra admite hasta 100 productos. Dividila en dos compras.'
+    : incomplete >= 0 ? (!lines[incomplete]?.productId ? `Elegí el producto de la fila ${incomplete + 1}.` : `Ingresá una cantidad entera entre 1 y 100.000 en la fila ${incomplete + 1}.`)
+    : lines.some(line => !Number.isFinite(Number(line.unitCostPesos.replace(',', '.'))) || Number(line.unitCostPesos.replace(',', '.')) < 0) ? 'Revisá el costo por unidad: debe ser cero o un importe positivo.'
+    : null;
+  const valid = purchaseIssue === null;
   return (
     <Modal
       isOpen={true}
-      onClose={onClose}
+      onClose={() => { if (!create.isPending) onClose(); }}
       ariaLabelledBy="purchase-title"
       maxWidth="lg"
-      className="p-0 flex flex-col max-h-[90vh] overflow-hidden"
+      className="p-0 sm:p-0 flex flex-col max-h-[90vh] overflow-hidden"
     >
       {/* Header fijo */}
       <div className="flex items-start justify-between border-b border-ink-950/6 bg-white px-6 pt-6 pb-4 sm:px-8 sm:pt-8 shrink-0">
@@ -134,7 +148,7 @@ function PurchaseFormModal({ onClose }: { onClose: () => void }) {
         </div>
         <button
           className="grid size-11 shrink-0 place-items-center rounded-full hover:bg-cream-100 text-ink-600 transition"
-          onClick={onClose}
+          onClick={() => { if (!create.isPending) onClose(); }}
           aria-label="Cerrar modal"
         >
           <X className="size-5" />
@@ -186,6 +200,7 @@ function PurchaseFormModal({ onClose }: { onClose: () => void }) {
                 <div className="flex items-center gap-2">
                   <div className="flex-1">
                     <Select
+                      aria-label={`Producto de la fila ${index + 1}`}
                       placeholder="Seleccionar producto…"
                       value={line.productId}
                       onChange={(event) => {
@@ -194,7 +209,7 @@ function PurchaseFormModal({ onClose }: { onClose: () => void }) {
                         if (item) {
                           item.productId = event.target.value;
                           const prod = productsQuery.data?.find((p) => p.id === event.target.value);
-                          if (prod) item.unitCostPesos = (prod.currentCostCents ?? 0) / 100;
+                          if (prod) item.unitCostPesos = String((prod.currentCostCents ?? 0) / 100);
                         }
                         setLines(updated);
                       }}
@@ -259,14 +274,13 @@ function PurchaseFormModal({ onClose }: { onClose: () => void }) {
                       type="text"
                       inputMode="decimal"
                       placeholder="0"
-                      value={line.unitCostPesos ? line.unitCostPesos.toLocaleString('es-AR') : ''}
+                      value={line.unitCostPesos}
                       onFocus={(e) => e.target.select()}
                       onChange={(event) => {
                         const updated = [...lines];
                         const item = updated[index];
                         if (item) {
-                          const clean = sanitizeDecimalInput(event.target.value.replace(/\./g, ''), String(item.unitCostPesos || ''));
-                          item.unitCostPesos = clean === '' ? 0 : parseFloat(clean) || 0;
+                          item.unitCostPesos = sanitizeDecimalInput(event.target.value, item.unitCostPesos);
                         }
                         setLines(updated);
                       }}
@@ -282,18 +296,21 @@ function PurchaseFormModal({ onClose }: { onClose: () => void }) {
             type="button"
             variant="secondary"
             className="w-full min-h-12 rounded-2xl text-[14.5px] font-bold"
-            onClick={() => setLines([...lines, { productId: '', quantity: 1, unitCostPesos: 0 }])}
+            onClick={() => setLines([...lines, { productId: '', quantity: 1, unitCostPesos: '0' }])}
           >
             + Agregar producto
           </Button>
         </div>
 
+        {productsQuery.isPending ? <LoadingState label="Cargando productos…" /> : null}
+        {productsQuery.isError ? <ErrorState error={productsQuery.error} onRetry={() => void productsQuery.refetch()} /> : null}
+        {purchaseIssue ? <p role="status" className="rounded-xl bg-amber-50 p-3 text-sm font-bold text-amber-900">{purchaseIssue}</p> : null}
         {create.error ? <ErrorState error={create.error} /> : null}
       </div>
 
       {/* Footer fijo sticky */}
       <div className="flex items-center justify-end gap-3 border-t border-ink-950/8 bg-cream-50/70 px-6 py-4 sm:px-8 shrink-0 rounded-b-[2rem]">
-        <Button variant="ghost" onClick={onClose} className="min-h-12 px-5 text-[15px] font-bold">
+        <Button variant="ghost" onClick={() => { if (!create.isPending) onClose(); }} className="min-h-12 px-5 text-[15px] font-bold">
           Cancelar
         </Button>
         <Button
@@ -329,7 +346,7 @@ function ReceivePurchaseModal({
   });
   const [shortageNotes, setShortageNotes] = useState('');
   const [confirmShortageMode, setConfirmShortageMode] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
   const [operationId] = useState(() => crypto.randomUUID());
 
   const receive = useMutation({
@@ -356,7 +373,7 @@ function ReceivePurchaseModal({
       }
     },
     onError: (err: unknown) => {
-      setError(err instanceof Error ? err.message : 'Error al registrar la recepción');
+      setError(err);
     }
   });
 
@@ -380,7 +397,7 @@ function ReceivePurchaseModal({
       onClose();
     },
     onError: (err: unknown) => {
-      setError(err instanceof Error ? err.message : 'Error al cerrar la compra');
+      setError(err);
     }
   });
 
@@ -394,10 +411,10 @@ function ReceivePurchaseModal({
   return (
     <Modal
       isOpen={true}
-      onClose={onClose}
+      onClose={() => { if (!receive.isPending && !closeShortage.isPending) onClose(); }}
       ariaLabelledBy="receive-modal-title"
       maxWidth="lg"
-      className="p-0 flex flex-col max-h-[90vh] overflow-hidden"
+      className="p-0 sm:p-0 flex flex-col max-h-[90vh] overflow-hidden"
     >
       <div className="flex items-start justify-between border-b border-ink-950/6 bg-white px-6 pt-6 pb-4 sm:px-8 sm:pt-8 shrink-0">
         <div>
@@ -410,7 +427,8 @@ function ReceivePurchaseModal({
         </div>
         <button
           className="grid size-11 shrink-0 place-items-center rounded-full hover:bg-cream-100 text-ink-600 transition"
-          onClick={onClose}
+          onClick={() => { if (!receive.isPending && !closeShortage.isPending) onClose(); }}
+          disabled={receive.isPending || closeShortage.isPending}
           aria-label="Cerrar modal"
         >
           <X className="size-5" />
@@ -418,11 +436,11 @@ function ReceivePurchaseModal({
       </div>
 
       <div className="flex-1 overflow-y-auto px-6 py-5 sm:px-8 space-y-5 custom-scrollbar">
-        {error && (
+        {error ? (
           <div className="rounded-xl bg-red-50 border border-red-200 p-3 text-sm font-semibold text-red-800">
-            {error}
+            <ErrorState error={error} />
           </div>
-        )}
+        ) : null}
 
         <div className="rounded-2xl bg-cream-50 p-4 border border-ink-950/6 text-xs text-ink-700 space-y-1">
           <p className="font-bold text-ink-900">Control de mercadería recibida:</p>
@@ -469,6 +487,7 @@ function ReceivePurchaseModal({
                     type="number"
                     min="0"
                     max={pending}
+                    disabled={receive.isPending || closeShortage.isPending}
                     value={currentVal}
                     onChange={(e) => {
                       const val = Math.max(0, Math.min(pending, parseInt(e.target.value, 10) || 0));
@@ -501,6 +520,7 @@ function ReceivePurchaseModal({
                 size="sm"
                 className="bg-red-600 hover:bg-red-700 text-white font-bold"
                 loading={closeShortage.isPending}
+                disabled={receive.isPending}
                 onClick={() => closeShortage.mutate()}
               >
                 Confirmar cierre definitivo
@@ -509,6 +529,7 @@ function ReceivePurchaseModal({
                 variant="ghost"
                 size="sm"
                 onClick={() => setConfirmShortageMode(false)}
+                disabled={closeShortage.isPending}
               >
                 Cancelar
               </Button>
@@ -526,23 +547,27 @@ function ReceivePurchaseModal({
               variant="secondary"
               size="sm"
               onClick={() => setConfirmShortageMode(true)}
+              disabled={receive.isPending}
               className="shrink-0 text-[11px] font-bold"
             >
               Declarar faltante
             </Button>
           </div>
         ) : null}
+        {totalToReceive <= 0 && !confirmShortageMode ? (
+          <p role="status" className="text-sm font-bold text-amber-900">Ingresá al menos una unidad recibida. Si no llegará ninguna, elegí “Declarar faltante”.</p>
+        ) : null}
       </div>
 
       <div className="flex items-center justify-end gap-3 border-t border-ink-950/6 bg-white px-6 py-4 sm:px-8 shrink-0">
-        <Button variant="ghost" size="md" onClick={onClose} disabled={receive.isPending || closeShortage.isPending}>
+        <Button variant="ghost" size="md" onClick={() => { if (!receive.isPending && !closeShortage.isPending) onClose(); }} disabled={receive.isPending || closeShortage.isPending}>
           Cancelar
         </Button>
         <Button
           variant="primary"
           size="md"
           loading={receive.isPending}
-          disabled={totalToReceive <= 0}
+          disabled={totalToReceive <= 0 || closeShortage.isPending || confirmShortageMode}
           onClick={() => receive.mutate()}
           className="font-black"
         >
@@ -1137,6 +1162,7 @@ export default function InventoryPage() {
 
   const purchasesQuery = useBusinessQuery({
     queryKey: queryKeys.purchases(purchasesPage, purchaseFilter),
+    enabled: can(user, 'manage_purchases'),
     queryFn: (api) =>
       api.listPurchases(
         purchasesPage,
@@ -1154,7 +1180,8 @@ export default function InventoryPage() {
       await (await getBusinessApi()).adjustStock(
         adjustItem.id,
         calculatedDelta,
-        reason.trim() || 'Corrección manual de stock'
+        reason.trim(),
+        adjustItem.onHand
       );
     },
     onSuccess: async () => {
@@ -1165,9 +1192,11 @@ export default function InventoryPage() {
         queryClient.invalidateQueries({ queryKey: queryKeys.inventory }),
         queryClient.invalidateQueries({ queryKey: ['movements'] }),
         queryClient.invalidateQueries({ queryKey: queryKeys.dashboard }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.products })
+        queryClient.invalidateQueries({ queryKey: queryKeys.products }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.storefrontProducts })
       ]);
-    }
+    },
+    onError: () => { void queryClient.invalidateQueries({ queryKey: queryKeys.inventory }); }
   });
 
   // Receive Purchase Mutation
@@ -1834,13 +1863,13 @@ export default function InventoryPage() {
 
       {/* MODAL: Corregir Stock */}
       {adjustItem ? (
-        <Modal isOpen={true} onClose={() => setAdjustItem(null)} ariaLabelledBy="adjust-title" maxWidth="lg">
+        <Modal isOpen={true} onClose={() => { if (!adjustment.isPending) setAdjustItem(null); }} ariaLabelledBy="adjust-title" maxWidth="lg">
           <div className="flex items-start justify-between">
             <div>
               <h3 id="adjust-title" className="font-display text-2xl font-black text-ink-950">Corregir stock · {adjustItem.name}</h3>
               <p className="mt-1 text-[14px] font-medium text-ink-700">Ajustá la cantidad de unidades que hay realmente en la tienda.</p>
             </div>
-            <button className="grid size-9 place-items-center rounded-full hover:bg-cream-100 text-ink-600 transition" onClick={() => setAdjustItem(null)} aria-label="Cerrar modal">
+            <button className="grid size-9 place-items-center rounded-full hover:bg-cream-100 text-ink-600 transition" onClick={() => setAdjustItem(null)} disabled={adjustment.isPending} aria-label="Cerrar modal">
               <X className="size-5" />
             </button>
           </div>
@@ -1854,6 +1883,7 @@ export default function InventoryPage() {
                   pattern="[0-9]*"
                   placeholder={`Ej. ${adjustItem.onHand}`}
                   value={targetStock}
+                  disabled={adjustment.isPending}
                   onFocus={(e) => e.target.select()}
                   onChange={(e) => setTargetStock(sanitizeIntegerInput(e.target.value, targetStock))}
                   className="text-lg font-black pr-10"
@@ -1873,22 +1903,26 @@ export default function InventoryPage() {
               </div>
             )}
 
-            <Field label="Motivo (opcional)" hint="Ej: Conteo físico, mercadería dañada, vencimiento…">
+            <Field label="Motivo de la corrección" hint="Ej: Conteo físico, mercadería dañada, vencimiento…">
               <Input
                 placeholder="Ej. Conteo físico en local"
                 value={reason}
+                disabled={adjustment.isPending}
                 onChange={(e) => setReason(e.target.value)}
               />
             </Field>
           </div>
 
+          {targetStock === '' || Number(targetStock) === adjustItem.onHand || reason.trim().length < 3 ? (
+            <p role="status" className="mt-4 text-sm font-semibold text-amber-900">{targetStock === '' ? 'Ingresá la cantidad real de unidades.' : Number(targetStock) === adjustItem.onHand ? 'La cantidad coincide con el stock actual: no hace falta corregirla.' : 'Explicá el motivo de la corrección (al menos 3 caracteres).'}</p>
+          ) : null}
           {adjustment.error ? <div className="mt-4"><ErrorState error={adjustment.error} /></div> : null}
 
           <div className="mt-6 flex justify-end gap-3">
-            <Button variant="ghost" onClick={() => setAdjustItem(null)}>Cancelar</Button>
+            <Button variant="ghost" onClick={() => setAdjustItem(null)} disabled={adjustment.isPending}>Cancelar</Button>
             <Button
               variant="dark"
-              disabled={targetStock === '' || isNaN(Number(targetStock)) || Number(targetStock) === adjustItem.onHand || Number(targetStock) < 0}
+              disabled={targetStock === '' || isNaN(Number(targetStock)) || Number(targetStock) === adjustItem.onHand || Number(targetStock) < 0 || reason.trim().length < 3}
               loading={adjustment.isPending}
               onClick={() => adjustment.mutate()}
             >

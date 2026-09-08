@@ -2,6 +2,12 @@
 
 Este archivo existe para que una compactación de contexto no convierta decisiones firmes en suposiciones.
 
+## Entrega del 08/09/2026
+
+Consultar primero [la auditoría final](AUDITORIA_FINAL_2026-09-08.md), que actualiza el estado histórico de este documento. Solo quedan las cuentas de Natalia (dueña) y Florencia (personal). Quedaron 25 productos; se retiraron tres «Item Test» tras confirmar el usuario que eran ficticios. Los demás productos, precios y descripciones son reales; compras, pedidos, clientes y cantidades de stock anteriores eran ficticios. Se retiraron las operaciones y se puso el stock en cero con respaldo y comparación del catálogo. Esperar las cantidades reales antes de habilitar ventas con existencias.
+
+El recorrido habitual de un pedido es confirmar/reservar, cobrar y entregar; la preparación ya no requiere pasos intermedios. Las búsquedas se aplican al historial completo y las ventas al período elegido. Priorizar UX, mensajes concretos y fallos del uso diario. Ejecutar pruebas, build y navegador de a uno para cuidar la RAM.
+
 ## Norte del producto
 
 - Cliente: ver productos, armar el pedido y continuarlo por WhatsApp.

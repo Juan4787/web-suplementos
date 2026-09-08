@@ -203,6 +203,7 @@ select * from dblink('race_blocker', $$select set_config('request.jwt.claim.sub'
 select * from dblink('race_contender', $$select set_config('request.jwt.claim.sub', '00000000-0000-4000-8000-000000000099', false)$$) as c4(v text);
 
 select dblink_exec('race_blocker', 'begin');
+select * from dblink('race_blocker', $$select pg_advisory_xact_lock(hashtext('99999999-9999-4999-8999-999999999999'))$$) as advisory_guard(result text);
 select *
 from dblink(
   'race_blocker',
@@ -218,7 +219,7 @@ select is(
     format(
       'select public.confirm_imported_order(%L::jsonb)',
       jsonb_build_object(
-        'customerName', 'Cliente Idempotente Contendiente',
+        'customerName', 'Cliente Idempotente Ganador',
         'paymentMethod', 'cash',
         'deliveryMethod', 'pickup',
         'shippingType', null,
@@ -281,14 +282,14 @@ select is(
     select count(*)::integer
     from dblink_get_result('race_contender', false) as rejected_idem(result jsonb)
   ),
-  0,
-  'la confirmación concurrente con el mismo UUID es rechazada sin duplicar pedido'
+  1,
+  'la confirmación concurrente idéntica recupera el pedido sin duplicarlo'
 );
 
-select matches(
+select is(
   dblink_error_message('race_contender'),
-  'ORDER_ALREADY_IMPORTED',
-  'la confirmación concurrente con el mismo UUID es interceptada por unique constraint'
+  'OK',
+  'el reintento idéntico termina sin errores'
 );
 
 select is(
@@ -350,7 +351,7 @@ where protocol_order_id in (
   '99999999-9999-4999-8999-999999999999'
 );
 delete from public.customers
-where name in ('Cliente Ganador', 'Cliente Contendiente', 'Cliente Idempotente Ganador', 'Cliente Idempotente Contendiente');
+where name in ('Cliente Ganador', 'Cliente Contendiente', 'Cliente Idempotente Ganador', 'Cliente Idempotente Ganador');
 delete from public.product_images
 where product_id = (select id from public.products where sku = 'RACE10');
 delete from public.stock_balances

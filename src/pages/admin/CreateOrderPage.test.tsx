@@ -250,4 +250,24 @@ describe('CreateOrderPage', () => {
       expect(screen.getByText(/confirmado con éxito/i)).toBeDefined();
     });
   });
+  it('reutiliza la clave al reintentar una respuesta perdida y la cambia si cambia la cantidad', async () => {
+    mockConfirm.mockRejectedValue(new Error('Respuesta perdida'));
+    render(<CreateOrderPage />, { wrapper: createWrapper() });
+    await screen.findByText('Creatina Creapure');
+    fireEvent.click(screen.getAllByRole('button', { name: /agregar/i })[0]!);
+    fireEvent.change(screen.getByPlaceholderText('Ej. Marta Gómez'), { target: { value: 'Cliente Auditoría' } });
+    const button = screen.getByRole('button', { name: /confirmar pedido manual/i });
+    fireEvent.click(button);
+    await waitFor(() => expect(mockConfirm).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(button).not.toBeDisabled());
+    fireEvent.click(button);
+    await waitFor(() => expect(mockConfirm).toHaveBeenCalledTimes(2));
+    expect(mockConfirm.mock.calls[1]![0].protocolOrderId).toBe(mockConfirm.mock.calls[0]![0].protocolOrderId);
+    await waitFor(() => expect(button).not.toBeDisabled());
+    fireEvent.click(screen.getAllByRole('button', { name: /agregar/i })[0]!);
+    fireEvent.click(button);
+    await waitFor(() => expect(mockConfirm).toHaveBeenCalledTimes(3));
+    expect(mockConfirm.mock.calls[2]![0].protocolOrderId).not.toBe(mockConfirm.mock.calls[0]![0].protocolOrderId);
+  });
+
 });

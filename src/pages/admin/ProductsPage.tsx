@@ -38,17 +38,17 @@ import { getBusinessApi, type ProductUpdate } from '@/services/business-api';
 import { cn } from '@/lib/cn';
 
 const formSchema = z.object({
-  name: z.string().trim().min(2, 'Ingresá el nombre del producto (mínimo 2 caracteres).').max(100),
-  presentation: z.string().trim().min(1, 'Ingresá la presentación (ej. 300 g · Sin sabor).').max(100),
-  description: z.string().trim().min(10, 'Describí el producto en al menos 10 caracteres.').max(1000),
-  category: z.string().trim().min(2, 'Ingresá una categoría.').max(60),
+  name: z.string().trim().min(2, 'Ingresá el nombre del producto (mínimo 2 caracteres).').max(100, 'Acortá el nombre a 100 caracteres como máximo.'),
+  presentation: z.string().trim().min(1, 'Ingresá la presentación (ej. 300 g · Sin sabor).').max(100, 'Acortá la presentación a 100 caracteres como máximo.'),
+  description: z.string().trim().min(10, 'Describí el producto en al menos 10 caracteres.').max(1000, 'Acortá la descripción a 1000 caracteres como máximo.'),
+  category: z.string().trim().min(2, 'Ingresá una categoría.').max(60, 'Acortá la categoría a 60 caracteres como máximo.'),
   pricePesos: z
     .number({ error: 'Ingresá el precio de venta al público.' })
     .positive('El precio de venta al público debe ser mayor a $0.'),
   costPesos: z
     .number({ error: 'Ingresá un costo válido.' })
     .nonnegative('El costo no puede ser negativo.'),
-  sku: z.string().trim().max(30).optional(),
+  sku: z.string().trim().max(30, 'El código del producto admite hasta 30 caracteres.').optional(),
   slug: z
     .string()
     .trim()
@@ -56,9 +56,9 @@ const formSchema = z.object({
     .refine((val) => !val || /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(val), {
       message: 'Usá minúsculas, números y guiones (ej. creatina-300g).'
     }),
-  reorderPoint: z.number().int().nonnegative('El límite de alerta debe ser 0 o mayor.'),
-  safetyStock: z.number().int().nonnegative('El mínimo de emergencia debe ser 0 o mayor.'),
-  leadTimeDays: z.number().int().min(0).max(365, 'Los días de demora deben estar entre 0 y 365 días.'),
+  reorderPoint: z.number({ error: 'Ingresá una cantidad para el límite de alerta.' }).int('Usá unidades enteras para el límite de alerta.').nonnegative('El límite de alerta debe ser 0 o mayor.'),
+  safetyStock: z.number({ error: 'Ingresá una cantidad para el mínimo de emergencia.' }).int('Usá unidades enteras para el mínimo de emergencia.').nonnegative('El mínimo de emergencia debe ser 0 o mayor.'),
+  leadTimeDays: z.number({ error: 'Ingresá la demora en días.' }).int('La demora debe ser una cantidad entera de días.').min(0, 'La demora no puede ser negativa.').max(365, 'Los días de demora deben estar entre 0 y 365 días.'),
   imageUrl: z.string().trim().optional(),
   imageAlt: z.string().trim().optional(),
   published: z.boolean(),
@@ -252,7 +252,7 @@ function ProductForm({
   });
 
   return (
-    <Modal isOpen={true} onClose={onClose} ariaLabelledBy="product-form-title" maxWidth="2xl">
+    <Modal isOpen={true} onClose={() => { if (!save.isPending) onClose(); }} ariaLabelledBy="product-form-title" maxWidth="2xl">
       <div className="flex items-start justify-between gap-4">
         <div>
           <h2 id="product-form-title" className="font-display text-3xl font-black text-ink-950">
@@ -265,7 +265,8 @@ function ProductForm({
         <button
           type="button"
           className="grid size-10 place-items-center rounded-full hover:bg-cream-100 text-ink-600 transition"
-          onClick={onClose}
+          onClick={() => { if (!save.isPending) onClose(); }}
+          disabled={save.isPending}
           aria-label="Cerrar"
         >
           <X className="size-5" />
@@ -591,7 +592,7 @@ function ProductForm({
               </Button>
             ) : <div />}
             <div className="flex items-center gap-3">
-              <Button type="button" variant="ghost" onClick={onClose}>
+              <Button type="button" variant="ghost" onClick={onClose} disabled={save.isPending}>
                 Cancelar
               </Button>
               <Button type="submit" variant="dark" loading={save.isPending}>
@@ -954,11 +955,10 @@ export default function ProductsPage() {
               }
               loading={archiveMutation.isPending}
               onClick={async () => {
-                await archiveMutation.mutateAsync({
+                archiveMutation.mutate({
                   productId: archiveTarget.product.id,
                   archived: archiveTarget.archived
-                });
-                setArchiveTarget(null);
+                }, { onSuccess: () => setArchiveTarget(null) });
               }}
             >
               {archiveTarget.archived ? 'Sí, archivar producto' : 'Sí, desarchivar producto'}

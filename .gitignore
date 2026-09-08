@@ -13,3 +13,6 @@ test-results/
 scratch/
 supabase/.branches/
 supabase/.temp/
+
+output/audit/
+output/playwright/

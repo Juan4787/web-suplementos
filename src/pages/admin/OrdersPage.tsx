@@ -119,9 +119,14 @@ export default function OrdersPage() {
   const [showSecondaryActions, setShowSecondaryActions] = useState<Record<string, boolean>>({});
   const [confirmAction, setConfirmAction] = useState<{ order: Order; action: OrderAction } | null>(null);
 
+  const [debouncedSearch, setDebouncedSearch] = useState(search);
+  useEffect(() => {
+    const timer = setTimeout(() => { setPage(1); setDebouncedSearch(cleanSearchTerm(search)); }, 250);
+    return () => clearTimeout(timer);
+  }, [search]);
   const ordersQuery = useBusinessQuery({
-    queryKey: queryKeys.orders(page),
-    queryFn: (api) => api.listOrders(page, 50)
+    queryKey: [...queryKeys.orders(page), debouncedSearch, filter],
+    queryFn: (api) => api.listOrders(page, 50, debouncedSearch, filter)
   });
 
   const transition = useMutation({
@@ -132,7 +137,13 @@ export default function OrdersPage() {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['orders'] }),
         queryClient.invalidateQueries({ queryKey: queryKeys.dashboard }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.inventory })
+        queryClient.invalidateQueries({ queryKey: queryKeys.inventory }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.products }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.storefrontProducts }),
+        queryClient.invalidateQueries({ queryKey: ['paid-orders'] }),
+        queryClient.invalidateQueries({ queryKey: ['analytics'] }),
+        queryClient.invalidateQueries({ queryKey: ['customers'] }),
+        queryClient.invalidateQueries({ queryKey: ['movements'] })
       ]);
     },
     onError: setMutationError
@@ -140,38 +151,9 @@ export default function OrdersPage() {
 
   const items = ordersQuery.data?.items ?? [];
 
-  const pendingCount = useMemo(() => {
-    return items.filter(
-      (o) =>
-        !(
-          o.orderState === 'cancelled' ||
-          (o.fulfillmentState === 'delivered' && o.paymentState === 'paid')
-        )
-    ).length;
-  }, [items]);
-
-  const completedCount = items.length - pendingCount;
-
-  const filteredOrders = useMemo(() => {
-    return items.filter((order) => {
-      const term = cleanSearchTerm(search).toLowerCase();
-      const matchesSearch =
-        !term ||
-        order.customerName.toLowerCase().includes(term) ||
-        (order.customerPhone ?? '').includes(term) ||
-        order.number.toString().includes(term);
-
-      if (!matchesSearch) return false;
-
-      const isCompleted =
-        order.orderState === 'cancelled' ||
-        (order.fulfillmentState === 'delivered' && order.paymentState === 'paid');
-
-      if (filter === 'pending') return !isCompleted;
-      if (filter === 'completed') return isCompleted;
-      return true;
-    });
-  }, [items, search, filter]);
+  const pendingCount = ordersQuery.data?.pendingTotal ?? 0;
+  const completedCount = ordersQuery.data?.completedTotal ?? 0;
+  const filteredOrders = items;
 
   // Si se buscó un pedido específico (ej: desde "Ver pedido #1049"), autoexpandir su tarjeta
   useEffect(() => {
@@ -208,7 +190,7 @@ export default function OrdersPage() {
                 ? 'bg-brand-600 text-white shadow-sm font-black'
                 : 'border border-ink-950/15 bg-white text-ink-800 hover:border-ink-950/25'
             )}
-            onClick={() => setFilter('pending')}
+            onClick={() => { setPage(1); setFilter('pending'); }}
           >
             Pendientes de acción <span className="ml-1 opacity-85">• {pendingCount}</span>
           </button>
@@ -220,7 +202,7 @@ export default function OrdersPage() {
                 ? 'bg-brand-600 text-white shadow-sm font-black'
                 : 'border border-ink-950/15 bg-white text-ink-800 hover:border-ink-950/25'
             )}
-            onClick={() => setFilter('completed')}
+            onClick={() => { setPage(1); setFilter('completed'); }}
           >
             Completados <span className="ml-1 opacity-85">• {completedCount}</span>
           </button>
@@ -232,9 +214,9 @@ export default function OrdersPage() {
                 ? 'bg-brand-600 text-white shadow-sm font-black'
                 : 'border border-ink-950/15 bg-white text-ink-800 hover:border-ink-950/25'
             )}
-            onClick={() => setFilter('all')}
+            onClick={() => { setPage(1); setFilter('all'); }}
           >
-            Todos ({items.length})
+            Todos ({pendingCount + completedCount})
           </button>
         </div>
 
@@ -632,11 +614,10 @@ export default function OrdersPage() {
                   }
                   loading={transition.isPending}
                   onClick={async () => {
-                    await transition.mutateAsync({
+                    transition.mutate({
                       orderId: confirmAction.order.id,
                       action: confirmAction.action
-                    });
-                    setConfirmAction(null);
+                    }, { onSuccess: () => setConfirmAction(null) });
                   }}
                 >
                   {confirmAction.action === 'cancel' ? 'Sí, cancelar pedido' : 'Sí, confirmar reintegro'}

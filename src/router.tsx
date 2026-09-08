@@ -9,6 +9,7 @@ import { appEnv } from '@/app/env';
 import { AdminShell } from '@/components/layout/AdminShell';
 import { ConfigurationScreen } from '@/components/layout/ConfigurationScreen';
 import { cleanSearchTerm } from '@/lib/search';
+import { ErrorState } from '@/components/ui/DataState';
 
 function RootComponent() {
   if (appEnv.mode === 'unconfigured') return <ConfigurationScreen />;
@@ -17,6 +18,7 @@ function RootComponent() {
 
 const rootRoute = createRootRoute({
   component: RootComponent,
+  errorComponent: ({ error, reset }) => <main className="mx-auto max-w-xl p-6"><ErrorState error={error} onRetry={reset} /></main>,
   notFoundComponent: lazyRouteComponent(() => import('@/pages/NotFoundPage'))
 });
 

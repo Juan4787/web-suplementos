@@ -39,6 +39,12 @@ const checkout: CheckoutData = {
 };
 
 describe('WhatsApp order protocol', () => {
+  it('conserva los centavos de precios y totales al enviar e importar por WhatsApp', () => {
+    const protocol = buildWhatsAppProtocol(checkout, [{ ...lines[0]!, quantity: 3, unitPriceCents: 12550 }], settings);
+    const parsed = parseWhatsAppProtocol(protocol.message);
+    expect(parsed.lines[0]).toMatchObject({ unitPriceCents: 12550, quantity: 3, lineTotalCents: 37650 });
+    expect(parsed.quotedTotalCents).toBe(487650);
+  });
   it('round-trips a generated order without guessing fields', () => {
     const protocol = buildWhatsAppProtocol(checkout, lines, settings);
     const parsed = parseWhatsAppProtocol(protocol.message);

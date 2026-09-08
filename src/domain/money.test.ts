@@ -16,11 +16,17 @@ describe('money domain logic', () => {
     expect(pesosToCents(19.99)).toBe(1999);
   });
 
-  it('formats currency in ARS standard locale without fractional cents in main formatter', () => {
+  it('formats whole-peso amounts without unnecessary decimals', () => {
     const formatted = formatMoney(2500000);
     // Standard Argentine format: includes $ and thousands separator
     expect(formatted).toMatch(/\$|ARS/);
     expect(formatted.replace(/\s/g, ' ')).toContain('25.000');
+  });
+
+  it('preserves centavos instead of rounding the displayed price or cost to whole pesos', () => {
+    expect(formatMoney(12550)).toContain('125,50');
+    expect(formatMoney(1)).toContain('0,01');
+    expect(formatMoney(-1999)).toContain('19,99');
   });
 
   it('formats plain decimal numbers in ARS format with decimals if present', () => {

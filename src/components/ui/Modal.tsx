@@ -1,5 +1,6 @@
 import { type ReactNode, useEffect } from 'react';
 import { createPortal } from 'react-dom';
+import { cn } from '@/lib/cn';
 
 interface ModalProps {
   isOpen?: boolean;
@@ -35,6 +36,7 @@ export function Modal({
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
+        if (document.querySelector('[data-modal-popover]')) return;
         onClose();
       }
     };
@@ -62,7 +64,7 @@ export function Modal({
 
       {/* Contenedor del diálogo centrado */}
       <div
-        className={`relative my-auto w-full ${maxWidthMap[maxWidth]} max-h-[90vh] overflow-y-auto rounded-[2rem] bg-white p-6 shadow-2xl transition-all sm:p-8 ${className}`}
+        className={cn('relative my-auto w-full max-h-[90vh] overflow-y-auto rounded-[2rem] bg-white p-6 shadow-2xl transition-all sm:p-8', maxWidthMap[maxWidth], className)}
         role="dialog"
         aria-modal="true"
         aria-labelledby={ariaLabelledBy}
@@ -93,6 +95,7 @@ export function Drawer({
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
+        if (document.querySelector('[data-modal-popover]')) return;
         onClose();
       }
     };

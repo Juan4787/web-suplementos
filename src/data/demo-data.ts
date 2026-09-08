@@ -31,7 +31,7 @@ export const demoStaff: AppUser = {
   active: true
 };
 
-export const demoSettings: StoreSettings = {
+export const demoSettings: StoreSettings & { taxRateBasisPoints: number } = {
   storeName: 'Impulso',
   tagline: 'Suplementos para sostener tu ritmo',
   whatsappPhone: '5491112345678',

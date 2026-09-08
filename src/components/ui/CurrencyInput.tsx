@@ -9,6 +9,7 @@ import {
   type InputHTMLAttributes
 } from 'react';
 import { cn } from '@/lib/cn';
+import { useField } from './field-context';
 
 export interface CurrencyInputProps
   extends Omit<InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange' | 'defaultValue'> {
@@ -59,6 +60,7 @@ export const CurrencyInput = forwardRef<HTMLInputElement, CurrencyInputProps>(
     { value, onChange, onKeyDown, onFocus, className, placeholder = '25.000', ...props },
     forwardedRef
   ) {
+    const field = useField();
     const inputRef = useRef<HTMLInputElement>(null);
     useImperativeHandle(forwardedRef, () => inputRef.current as HTMLInputElement);
 
@@ -220,6 +222,10 @@ export const CurrencyInput = forwardRef<HTMLInputElement, CurrencyInputProps>(
     return (
       <input
         ref={inputRef}
+        id={field?.id}
+        aria-label={field?.label}
+        aria-invalid={field?.invalid}
+        aria-describedby={field?.descriptionId}
         type="text"
         inputMode="numeric"
         value={displayValue}

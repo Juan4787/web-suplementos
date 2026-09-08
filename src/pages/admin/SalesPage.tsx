@@ -7,7 +7,7 @@ import {
   PackageCheck,
   TrendingUp
 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import {
   endOfMonth,
   endOfWeek,
@@ -109,14 +109,16 @@ export default function SalesPage() {
     }
   };
 
+  useEffect(() => { setPage(1); setExpandedOrderId(null); }, [from, to]);
+
   const analyticsQuery = useBusinessQuery({
     queryKey: queryKeys.analytics(from, to),
     queryFn: (api) => api.getAnalytics(from, to)
   });
 
   const ordersQuery = useBusinessQuery({
-    queryKey: queryKeys.paidOrders(page),
-    queryFn: (api) => api.listPaidOrders(page, 20)
+    queryKey: [...queryKeys.paidOrders(page), from, to],
+    queryFn: (api) => api.listPaidOrders(page, 20, from, to)
   });
 
   const chartData = useMemo(() => {
@@ -260,7 +262,7 @@ export default function SalesPage() {
         ) : null}
 
         {/* Tabs Bar */}
-        <nav className="mb-6 flex gap-2 border-b border-ink-950/8 pb-3" aria-label="Secciones de Ventas">
+        <nav className="mb-6 flex flex-wrap gap-2 border-b border-ink-950/8 pb-3" aria-label="Secciones de Ventas">
           <button
             type="button"
             onClick={() => handleTabChange('orders')}
@@ -312,8 +314,9 @@ export default function SalesPage() {
           <section className="overflow-hidden rounded-2xl border border-ink-950/8 bg-white shadow-sm">
             <div className="border-b border-ink-950/8 p-5 sm:p-6">
               <h2 className="font-display text-2xl font-black text-ink-950">Ventas cobradas</h2>
-              <p className="mt-1 text-[14.5px] font-semibold text-ink-700">Pedidos que ya fueron cobrados.</p>
+              <p className="mt-1 text-[14.5px] font-semibold text-ink-700">Pedidos cobrados dentro del período seleccionado.</p>
             </div>
+            {ordersQuery.data.items.length === 0 ? <p className="p-6 text-sm text-ink-700">No hay ventas cobradas en este período. Elegí otro rango de fechas para consultar ventas anteriores.</p> : null}
             <div className="overflow-x-auto">
               <table className="w-full min-w-[44rem] text-left text-sm">
                 <thead className="bg-cream-100 text-[13.5px] uppercase tracking-wider text-ink-700 font-black">
@@ -332,7 +335,7 @@ export default function SalesPage() {
                     const isExpanded = expandedOrderId === order.id;
 
                     return (
-                      <>
+                      <Fragment key={order.id}>
                         <tr
                           key={order.id}
                           onClick={() => setExpandedOrderId(isExpanded ? null : order.id)}
@@ -372,13 +375,13 @@ export default function SalesPage() {
                                   <span className="font-bold text-ink-800">Medio: {order.paymentMethod === 'cash' ? 'Efectivo' : 'Transferencia'}</span>
                                   <span className="font-bold text-ink-800">Costo mercadería: {formatMoney(order.costTotalCents ?? 0)}</span>
                                   <span className="font-bold text-ink-800">Impuestos: {formatMoney(order.taxAmountCents ?? 0)}</span>
-                                  <span className="font-black text-brand-700">Ganancia neta: {formatMoney(margin)}</span>
+                                  <span className="font-black text-brand-700">Margen después de mercadería e impuestos: {formatMoney(margin)}</span>
                                 </div>
                               </div>
                             </td>
                           </tr>
                         ) : null}
-                      </>
+                      </Fragment>
                     );
                   })}
                 </tbody>

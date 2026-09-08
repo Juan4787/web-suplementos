@@ -89,6 +89,12 @@ describe('demoBusinessApi lifecycle and domain guarantees', () => {
     expect(item?.available).toBe(20);
     expect(item?.status).toBe('ok');
 
+    // The owner opened a count at 20; another operation then leaves 19.
+    await demoBusinessApi.adjustStock(created.id, -1, 'Salida posterior al conteo');
+    await expect(demoBusinessApi.adjustStock(created.id, -1, 'Conteo de diecinueve', 20)).rejects.toThrow('stock cambió');
+    expect((await demoBusinessApi.listInventory()).find(i => i.id === created.id)?.onHand).toBe(19);
+    await demoBusinessApi.adjustStock(created.id, 1, 'Conteo revisado', 19);
+
     // Update stock thresholds to make 20 units low stock (e.g. reorderPoint = 25)
     await demoBusinessApi.updateStockThresholds({
       productId: created.id,

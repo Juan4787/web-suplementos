@@ -116,7 +116,7 @@ test.describe('Pilar 1: Tienda Pública y Generación de WhatsApp', () => {
     // Extrae el texto del mensaje enviado a WhatsApp
     const urlObj = new URL(whatsappUrl);
     const textParam = urlObj.searchParams.get('text') ?? '';
-    expect(textParam).toContain('*PEDIDO IMPULSO · V1*');
+    expect(textParam).toContain('*PEDIDO IMPULSO*');
     expect(textParam).toContain('María José Agüero');
 
     // Valida semántica e integridad del mensaje con el parser oficial

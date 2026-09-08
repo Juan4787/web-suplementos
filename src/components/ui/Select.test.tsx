@@ -78,6 +78,7 @@ describe('Select component with search', () => {
     fireEvent.click(trigger);
 
     const option = getByText('ANDRO SUPPORT (30 CAPS)');
+    fireEvent.mouseDown(option);
     fireEvent.click(option);
 
     expect(handleChange).toHaveBeenCalledWith({

@@ -29,6 +29,8 @@ export type Page<T> = {
   total: number;
 };
 
+export type OrdersPage = Page<Order> & { pendingTotal: number; completedTotal: number };
+
 export type PurchasesPage = Page<Purchase> & {
   pendingTotal?: number;
   receivedTotal?: number;
@@ -101,10 +103,10 @@ export interface BusinessApi {
   deleteProduct(productId: string): Promise<void>;
   archiveProduct(productId: string, archived: boolean): Promise<AdminProduct>;
   listInventory(): Promise<InventoryItem[]>;
-  adjustStock(productId: string, delta: number, reason: string): Promise<void>;
+  adjustStock(productId: string, delta: number, reason: string, expectedOnHand?: number): Promise<void>;
   updateStockThresholds(input: UpdateStockThresholdsInput): Promise<void>;
-  listOrders(page?: number, pageSize?: number): Promise<Page<Order>>;
-  listPaidOrders(page?: number, pageSize?: number): Promise<Page<Order>>;
+  listOrders(page?: number, pageSize?: number, search?: string, state?: 'all' | 'pending' | 'completed'): Promise<OrdersPage>;
+  listPaidOrders(page?: number, pageSize?: number, from?: string, to?: string): Promise<Page<Order>>;
   confirmImportedOrder(input: ImportOrderInput): Promise<Order>;
   transitionOrder(orderId: string, action: OrderAction): Promise<Order>;
   listPurchases(page?: number, pageSize?: number, state?: 'ordered' | 'received' | 'all'): Promise<PurchasesPage>;
@@ -113,6 +115,7 @@ export interface BusinessApi {
   closePurchaseWithShortage(purchaseId: string, notes?: string): Promise<ReceivePurchaseResult>;
   listMovements(page?: number, pageSize?: number, search?: string, filter?: 'all' | 'sales' | 'purchases' | 'adjustments'): Promise<Page<StockMovement>>;
   listCustomers(page?: number, pageSize?: number, search?: string): Promise<Page<Customer>>;
+  listCustomerOrders(customerId: string, page?: number, pageSize?: number): Promise<Page<Order>>;
   getAnalytics(from: string, to: string): Promise<AnalyticsSummary>;
   listInflationIndices(): Promise<InflationIndex[]>;
   saveInflationIndex(input: InflationIndex): Promise<InflationIndex>;

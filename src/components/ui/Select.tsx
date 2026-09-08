@@ -9,6 +9,9 @@ import {
 } from 'react';
 import { Check, ChevronDown, Search } from 'lucide-react';
 import { cn } from '@/lib/cn';
+import { useField } from './field-context';
+import { createPortal } from 'react-dom';
+import { usePopoverPosition } from './use-popover-position';
 
 export type SelectOption = {
   value: string;
@@ -84,6 +87,7 @@ export function Select({
   dropdownWidth = 'auto',
   title
 }: SelectProps) {
+  const field = useField();
   const isControlled = controlledValue !== undefined;
   const [internalValue, setInternalValue] = useState(defaultValue);
   const activeValue = isControlled ? controlledValue : internalValue;
@@ -92,6 +96,7 @@ export function Select({
   const [searchTerm, setSearchTerm] = useState('');
   const containerRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   // Extract options from either props or option children
   const options: SelectOption[] = useMemo(() => {
@@ -119,6 +124,9 @@ export function Select({
 
   // Auto-enable search if there are more than 7 items and not explicitly disabled
   const showSearch = searchable ?? options.length > 7;
+  const position = usePopoverPosition(isOpen, containerRef, {
+    align, minWidth: dropdownWidth === 'trigger' ? 0 : dropdownWidth === 'wide' || showSearch ? 320 : 192
+  });
 
   // Filtered options with accent-insensitive and node-text extraction
   const filteredOptions = useMemo(() => {
@@ -144,6 +152,7 @@ export function Select({
     onValueChange?.(val);
     setIsOpen(false);
     setSearchTerm('');
+    containerRef.current?.querySelector('button')?.focus();
   };
 
   // Close when clicking outside with composedPath support
@@ -151,6 +160,7 @@ export function Select({
     if (!isOpen) return;
 
     const handleClickOutside = (event: MouseEvent | TouchEvent) => {
+      if (menuRef.current?.contains(event.target as Node)) return;
       if (
         event.composedPath &&
         containerRef.current &&
@@ -168,6 +178,7 @@ export function Select({
       if (event.key === 'Escape') {
         setIsOpen(false);
         setSearchTerm('');
+        containerRef.current?.querySelector('button')?.focus();
       }
     };
 
@@ -193,14 +204,17 @@ export function Select({
   return (
     <div ref={containerRef} className={cn('relative w-full select-none', isOpen && 'z-40', className)}>
       {/* Hidden native input for form compatibility */}
-      <input type="hidden" name={name} id={id} value={activeValue} />
+      <input type="hidden" name={name} value={activeValue} />
 
       {/* Trigger button */}
       <button
         type="button"
+        id={id ?? field?.id}
         title={title}
         disabled={disabled}
-        aria-label={ariaLabel}
+        aria-label={ariaLabel ?? field?.label}
+        aria-invalid={field?.invalid}
+        aria-describedby={field?.descriptionId}
         aria-haspopup="listbox"
         aria-expanded={isOpen}
         onClick={() => {
@@ -239,19 +253,14 @@ export function Select({
       </button>
 
       {/* Dropdown Menu */}
-      {isOpen && (
+      {isOpen && createPortal(
         <div
+          ref={menuRef}
+          data-modal-popover="select"
+          style={position}
           role="listbox"
-          aria-label={ariaLabel}
-          className={cn(
-            'absolute top-[calc(100%+6px)] z-50 flex max-h-80 flex-col rounded-2xl border border-ink-950/10 bg-white/95 p-1.5 shadow-[0_16px_40px_rgba(15,23,42,0.18)] backdrop-blur-xl animate-in fade-in zoom-in-95 duration-150',
-            align === 'right' ? 'right-0 left-auto' : 'left-0 right-auto',
-            dropdownWidth === 'trigger'
-              ? 'w-full min-w-full'
-              : dropdownWidth === 'wide' || showSearch
-                ? 'w-full min-w-full sm:min-w-[320px] max-w-[calc(100vw-2rem)]'
-                : 'w-full min-w-full sm:min-w-[12rem] max-w-[calc(100vw-2rem)]'
-          )}
+          aria-label={ariaLabel ?? field?.label}
+          className="flex flex-col rounded-2xl border border-ink-950/10 bg-white p-1.5 shadow-[0_16px_40px_rgba(15,23,42,0.18)]"
         >
           {/* Search bar for large option lists */}
           {showSearch && (
@@ -271,7 +280,7 @@ export function Select({
           )}
 
           {/* Options list */}
-          <div className="overflow-y-auto flex-1 space-y-0.5 p-0.5 custom-scrollbar">
+          <div className="min-h-0 overflow-y-auto flex-1 space-y-0.5 p-0.5 custom-scrollbar">
             {filteredOptions.length === 0 ? (
               <div className="py-4 text-center text-xs font-bold text-ink-500">
                 No se encontraron opciones
@@ -302,7 +311,7 @@ export function Select({
               })
             )}
           </div>
-        </div>
+        </div>, document.body
       )}
     </div>
   );

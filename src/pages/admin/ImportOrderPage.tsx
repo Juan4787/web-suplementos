@@ -16,7 +16,7 @@ import { queryKeys } from '@/app/query-keys';
 import { useBusinessQuery } from '@/app/use-business-query';
 import { PageHeader } from '@/components/layout/AdminShell';
 import { Button, buttonStyles } from '@/components/ui/Button';
-import { ErrorState } from '@/components/ui/DataState';
+import { ErrorState, LoadingState } from '@/components/ui/DataState';
 import { Field, Input, Textarea } from '@/components/ui/Field';
 import { AppError } from '@/domain/errors';
 import { formatMoney } from '@/domain/money';
@@ -62,7 +62,9 @@ export default function ImportOrderPage() {
         queryClient.invalidateQueries({ queryKey: ['orders'] }),
         queryClient.invalidateQueries({ queryKey: ['customers'] }),
         queryClient.invalidateQueries({ queryKey: queryKeys.inventory }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.dashboard })
+        queryClient.invalidateQueries({ queryKey: queryKeys.dashboard }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.products }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.storefrontProducts })
       ]);
     }
   });
@@ -76,8 +78,8 @@ export default function ImportOrderPage() {
       const products = productsQuery.data ?? [];
       const lines = parsed.lines.map((line) => {
         const product = products.find((candidate) => candidate.sku === line.sku);
-        if (!product || !product.active) {
-          throw new AppError('business', `El producto “${line.name}” (código: ${line.sku}) no está disponible en catálogo.`, {
+        if (!product || !product.active || !product.published) {
+          throw new AppError('business', `El producto “${line.name}” no está disponible en catálogo.`, {
             nextAction: 'Revisá el mensaje de WhatsApp o cargá el producto si es nuevo.'
           });
         }
@@ -206,7 +208,9 @@ export default function ImportOrderPage() {
               >
                 Ver pedido #{created.number}
               </Link>
-              <Button
+              {productsQuery.isPending ? <LoadingState label="Cargando productos para revisar el pedido…" /> : null}
+            {productsQuery.isError ? <ErrorState error={productsQuery.error} onRetry={() => void productsQuery.refetch()} /> : null}
+            <Button
                 variant="secondary"
                 size="lg"
                 className="flex-1 border-ink-950/15"
@@ -252,7 +256,7 @@ export default function ImportOrderPage() {
               className="mt-5"
               size="lg"
               onClick={analyze}
-              disabled={!message.trim() || productsQuery.isPending}
+              disabled={!message.trim() || productsQuery.isPending || productsQuery.isError}
             >
               <ClipboardPaste className="size-5" /> Analizar pedido
             </Button>
@@ -404,7 +408,7 @@ export default function ImportOrderPage() {
                       Cliente
                     </h4>
                     <div className="grid gap-3 sm:grid-cols-2">
-                      <Field label="Nombre del cliente" htmlFor="review-name">
+                      <Field label="Nombre del cliente" htmlFor="review-name" error={review.customerName.trim().length < 2 ? 'Ingresá el nombre del cliente (al menos 2 caracteres).' : review.customerName.trim().length > 100 ? 'Acortá el nombre a 100 caracteres como máximo.' : undefined}>
                         <Input
                           id="review-name"
                           value={review.customerName}
@@ -541,11 +545,14 @@ export default function ImportOrderPage() {
               </span>
             </div>
 
+            {review.customerName.trim().length < 2 || review.customerName.trim().length > 100 ? (
+              <p role="status" className="mb-3 text-sm font-bold text-amber-900">En “Corregir datos del pedido”, completá un nombre de cliente de entre 2 y 100 caracteres.</p>
+            ) : null}
             <Button
               className="w-full text-[15.5px] font-black"
               size="lg"
               loading={confirm.isPending}
-              disabled={review.customerName.trim().length < 2}
+              disabled={review.customerName.trim().length < 2 || review.customerName.trim().length > 100}
               onClick={() =>
                 confirm.mutate({
                   customerName: review.customerName.trim(),

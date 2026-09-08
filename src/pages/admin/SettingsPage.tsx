@@ -29,6 +29,7 @@ import { Field, Input, Select, Textarea } from '@/components/ui/Field';
 import { StatusChip } from '@/components/ui/StatusChip';
 import { Toast } from '@/components/ui/Toast';
 import { sanitizeDecimalInput, sanitizeIntegerInput } from '@/domain/inventory';
+import { validateStoreSettings } from '@/domain/settings';
 import type { StoreSettings, UserRole } from '@/domain/types';
 import { cn } from '@/lib/cn';
 import { getBusinessApi } from '@/services/business-api';
@@ -62,7 +63,7 @@ const toDraft = (settings: StoreSettings): DraftSettings => ({
       ? String(settings.expressShippingCents / 100)
       : '',
   taxRatePercentStr:
-    settings.taxRateBasisPoints > 0
+    settings.taxRateBasisPoints !== null && settings.taxRateBasisPoints > 0
       ? String(settings.taxRateBasisPoints / 100)
       : ''
 });
@@ -200,6 +201,7 @@ function UsersTab({
       {usersQuery.isPending ? <LoadingState label="Consultando usuarios…" /> : null}
       {usersQuery.isError ? <ErrorState error={usersQuery.error} onRetry={() => void usersQuery.refetch()} /> : null}
       {update.error ? <ErrorState error={update.error} /> : null}
+      <p className="rounded-xl bg-brand-50 p-4 text-sm text-brand-950">Para agregar a una persona, pedile a quien administra la aplicación que cree su cuenta con su correo. Después aparecerá en esta lista para que elijas el rol y habilites su acceso.</p>
 
       {/* Lista de usuarios con diseño espacioso y sin overflow-hidden para que los menús floten libremente */}
       <div className="rounded-2xl border border-ink-950/8 bg-white shadow-sm divide-y divide-ink-950/6">
@@ -382,19 +384,22 @@ export default function SettingsPage() {
       const taxRatePercent =
         draft.taxRatePercentStr === '' ? 0 : parseFloat(draft.taxRatePercentStr) || 0;
 
-      return (await getBusinessApi()).updateSettings({
+      const settings: StoreSettings = {
         storeName: draft.storeName.trim(),
         tagline: draft.tagline.trim(),
-        whatsappPhone: draft.whatsappPhone.trim(),
+        whatsappPhone: draft.whatsappPhone.replace(/[^0-9]/g, ''),
         transferAlias: draft.transferAlias.trim(),
-        transferAccount: draft.transferAccount.trim(),
+        transferAccount: draft.transferAccount.replace(/\s/g, ''),
         standardShippingCents: Math.round(standardShippingPesos * 100),
         expressShippingCents: Math.round(expressShippingPesos * 100),
         taxRateBasisPoints: Math.round(taxRatePercent * 100),
         currency: 'ARS'
-      });
+      };
+      validateStoreSettings(settings);
+      return (await getBusinessApi()).updateSettings(settings);
     },
-    onSuccess: async () => {
+    onSuccess: async (settings) => {
+      if (settings) setDraft(toDraft(settings));
       await queryClient.invalidateQueries({ queryKey: queryKeys.settings });
       setJustSavedSettings(true);
       setTimeout(() => setJustSavedSettings(false), 3500);
@@ -500,7 +505,7 @@ export default function SettingsPage() {
                     <Field label="Alias de transferencia">
                       <Input value={draft.transferAlias} onChange={(e) => setDraft({ ...draft, transferAlias: e.target.value })} />
                     </Field>
-                    <Field label="CBU / CVU / Titular">
+                    <Field label="CBU / CVU" hint="Los 22 dígitos de la cuenta que recibirá las transferencias.">
                       <Input value={draft.transferAccount} onChange={(e) => setDraft({ ...draft, transferAccount: e.target.value })} />
                     </Field>
                   </div>

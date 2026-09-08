@@ -5,7 +5,7 @@ import {
   Search,
   X
 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { queryKeys } from '@/app/query-keys';
 import { useBusinessQuery } from '@/app/use-business-query';
 import { PageHeader } from '@/components/layout/AdminShell';
@@ -24,6 +24,7 @@ export default function CustomersPage() {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+  const [historyPage, setHistoryPage] = useState(1);
 
   const customersQuery = useBusinessQuery({
     queryKey: queryKeys.customers(page, search),
@@ -31,59 +32,19 @@ export default function CustomersPage() {
   });
 
   const ordersQuery = useBusinessQuery({
-    queryKey: queryKeys.orders(1),
-    queryFn: (api) => api.listOrders(1, 100)
+    queryKey: queryKeys.customerOrders(selectedCustomer?.id, historyPage),
+    enabled: Boolean(selectedCustomer),
+    queryFn: (api) => api.listCustomerOrders(selectedCustomer!.id, historyPage, 20)
   });
 
   const financial = can(user, 'view_financials');
-
   const customers = customersQuery.data?.items ?? [];
-
-  const selectedCustomerOrders = useMemo(() => {
-    if (!selectedCustomer) return [];
-    return (ordersQuery.data?.items ?? []).filter(
-      (o) =>
-        (selectedCustomer.id && o.customerId === selectedCustomer.id) ||
-        (selectedCustomer.phone && o.customerPhone && o.customerPhone === selectedCustomer.phone) ||
-        (o.customerName &&
-          selectedCustomer.name &&
-          o.customerName.trim().toLowerCase() === selectedCustomer.name.trim().toLowerCase())
-    );
-  }, [selectedCustomer, ordersQuery.data?.items]);
-
-  const selectedCustomerPhone = useMemo(() => {
-    if (!selectedCustomer) return null;
-    if (selectedCustomer.phone && selectedCustomer.phone.trim() !== '') {
-      return selectedCustomer.phone;
-    }
-    const orderWithPhone = selectedCustomerOrders.find(
-      (o) => Boolean(o.customerPhone && o.customerPhone.trim() !== '')
-    );
-    return orderWithPhone?.customerPhone ?? null;
-  }, [selectedCustomer, selectedCustomerOrders]);
-
-  const selectedCustomerFirstOrder = useMemo(() => {
-    if (!selectedCustomer) return null;
-    if (selectedCustomerOrders.length === 0) return selectedCustomer.firstOrderAt;
-    return selectedCustomerOrders.reduce(
-      (earliest, o) => (new Date(o.createdAt) < new Date(earliest) ? o.createdAt : earliest),
-      selectedCustomer.firstOrderAt
-    );
-  }, [selectedCustomer, selectedCustomerOrders]);
-
-  const selectedCustomerPendingOrders = useMemo(() => {
-    return selectedCustomerOrders.filter(
-      (o) => o.paymentState === 'pending' && o.orderState !== 'cancelled'
-    );
-  }, [selectedCustomerOrders]);
-
-  // Métricas autoritativas del cliente calculadas en DB sobre el 100% de su historial
+  const selectedCustomerOrders = ordersQuery.data?.items ?? [];
+  const selectedCustomerPhone = selectedCustomer?.phone;
   const authoritativeOrderCount = selectedCustomer?.orderCount ?? 0;
   const authoritativeTotalPaidCents = selectedCustomer?.totalPaidCents ?? 0;
-  const authoritativePendingCount = selectedCustomer?.pendingOrderCount ?? selectedCustomerPendingOrders.length;
-  const authoritativePendingTotalCents =
-    selectedCustomer?.pendingTotalCents ??
-    selectedCustomerPendingOrders.reduce((sum, o) => sum + o.totalCents, 0);
+  const authoritativePendingCount = selectedCustomer?.pendingOrderCount ?? 0;
+  const authoritativePendingTotalCents = selectedCustomer?.pendingTotalCents;
 
   return (
     <div className="page-enter">
@@ -99,6 +60,7 @@ export default function CustomersPage() {
           <input
             type="search"
             placeholder="Buscar cliente o teléfono…"
+            aria-label="Buscar cliente o teléfono"
             value={search}
             onChange={(e) => {
               setSearch(e.target.value);
@@ -132,7 +94,15 @@ export default function CustomersPage() {
                 return (
                   <article
                     key={customer.id}
-                    onClick={() => setSelectedCustomer(customer)}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`Ver cliente ${customer.name}`}
+                    onClick={() => { setHistoryPage(1); setSelectedCustomer(customer); }}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault(); setHistoryPage(1); setSelectedCustomer(customer);
+                      }
+                    }}
                     className="grid min-h-[3.75rem] cursor-pointer gap-3 p-4 transition hover:bg-cream-50/80 sm:grid-cols-[1.5fr_1.2fr_1fr_1fr_2rem] sm:items-center sm:px-6 sm:py-3.5"
                   >
                     <div>
@@ -174,7 +144,7 @@ export default function CustomersPage() {
 
           {customers.length === 0 ? (
             <div className="rounded-2xl border border-ink-950/8 bg-white p-8 text-center text-sm font-semibold text-ink-600 shadow-sm">
-              No hay clientes que coincidan con la búsqueda.
+              {search.trim() ? 'No hay clientes que coincidan con la búsqueda. Probá con otro nombre o teléfono.' : 'Todavía no hay clientes. Se agregarán automáticamente cuando cargues su primer pedido.'}
             </div>
           ) : null}
 
@@ -220,7 +190,7 @@ export default function CustomersPage() {
               </h2>
                 <p className="mt-1 text-[14.5px] font-bold text-ink-700">
                   Cliente desde {new Intl.DateTimeFormat('es-AR', { dateStyle: 'medium' }).format(
-                    new Date(selectedCustomerFirstOrder ?? selectedCustomer.firstOrderAt)
+                    new Date(selectedCustomer.firstOrderAt)
                   )}
                 </p>
               </div>
@@ -249,7 +219,7 @@ export default function CustomersPage() {
                     <a
                       href={buildWhatsAppUrl(
                         selectedCustomerPhone,
-                        `Hola ${selectedCustomer.name}, te escribimos de Impulso Suplementos.`
+                        `Hola ${selectedCustomer.name}, te escribimos por tu pedido de suplementos.`
                       )}
                       target="_blank"
                       rel="noreferrer"
@@ -276,13 +246,10 @@ export default function CustomersPage() {
                     <p className="font-black text-amber-900">
                       {authoritativePendingCount === 1
                         ? '1 pedido pendiente'
-                        : `${authoritativePendingCount} pedidos pendientes`} · {formatMoney(authoritativePendingTotalCents)}
+                        : `${authoritativePendingCount} pedidos pendientes`}
+                      {authoritativePendingTotalCents != null ? ` · ${formatMoney(authoritativePendingTotalCents)}` : ''}
                     </p>
-                    {selectedCustomerPendingOrders.length > 0 ? (
-                      <p className="text-amber-800 font-semibold text-xs">
-                        {selectedCustomerPendingOrders.map((o) => `#${o.number}`).join(', ')} (pendiente de cobro)
-                      </p>
-                    ) : null}
+
                   </div>
                 )}
               </div>
@@ -308,6 +275,9 @@ export default function CustomersPage() {
                   </div>
                 ) : null}
 
+                {ordersQuery.isPending ? <LoadingState label="Cargando pedidos del cliente…" /> : null}
+                {ordersQuery.isError ? <ErrorState error={ordersQuery.error} onRetry={() => void ordersQuery.refetch()} /> : null}
+                {ordersQuery.data?.total === 0 ? <p className="text-sm text-ink-600">Este cliente todavía no tiene pedidos.</p> : null}
                 <div className="space-y-2 pt-1">
                   {selectedCustomerOrders.map((ord) => (
                     <div
@@ -341,6 +311,17 @@ export default function CustomersPage() {
                     </div>
                   ))}
                 </div>
+                {ordersQuery.data && ordersQuery.data.total > ordersQuery.data.pageSize ? (
+                  <nav aria-label="Historial del cliente" className="flex flex-wrap items-center justify-between gap-2 pt-2">
+                    <Button variant="ghost" size="sm" disabled={historyPage === 1} onClick={() => setHistoryPage(p => p - 1)}>
+                      <ChevronLeft className="size-4" /> Anterior
+                    </Button>
+                    <span className="text-xs font-bold text-ink-600">Página {historyPage} de {Math.ceil(ordersQuery.data.total / ordersQuery.data.pageSize)}</span>
+                    <Button variant="ghost" size="sm" disabled={historyPage * ordersQuery.data.pageSize >= ordersQuery.data.total} onClick={() => setHistoryPage(p => p + 1)}>
+                      Siguiente <ChevronRight className="size-4" />
+                    </Button>
+                  </nav>
+                ) : null}
               </div>
             </div>
 

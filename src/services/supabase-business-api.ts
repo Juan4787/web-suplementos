@@ -15,7 +15,7 @@ import type {
   StoreSettings
 } from '@/domain/types';
 import { getSupabaseClient } from '@/lib/supabase';
-import type { AIAnswer, BusinessApi, Page, PurchasesPage } from './business-api';
+import type { AIAnswer, BusinessApi, Page, OrdersPage, PurchasesPage } from './business-api';
 import { requestBusinessAI } from './business-ai-client';
 
 type RpcArgs = Record<string, unknown>;
@@ -25,8 +25,28 @@ const configurationError = (): AppError =>
     nextAction: 'Por favor contactá al administrador de la tienda.'
   });
 
-const translateDatabaseError = (error: { message?: string; code?: string }): AppError => {
+export const translateDatabaseError = (error: { message?: string; code?: string }): AppError => {
   const diagnostic = `${error.code ?? ''} ${error.message ?? ''}`;
+  const businessMessages: Record<string, [string, string]> = {
+    STALE_STOCK_COUNT: ['El stock cambió mientras hacías el conteo.', 'Cerrá esta corrección y volvé a abrirla para revisar el stock actualizado antes de guardar.'],
+    CANNOT_DELIVER_ORDER_WAITING_FOR_STOCK: ['Todavía falta mercadería para entregar este pedido.', 'Registrá la recepción de la compra pendiente en Inventario antes de continuar.'],
+    IDEMPOTENCY_KEY_REUSE_MISMATCH: ['Los datos cambiaron respecto del intento anterior.', 'Revisá si la operación ya aparece en Pedidos o Compras antes de iniciar otra.'],
+    OVER_RECEIVING_NOT_ALLOWED: ['La cantidad recibida supera lo que falta de esta compra.', 'Actualizá la compra y anotá solamente las unidades que siguen pendientes.'],
+    INVALID_RECEIVED_QUANTITY: ['La cantidad recibida no es válida.', 'Ingresá unidades enteras, entre cero y la cantidad pendiente.'],
+    RECEIVED_EXCEEDS_ORDERED_QUANTITY: ['La cantidad recibida supera la cantidad pedida.', 'Revisá las unidades pendientes de cada producto.'],
+    CANNOT_CANCEL_PURCHASE_WITH_ACTIVE_RESERVATIONS: ['Esta compra tiene unidades comprometidas en pedidos de clientes.', 'Revisá esos pedidos antes de cancelar la compra.'],
+    CANNOT_CHANGE_PRODUCT_WITH_ACTIVE_RESERVATIONS: ['Este producto tiene unidades reservadas en pedidos.', 'Completá o cancelá esos pedidos antes de cambiar el producto de la compra.'],
+    QUANTITY_BELOW_RESERVED_AND_FULFILLED_CAPACITY: ['La cantidad no puede ser menor que las unidades ya recibidas o reservadas.', 'Revisá los pedidos vinculados y las recepciones de esta compra.'],
+    INVALID_QUANTITY: ['La cantidad del producto no es válida.', 'Ingresá una cantidad entera mayor que cero.'],
+    INVALID_ADJUSTMENT: ['La corrección de stock está incompleta.', 'Ingresá la cantidad real y un motivo que explique la diferencia.'],
+    ORDER_NOT_FOUND: ['No encontramos ese pedido.', 'Actualizá la lista de Pedidos y volvé a buscarlo.'],
+    PURCHASE_ITEM_NOT_FOUND: ['Uno de los productos ya no pertenece a esta compra.', 'Cerrá la recepción y abrí de nuevo la compra actualizada.'],
+    INVALID_ORDER: ['El pedido tiene datos incompletos.', 'Revisá nombre del cliente, productos, cantidades y datos de entrega.'],
+    INVALID_PRODUCT: ['El producto tiene datos incompletos o inválidos.', 'Revisá nombre, presentación, precio y campos marcados en el formulario.'],
+    INVALID_PRODUCT_IMAGE: ['La imagen del producto no es válida.', 'Elegí nuevamente una imagen y esperá a que termine de cargarse.']
+  };
+  const specific = businessMessages[error.message ?? ''];
+  if (specific) return new AppError('business', specific[0], { nextAction: specific[1] });
   if (/JWT|session|auth/i.test(diagnostic)) {
     return new AppError('auth', 'Tu sesión venció.', {
       nextAction: 'Volvé a ingresar para continuar.'
@@ -173,6 +193,8 @@ const invokeAi = async (
 
 export const supabaseBusinessApi: BusinessApi = {
   getSettings: () => rpc<StoreSettings>('get_public_store_settings'),
+  listCustomerOrders: (customerId, page = 1, pageSize = 20) =>
+    rpc<Page<Order>>('list_customer_orders', { p_customer_id: customerId, p_page: page, p_page_size: pageSize }),
   updateSettings: (settings) => rpc<StoreSettings>('update_store_settings', { p_settings: settings }),
   listStorefrontProducts: () => rpc<StorefrontProduct[]>('get_storefront_products'),
   getStorefrontProduct: (slug) =>
@@ -188,97 +210,31 @@ export const supabaseBusinessApi: BusinessApi = {
     await rpc('delete_product', { p_product_id: productId });
   },
   archiveProduct: async (productId, archived) => {
-    try {
-      await rpc('archive_product', { p_product_id: productId, p_archived: archived });
-    } catch {
-      // Fallback a save_product si se ejecutara en un entorno previo
-      const products = await rpc<AdminProduct[]>('list_admin_products');
-      const prod = products.find((p) => p.id === productId);
-      if (!prod) throw new AppError('business', 'No encontramos el producto que querías actualizar.');
-      return await rpc<AdminProduct>('save_product', {
-        p_product: {
-          id: prod.id,
-          sku: prod.sku,
-          slug: prod.slug,
-          name: prod.name,
-          presentation: prod.presentation,
-          description: prod.description,
-          category: prod.category,
-          priceCents: prod.priceCents,
-          currentCostCents: prod.currentCostCents,
-          reorderPoint: prod.reorderPoint,
-          safetyStock: prod.safetyStock,
-          leadTimeDays: prod.leadTimeDays,
-          imageUrl: prod.imageUrl,
-          imageAlt: prod.imageAlt,
-          published: archived ? false : prod.published,
-          active: !archived,
-          featured: archived ? false : prod.featured
-        }
-      });
-    }
+    await rpc('archive_product', { p_product_id: productId, p_archived: archived });
     const updated = await rpc<AdminProduct[]>('list_admin_products');
     const match = updated.find((p) => p.id === productId);
     if (!match) throw new AppError('business', 'No se pudo verificar la actualización del producto.');
     return match;
   },
   listInventory: () => rpc('list_inventory_status'),
-  adjustStock: async (productId, delta, reason) => {
-    await rpc('adjust_product_stock', {
+  adjustStock: async (productId, delta, reason, expectedOnHand) => {
+    await rpc(expectedOnHand === undefined ? 'adjust_product_stock' : 'adjust_product_stock_checked', {
       p_product_id: productId,
       p_delta: delta,
-      p_reason: reason
+      p_reason: reason,
+      ...(expectedOnHand === undefined ? {} : { p_expected_on_hand: expectedOnHand })
     });
   },
   updateStockThresholds: async ({ productId, reorderPoint, safetyStock, leadTimeDays }) => {
-    try {
-      await rpc('update_stock_thresholds', {
-        p_product_id: productId,
-        p_reorder_point: reorderPoint,
-        p_safety_stock: safetyStock,
-        p_lead_time_days: leadTimeDays ?? null
-      });
-    } catch (err: unknown) {
-      const diagnostic = err instanceof Error ? err.message : String(err);
-      if (
-        diagnostic.includes('update_stock_thresholds') ||
-        diagnostic.includes('P0001') ||
-        diagnostic.includes('function') ||
-        diagnostic.includes('42883')
-      ) {
-        const products = await rpc<AdminProduct[]>('list_admin_products');
-        const prod = products.find((p) => p.id === productId);
-        if (!prod) throw new AppError('business', 'No encontramos el producto que querías actualizar.');
-        await rpc<AdminProduct>('save_product', {
-          p_product: {
-            id: prod.id,
-            sku: prod.sku,
-            slug: prod.slug,
-            name: prod.name,
-            presentation: prod.presentation,
-            description: prod.description,
-            category: prod.category,
-            priceCents: prod.priceCents,
-            currentCostCents: prod.currentCostCents,
-            reorderPoint,
-            safetyStock,
-            leadTimeDays: leadTimeDays ?? prod.leadTimeDays,
-            imageUrl: prod.imageUrl,
-            imageAlt: prod.imageAlt,
-            published: prod.published,
-            active: prod.active,
-            featured: prod.featured
-          }
-        });
-        return;
-      }
-      throw err;
-    }
+    await rpc('update_stock_thresholds', {
+      p_product_id: productId, p_reorder_point: reorderPoint,
+      p_safety_stock: safetyStock, p_lead_time_days: leadTimeDays ?? null
+    });
   },
-  listOrders: (page = 1, pageSize = 20) =>
-    rpc<Page<Order>>('list_orders', { p_page: page, p_page_size: pageSize }),
-  listPaidOrders: (page = 1, pageSize = 20) =>
-    rpc<Page<Order>>('list_paid_orders', { p_page: page, p_page_size: pageSize }),
+  listOrders: (page = 1, pageSize = 20, search = '', state = 'all') =>
+    rpc<OrdersPage>('search_orders', { p_page: page, p_page_size: pageSize, p_search: search, p_state: state }),
+  listPaidOrders: (page = 1, pageSize = 20, from, to) =>
+    rpc<Page<Order>>('search_paid_orders', { p_page: page, p_page_size: pageSize, p_from: from || null, p_to: to || null }),
   confirmImportedOrder: (input) =>
     rpc<Order>('confirm_imported_order', { p_order: input }),
   transitionOrder: (orderId, action) =>

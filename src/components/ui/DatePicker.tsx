@@ -16,6 +16,9 @@ import {
   addDays
 } from 'date-fns';
 import { es } from 'date-fns/locale';
+import { useField } from './field-context';
+import { createPortal } from 'react-dom';
+import { usePopoverPosition } from './use-popover-position';
 import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, X } from 'lucide-react';
 
 export interface DatePickerProps {
@@ -43,10 +46,13 @@ export function DatePicker({
   showShortcuts = true,
   align = 'left'
 }: DatePickerProps) {
+  const field = useField();
   const generatedId = useId();
-  const inputId = id || generatedId;
+  const inputId = id || field?.id || generatedId;
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const calendarRef = useRef<HTMLDivElement>(null);
+  const position = usePopoverPosition(isOpen, containerRef, { align, minWidth: 312, maxHeight: 520, centerOnMobile: true });
 
   // Parse current selected date
   const parsedValue = value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? parseISO(value) : null;
@@ -60,6 +66,7 @@ export function DatePicker({
     if (!isOpen) return;
 
     const handleClickOutside = (event: MouseEvent | TouchEvent) => {
+      if (calendarRef.current?.contains(event.target as Node)) return;
       if (
         event.composedPath &&
         containerRef.current &&
@@ -75,6 +82,7 @@ export function DatePicker({
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setIsOpen(false);
+        containerRef.current?.querySelector('button')?.focus();
       }
     };
 
@@ -94,6 +102,7 @@ export function DatePicker({
     onChange?.(formatted);
     setViewDate(date);
     setIsOpen(false);
+    containerRef.current?.querySelector('button')?.focus();
   };
 
   const handleClear = (e: React.MouseEvent) => {
@@ -134,6 +143,9 @@ export function DatePicker({
         data-testid="datepicker-trigger"
         type="button"
         disabled={disabled}
+        aria-label={field?.label}
+        aria-invalid={field?.invalid}
+        aria-describedby={field?.descriptionId}
         onClick={() => {
           if (!disabled) {
             if (!isOpen) {
@@ -181,20 +193,22 @@ export function DatePicker({
       </button>
 
       {/* Floating / Centered Calendar Popover */}
-      {isOpen && (
+      {isOpen && createPortal(
         <>
           {/* Mobile backdrop */}
           <div
-            className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs sm:hidden animate-in fade-in duration-150"
+            className="fixed inset-0 z-[60] bg-black/40 backdrop-blur-xs sm:hidden animate-in fade-in duration-150"
             onClick={() => setIsOpen(false)}
             aria-hidden="true"
           />
 
           <div
-            className={`fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-[min(21.5rem,calc(100vw-2rem))] rounded-[1.75rem] border border-ink-950/10 bg-white p-4 sm:p-4.5 shadow-[0_20px_50px_rgba(15,23,42,0.25)] transition-all animate-in fade-in zoom-in-95 duration-150 select-none sm:translate-x-0 sm:translate-y-0 sm:top-full sm:mt-2 sm:w-[19.5rem] sm:min-w-[19.5rem] sm:shadow-[0_20px_50px_rgba(15,23,42,0.18)] ${
-              align === 'right' ? 'sm:right-0 sm:left-auto' : 'sm:left-0 sm:right-auto'
-            } sm:absolute`}
-            style={{ isolation: 'isolate' }}
+            ref={calendarRef}
+            data-modal-popover="date"
+            role="dialog"
+            aria-label="Elegir fecha"
+            className="overflow-y-auto rounded-[1.75rem] border border-ink-950/10 bg-white p-4 shadow-[0_20px_50px_rgba(15,23,42,0.25)] select-none"
+            style={position}
           >
             {/* Quick Shortcuts */}
             {showShortcuts && (
@@ -321,7 +335,7 @@ export function DatePicker({
               </button>
             </div>
           </div>
-        </>
+        </>, document.body
       )}
     </div>
   );

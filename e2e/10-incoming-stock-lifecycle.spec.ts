@@ -9,8 +9,8 @@ import {
 
 const fileEnv = loadEnv('production', PROJECT_ROOT, '');
 const password = (process.env.SUPABASE_DB_PASSWORD || fileEnv.SUPABASE_DB_PASSWORD)?.trim();
-const adminEmail = (process.env.E2E_EMAIL || fileEnv.E2E_EMAIL)?.trim() || 'juanpabloaltamira@protonmail.com';
-const adminPassword = (process.env.E2E_PASSWORD || fileEnv.E2E_PASSWORD)?.trim() || '456546544';
+const adminEmail = (process.env.E2E_EMAIL || fileEnv.E2E_EMAIL)?.trim();
+const adminPassword = (process.env.E2E_PASSWORD || fileEnv.E2E_PASSWORD)?.trim();
 
 const OWNER_USER_ID = 'cded5daf-3e27-4f6b-86dd-a514fac1cd28';
 
@@ -24,6 +24,10 @@ test.describe('E2E Real: Ciclo de Vida de Stock Entrante (Cliente a Entrega y Ve
   let createdOrderNumber: number | null = null;
 
   test.beforeAll(async () => {
+    test.skip(process.env.E2E_ALLOW_REMOTE_WRITES !== '1', 'La prueba remota requiere autorización explícita de escrituras.');
+    if (process.env.PLAYWRIGHT_BASE_URL !== 'https://tienda.desuplementos.workers.dev' || !adminEmail || !adminPassword) {
+      throw new Error('La prueba remota requiere el destino correcto y credenciales explícitas.');
+    }
     if (!password) {
       throw new Error('SUPABASE_DB_PASSWORD no está disponible para configurar el fixture E2E.');
     }
@@ -239,8 +243,8 @@ test.describe('E2E Real: Ciclo de Vida de Stock Entrante (Cliente a Entrega y Ve
     // PASO 4: Ingreso al Panel Admin y autenticación
     // -------------------------------------------------------------------------
     await page.goto('/ingresar');
-    await page.locator('#email').fill(adminEmail);
-    await page.locator('#password').fill(adminPassword);
+    await page.locator('#email').fill(adminEmail!);
+    await page.locator('#password').fill(adminPassword!);
     await page.getByRole('button', { name: /ingresar/i }).click();
     await page.waitForURL(/\/app/, { timeout: 15000 });
 

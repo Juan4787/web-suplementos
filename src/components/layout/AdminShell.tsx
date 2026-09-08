@@ -17,7 +17,7 @@ import {
 import { useEffect, useRef, useState } from 'react';
 import { Logo } from '@/components/brand/Logo';
 import { Button } from '@/components/ui/Button';
-import { LoadingState } from '@/components/ui/DataState';
+import { ErrorState, LoadingState } from '@/components/ui/DataState';
 import type { Capability } from '@/domain/permissions';
 import { can } from '@/domain/permissions';
 import { useAuth } from '@/features/auth/AuthProvider';
@@ -102,6 +102,7 @@ function NavigationItems({ close }: { close?: (() => void) | undefined }) {
 function UserPanel() {
   const { user, isDemo, signOut, switchDemoRole } = useAuth();
   const [open, setOpen] = useState(false);
+  const [signOutError, setSignOutError] = useState<unknown>(null);
   const panelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -150,12 +151,13 @@ function UserPanel() {
           ) : null}
           <button
             className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-bold text-white/80 hover:bg-white/12 hover:text-white"
-            onClick={() => void signOut()}
+            onClick={() => { setSignOutError(null); void signOut().catch(setSignOutError); }}
           >
             <LogOut className="size-4" /> Cerrar sesión
           </button>
         </div>
       ) : null}
+      {signOutError ? <ErrorState error={signOutError} /> : null}
       {isDemo ? (
         <p className="mt-2 text-center text-[12.5px] font-bold text-white/45">
           Entorno de demostración

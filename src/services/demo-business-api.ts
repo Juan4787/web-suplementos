@@ -364,9 +364,14 @@ export const demoBusinessApi: BusinessApi = {
     return latency(toDemoInventory(state.products));
   },
 
-  async adjustStock(productId, delta, reason) {
+  async adjustStock(productId, delta, reason, expectedOnHand) {
     const product = state.products.find((candidate) => candidate.id === productId);
     if (!product) throw new AppError('business', 'No encontramos el producto que querías ajustar.');
+    if (expectedOnHand !== undefined && product.onHand !== expectedOnHand) {
+      throw new AppError('business', 'El stock cambió mientras hacías el conteo.', {
+        nextAction: 'Cerrá esta corrección y volvé a abrirla para revisar el stock actualizado antes de guardar.'
+      });
+    }
     if (!Number.isSafeInteger(delta) || delta === 0 || !reason.trim()) {
       throw new AppError('validation', 'Ingresá una cantidad y un motivo para el ajuste.');
     }
@@ -409,12 +414,21 @@ export const demoBusinessApi: BusinessApi = {
     await latency(undefined);
   },
 
-  async listOrders(page = 1, pageSize = 20) {
-    return latency(paginate(state.orders, page, pageSize));
+  async listOrders(page = 1, pageSize = 20, search = '', filter = 'all') {
+    const term = search.trim().toLowerCase();
+    const digits = term.replace(/\D/g, '');
+    const completed = (o: Order) => o.orderState === 'cancelled' || (o.fulfillmentState === 'delivered' && o.paymentState === 'paid');
+    const matched = state.orders.filter(o => !term || o.customerName.toLowerCase().includes(term) || String(o.number).includes(term) || (digits.length >= 3 && (o.customerPhone ?? '').replace(/\D/g, '').includes(digits)));
+    const selected = matched.filter(o => filter === 'all' || (filter === 'completed') === completed(o));
+    return latency({ ...paginate(selected, page, pageSize), pendingTotal: matched.filter(o => !completed(o)).length, completedTotal: matched.filter(completed).length });
   },
 
-  async listPaidOrders(page = 1, pageSize = 20) {
-    return latency(paginate(state.orders.filter((order) => order.paymentState === 'paid'), page, pageSize));
+  async listPaidOrders(page = 1, pageSize = 20, from, to) {
+    const filtered = state.orders.filter(order => {
+      const date = order.paidAt ? new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' }).format(new Date(order.paidAt)) : '';
+      return order.paymentState === 'paid' && (!from || date >= from) && (!to || date <= to);
+    }).sort((a, b) => (b.paidAt ?? '').localeCompare(a.paidAt ?? ''));
+    return latency(paginate(filtered, page, pageSize));
   },
 
   async confirmImportedOrder(input) {
@@ -503,7 +517,7 @@ export const demoBusinessApi: BusinessApi = {
       taxRateBasisPoints: state.settings.taxRateBasisPoints,
       taxAmountCents: calculateBasisPoints(
         subtotalCents + input.shippingFeeCents,
-        state.settings.taxRateBasisPoints
+        state.settings.taxRateBasisPoints ?? 0
       ),
       costTotalCents,
       createdAt: now,
@@ -855,14 +869,18 @@ export const demoBusinessApi: BusinessApi = {
     return latency(paginate(list, page, pageSize));
   },
 
+  async listCustomerOrders(customerId, page = 1, pageSize = 20) {
+    const orders = state.orders.filter(o => o.customerId === customerId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));
+    return latency(paginate(orders, page, pageSize));
+  },
+
   async listCustomers(page = 1, pageSize = 30, search?: string) {
     // Sincronizar estadísticas de clientes con pedidos reales
     for (const customer of state.customers) {
       const orders = state.orders.filter(
         (o) =>
-          o.customerId === customer.id ||
-          (customer.phone && o.customerPhone && o.customerPhone === customer.phone) ||
-          o.customerName.trim().toLowerCase() === customer.name.trim().toLowerCase()
+          o.customerId === customer.id
       );
       if (orders.length > 0) {
         customer.orderCount = orders.filter((o) => o.orderState !== 'cancelled').length;

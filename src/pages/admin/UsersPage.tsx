@@ -105,7 +105,7 @@ export default function UsersPage() {
           );
         })}</div>
         <section className="mt-7 grid gap-4 md:grid-cols-2"><div className="rounded-[1.75rem] bg-ink-950 p-6 text-white"><Crown className="size-6 text-brand-300" /><h2 className="mt-4 font-display text-2xl font-black">Dueña</h2><p className="mt-2 text-sm leading-6 text-white/60">Opera, ve costos y analíticas, exporta, usa IA, configura la tienda y administra permisos.</p></div><div className="rounded-[1.75rem] bg-white p-6 shadow-card"><Shield className="size-6 text-brand-600" /><h2 className="mt-4 font-display text-2xl font-black">Personal</h2><p className="mt-2 text-sm leading-6 text-ink-600">Gestiona catálogo público, stock y pedidos. El sistema protege y no le muestra costos, ganancias ni analíticas financieras.</p></div></section>
-        <p className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-950">Alta de nuevo integrante: la persona debe registrarse primero con su correo electrónico para que la dueña pueda asignarle su rol.</p>
+        <p className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-950">Para agregar a una persona, pedile a quien administra la aplicación que cree su cuenta con el correo del integrante. Después aparecerá aquí para que la dueña elija el rol y habilite el acceso.</p>
       </div>
     </RoleGate>
   );

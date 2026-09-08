@@ -67,7 +67,7 @@ export const revalidateCartWithCatalog = (
     partialStockProducts: []
   };
 
-  if (currentLines.length === 0 || catalogProducts.length === 0) return result;
+  if (currentLines.length === 0) return result;
 
   let hasLinePriceChange = false;
   const updated = currentLines.map((line) => {
@@ -146,7 +146,7 @@ export const prepareCheckoutSubmission = async (
   let priceNotice: string | null = null;
 
   // 1. Revalidación en vivo de catálogo y precios
-  if (input.catalogProducts && input.catalogProducts.length > 0) {
+  if (input.catalogProducts !== undefined) {
     const reval = input.syncWithLiveCatalog
       ? input.syncWithLiveCatalog(input.catalogProducts)
       : revalidateCartWithCatalog(input.lines, input.catalogProducts);

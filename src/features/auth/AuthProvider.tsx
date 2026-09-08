@@ -1,5 +1,7 @@
 import {
   createContext,
+  Fragment,
+  useRef,
   useCallback,
   useContext,
   useEffect,
@@ -7,6 +9,7 @@ import {
   useState,
   type PropsWithChildren
 } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { appEnv } from '@/app/env';
 import { demoOwner, demoStaff } from '@/data/demo-data';
 import { AppError } from '@/domain/errors';
@@ -67,37 +70,10 @@ const profileFromRpc = (data: unknown, fallbackEmail: string): AppUser => {
   };
 };
 
-const AUTH_PROFILE_CACHE_KEY = 'suplementos_auth_profile';
-
-const getCachedProfile = (): AppUser | null => {
-  try {
-    const raw = window.localStorage.getItem(AUTH_PROFILE_CACHE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (
-      typeof parsed === 'object' &&
-      parsed !== null &&
-      typeof parsed.id === 'string' &&
-      typeof parsed.displayName === 'string' &&
-      (parsed.role === 'owner' || parsed.role === 'staff')
-    ) {
-      return parsed as AppUser;
-    }
-  } catch {}
-  return null;
-};
-
-const setCachedProfile = (user: AppUser | null) => {
-  try {
-    if (user) {
-      window.localStorage.setItem(AUTH_PROFILE_CACHE_KEY, JSON.stringify(user));
-    } else {
-      window.localStorage.removeItem(AUTH_PROFILE_CACHE_KEY);
-    }
-  } catch {}
-};
-
 export function AuthProvider({ children }: PropsWithChildren) {
+  const queryClient = useQueryClient();
+  const profileVersion = useRef(0);
+  const sessionEpoch = useRef(0);
   const [user, setUser] = useState<AppUser | null>(() => {
     if (appEnv.isDemo) {
       try {
@@ -107,19 +83,26 @@ export function AuthProvider({ children }: PropsWithChildren) {
       } catch {}
       return demoOwner;
     }
-    return getCachedProfile();
+    return null;
   });
+  const currentUser = useRef<AppUser | null>(user);
   const [loading, setLoading] = useState(() => {
     if (appEnv.isDemo) return false;
     if (appEnv.mode !== 'supabase') return false;
-    return getCachedProfile() === null;
+    return true;
   });
   const [authError, setAuthError] = useState<AppError | null>(null);
 
   const updateActiveUser = useCallback((nextUser: AppUser | null) => {
+    const previous = currentUser.current;
+    if (previous?.id !== nextUser?.id || previous?.role !== nextUser?.role) {
+      queryClient.clear();
+    }
+    currentUser.current = nextUser;
     setUser(nextUser);
-    setCachedProfile(nextUser);
-  }, []);
+    // Remove the legacy unverified profile; only Supabase persists the session.
+    try { window.localStorage.removeItem('suplementos_auth_profile'); } catch {}
+  }, [queryClient]);
 
   const requestSupabaseProfile = useCallback(async (fallbackEmail: string): Promise<AppUser> => {
     const { data, error } = await getSupabaseClient().rpc('get_current_profile');
@@ -130,8 +113,10 @@ export function AuthProvider({ children }: PropsWithChildren) {
   const loadSupabaseProfile = useCallback(async (_isInitial = false) => {
     if (appEnv.mode !== 'supabase') return;
     const client = getSupabaseClient();
+    const version = ++profileVersion.current;
     try {
       const { data: sessionData, error: sessionError } = await client.auth.getSession();
+      if (version !== profileVersion.current) return;
       if (sessionError) throw profileRequestError(sessionError);
       const session = sessionData.session;
       if (!session) {
@@ -140,9 +125,11 @@ export function AuthProvider({ children }: PropsWithChildren) {
         return;
       }
       const profile = await requestSupabaseProfile(session.user.email ?? '');
+      if (version !== profileVersion.current) return;
       updateActiveUser(profile);
       setAuthError(null);
     } catch (caught) {
+      if (version !== profileVersion.current) return;
       const err = caught instanceof AppError ? caught : profileRequestError(caught);
       if (err.kind === 'auth') {
         updateActiveUser(null);
@@ -152,7 +139,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
         setAuthError(err);
       }
     } finally {
-      setLoading(false);
+      if (version === profileVersion.current) setLoading(false);
     }
   }, [requestSupabaseProfile, updateActiveUser]);
 
@@ -160,18 +147,30 @@ export function AuthProvider({ children }: PropsWithChildren) {
     if (appEnv.mode !== 'supabase') return;
     void loadSupabaseProfile(true);
     const client = getSupabaseClient();
+    let refreshTimer: ReturnType<typeof setTimeout> | undefined;
     const { data } = client.auth.onAuthStateChange((event, session) => {
+      clearTimeout(refreshTimer);
       if (event === 'SIGNED_OUT' || !session) {
+        sessionEpoch.current += 1;
+        profileVersion.current += 1;
         updateActiveUser(null);
         setLoading(false);
-      } else if (event === 'SIGNED_IN') {
-        void loadSupabaseProfile(false);
       } else {
-        // TOKEN_REFRESHED, USER_UPDATED: revalidación silenciosa en segundo plano
-        void loadSupabaseProfile(false);
+        // Auth notifications run under the session lock. Revalidate after it is released.
+        if (currentUser.current && currentUser.current.id !== session.user.id) {
+          profileVersion.current += 1;
+          updateActiveUser(null);
+          setLoading(true);
+        }
+        refreshTimer = setTimeout(() => void loadSupabaseProfile(), 0);
       }
     });
-    return () => data.subscription.unsubscribe();
+    return () => {
+      sessionEpoch.current += 1;
+      clearTimeout(refreshTimer);
+      profileVersion.current += 1;
+      data.subscription.unsubscribe();
+    };
   }, [loadSupabaseProfile, updateActiveUser]);
 
   const signIn = useCallback(async (email: string, password: string) => {
@@ -180,7 +179,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
       try {
         window.sessionStorage.setItem('demo_role', nextRole);
       } catch {}
-      setUser(nextRole === 'staff' ? demoStaff : demoOwner);
+      updateActiveUser(nextRole === 'staff' ? demoStaff : demoOwner);
       setAuthError(null);
       return;
     }
@@ -189,17 +188,21 @@ export function AuthProvider({ children }: PropsWithChildren) {
     }
     const client = getSupabaseClient();
     setAuthError(null);
+    const epoch = sessionEpoch.current;
     const { data, error } = await client.auth.signInWithPassword({ email, password });
     if (error) {
+      if (error.code !== 'invalid_credentials' && error.status !== 400) throw profileRequestError(error);
       throw new AppError('auth', 'El correo o la contraseña no coinciden.', {
         nextAction: 'Revisalos y volvé a intentarlo.'
       });
     }
     try {
       const profile = await requestSupabaseProfile(data.user.email ?? email);
+      if (epoch !== sessionEpoch.current) return;
       updateActiveUser(profile);
       setAuthError(null);
     } catch (caught) {
+      if (epoch !== sessionEpoch.current) return;
       const accessError = caught instanceof AppError ? caught : profileRequestError(caught);
       updateActiveUser(null);
       setAuthError(accessError);
@@ -213,11 +216,16 @@ export function AuthProvider({ children }: PropsWithChildren) {
       try {
         window.sessionStorage.removeItem('demo_role');
       } catch {}
-      setUser(null);
+      updateActiveUser(null);
       setAuthError(null);
       return;
     }
-    if (appEnv.mode === 'supabase') await getSupabaseClient().auth.signOut();
+    profileVersion.current += 1;
+    sessionEpoch.current += 1;
+    if (appEnv.mode === 'supabase') {
+      const { error } = await getSupabaseClient().auth.signOut({ scope: 'local' });
+      if (error) throw profileRequestError(error);
+    }
     updateActiveUser(null);
     setAuthError(null);
   }, [updateActiveUser]);
@@ -227,16 +235,16 @@ export function AuthProvider({ children }: PropsWithChildren) {
       try {
         window.sessionStorage.setItem('demo_role', role);
       } catch {}
-      setUser(role === 'owner' ? demoOwner : demoStaff);
+      updateActiveUser(role === 'owner' ? demoOwner : demoStaff);
     }
-  }, []);
+  }, [updateActiveUser]);
 
   const value = useMemo<AuthContextValue>(
     () => ({ user, loading, authError, isDemo: appEnv.isDemo, signIn, signOut, switchDemoRole }),
     [user, loading, authError, signIn, signOut, switchDemoRole]
   );
 
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+  return <AuthContext.Provider value={value}><Fragment key={`${user?.id ?? "guest"}:${user?.role ?? "none"}`}>{children}</Fragment></AuthContext.Provider>;
 }
 
 export const useAuth = (): AuthContextValue => {
