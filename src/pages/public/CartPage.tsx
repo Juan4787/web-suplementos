@@ -167,10 +167,12 @@ export default function CartPage() {
           <div className="mt-10 grid gap-8 lg:grid-cols-[1fr_23rem] lg:items-start">
             <div className="space-y-4">
               {lines.map((line) => {
+                const product = productsQuery.data?.find((p) => p.id === line.productId);
                 const status = productStatusMap.get(line.productId);
                 const isOutOfStock = status?.status === 'out_of_stock';
                 const isUnavailable = status?.status === 'unavailable';
                 const isPartial = status?.status === 'partial';
+                const maxAvailable = product ? Math.max(0, product.maxOrderQuantity) : 20;
 
                 return (
                   <article
@@ -242,8 +244,13 @@ export default function CartPage() {
                           </button>
                           <span className="min-w-9 text-center text-sm font-black">{line.quantity}</span>
                           <button
-                            className="grid size-9 place-items-center rounded-full hover:bg-white"
-                            onClick={() => setQuantity(line.productId, line.quantity + 1)}
+                            className="grid size-9 place-items-center rounded-full hover:bg-white disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
+                            onClick={() => {
+                              if (line.quantity < maxAvailable) {
+                                setQuantity(line.productId, line.quantity + 1, maxAvailable);
+                              }
+                            }}
+                            disabled={line.quantity >= maxAvailable}
                             aria-label={`Sumar ${line.name}`}
                           >
                             <Plus className="size-3.5" />

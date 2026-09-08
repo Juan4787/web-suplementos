@@ -9,6 +9,12 @@ import {
   type PropsWithChildren
 } from 'react';
 import type { CartLine, CheckoutData, StorefrontProduct } from '@/domain/types';
+import {
+  revalidateCartWithCatalog,
+  type CartRevalidationResult
+} from '@/domain/checkout';
+
+export type { CartRevalidationResult };
 
 export const CART_STORAGE_KEY = 'impulso-cart-v2';
 export const CART_SCHEMA_VERSION = 2;
@@ -29,13 +35,6 @@ export type StoredCartV2 = {
   protocolDraft?: ProtocolDraft | undefined;
 };
 
-export type CartRevalidationResult = {
-  priceChanges: Array<{ name: string; oldPriceCents: number; newPriceCents: number }>;
-  outOfStockProducts: string[];
-  unavailableProducts: string[];
-  partialStockProducts: Array<{ name: string; available: number; requested: number }>;
-};
-
 type CartContextValue = {
   lines: CartLine[];
   itemCount: number;
@@ -44,11 +43,11 @@ type CartContextValue = {
   expiredNotice: string | null;
   dismissExpiredNotice: () => void;
   checkoutDraft: CheckoutDraft | null;
-  updateCheckoutDraft: (draft: Partial<CheckoutDraft>) => void;
+  updateCheckoutDraft: (draft: Partial<CheckoutData>) => void;
   protocolDraft: ProtocolDraft | null;
   setProtocolDraft: (draft: ProtocolDraft | null) => void;
   add: (product: StorefrontProduct, quantity?: number) => void;
-  setQuantity: (productId: string, quantity: number) => void;
+  setQuantity: (productId: string, quantity: number, maxAvailable?: number) => void;
   remove: (productId: string) => void;
   clear: () => void;
   touchActivity: () => void;
@@ -350,7 +349,7 @@ export function CartProvider({ children }: PropsWithChildren) {
     });
   }, []);
 
-  const setQuantity = useCallback((productId: string, quantity: number) => {
+  const setQuantity = useCallback((productId: string, quantity: number, maxAvailable?: number) => {
     const now = Date.now();
     setLastActivityAt(now);
     setProtocolDraftState(null); // Modificar cantidad invalida el protocolo anterior
@@ -358,10 +357,15 @@ export function CartProvider({ children }: PropsWithChildren) {
       setLines((current) => current.filter((line) => line.productId !== productId));
       return;
     }
+    const sanitized = sanitizeQuantity(quantity);
+    const effective =
+      typeof maxAvailable === 'number' && maxAvailable >= 0
+        ? Math.min(sanitized, maxAvailable)
+        : sanitized;
     setLines((current) =>
       current.map((line) =>
         line.productId === productId
-          ? { ...line, quantity: sanitizeQuantity(quantity) }
+          ? { ...line, quantity: effective }
           : line
       )
     );
@@ -390,52 +394,11 @@ export function CartProvider({ children }: PropsWithChildren) {
   // Revalidación visual en vivo contra el catálogo de la base de datos (referencia 100% estable)
   const syncWithLiveCatalog = useCallback(
     (catalogProducts: StorefrontProduct[]): CartRevalidationResult => {
-      const result: CartRevalidationResult = {
-        priceChanges: [],
-        outOfStockProducts: [],
-        unavailableProducts: [],
-        partialStockProducts: []
-      };
+      const result = revalidateCartWithCatalog(linesRef.current, catalogProducts);
 
-      const currentLines = linesRef.current;
-      if (currentLines.length === 0 || catalogProducts.length === 0) return result;
-
-      let hasLinePriceChange = false;
-      const updated = currentLines.map((line) => {
-        const current = catalogProducts.find((p) => p.id === line.productId);
-        if (!current) {
-          result.unavailableProducts.push(line.name);
-          return line;
-        }
-
-        if (current.availability === 'out_of_stock' || current.maxOrderQuantity <= 0) {
-          result.outOfStockProducts.push(line.name);
-        } else if (line.quantity > current.maxOrderQuantity) {
-          result.partialStockProducts.push({
-            name: line.name,
-            available: current.maxOrderQuantity,
-            requested: line.quantity
-          });
-        }
-
-        if (current.priceCents !== line.unitPriceCents) {
-          result.priceChanges.push({
-            name: line.name,
-            oldPriceCents: line.unitPriceCents,
-            newPriceCents: current.priceCents
-          });
-          hasLinePriceChange = true;
-          return {
-            ...line,
-            unitPriceCents: current.priceCents
-          };
-        }
-
-        return line;
-      });
-
-      if (hasLinePriceChange) {
-        setLines(updated);
+      if (result.priceChanges.length > 0) {
+        linesRef.current = result.updatedLines;
+        setLines(result.updatedLines);
         setProtocolDraftState(null);
       }
 

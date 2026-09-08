@@ -162,7 +162,7 @@ export const demoBusinessApi: BusinessApi = {
       const physAvail = product ? Math.max(0, product.onHand - product.reserved) : 0;
       const incomingAvail = product ? Math.max(0, product.incoming) : 0;
       const available = physAvail + incomingAvail;
-      return !product || !product.active || line.quantity > available
+      return !product || !product.active || !product.published || line.quantity > available
         ? [
             {
               productId: line.productId,

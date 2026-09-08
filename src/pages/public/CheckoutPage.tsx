@@ -19,17 +19,12 @@ import { PublicShell } from '@/components/layout/PublicShell';
 import { Button } from '@/components/ui/Button';
 import { ErrorState } from '@/components/ui/DataState';
 import { Field, Input } from '@/components/ui/Field';
-import { AppError } from '@/domain/errors';
 import { formatMoney } from '@/domain/money';
 import type { CheckoutData } from '@/domain/types';
-import {
-  buildWhatsAppProtocol,
-  createOrderFingerprint,
-  whatsappCheckoutSchema
-} from '@/domain/whatsapp';
+import { calculateShippingFee, prepareCheckoutSubmission } from '@/domain/checkout';
+import { whatsappCheckoutSchema } from '@/domain/whatsapp';
 import { useCart } from '@/features/cart/CartProvider';
 import { cn } from '@/lib/cn';
-import { buildWhatsAppUrl } from '@/lib/whatsapp-url';
 import { getBusinessApi } from '@/services/business-api';
 
 const RadioCard = ({
@@ -131,18 +126,28 @@ export default function CheckoutPage() {
     return () => subscription.unsubscribe();
   }, [watch, cart]);
 
+  // Revalidación proactiva al cargar catálogo en vivo
+  useEffect(() => {
+    if (productsQuery.data && cart.lines.length > 0) {
+      const reval = cart.syncWithLiveCatalog(productsQuery.data);
+      if (reval.priceChanges.length > 0) {
+        const changeSummary = reval.priceChanges
+          .map((c) => `${c.name}: ${formatMoney(c.oldPriceCents)} → ${formatMoney(c.newPriceCents)}`)
+          .join(', ');
+        setPriceNotice(`Actualizamos el total por cambio de precio: ${changeSummary}.`);
+      }
+    }
+  }, [productsQuery.data, cart.syncWithLiveCatalog, cart.lines.length]);
+
   useEffect(() => {
     return () => {
       if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
     };
   }, []);
 
-  const shippingFee =
-    deliveryMethod === 'shipping' && settingsQuery.data
-      ? shippingType === 'express'
-        ? settingsQuery.data.expressShippingCents
-        : settingsQuery.data.standardShippingCents
-      : 0;
+  const shippingFee = settingsQuery.data
+    ? calculateShippingFee(deliveryMethod, shippingType, settingsQuery.data)
+    : 0;
 
   const submit = handleSubmit(async (values) => {
     if (isDebouncingClick || isSubmitting) return;
@@ -163,86 +168,33 @@ export default function CheckoutPage() {
     try {
       const api = await getBusinessApi();
 
-      // 1. Revalidación en vivo de catálogo y precios
-      if (productsQuery.data) {
-        const reval = cart.syncWithLiveCatalog(productsQuery.data);
-        if (reval.priceChanges.length > 0) {
-          const changeSummary = reval.priceChanges
-            .map((c) => `${c.name}: ${formatMoney(c.oldPriceCents)} → ${formatMoney(c.newPriceCents)}`)
-            .join(', ');
-          setPriceNotice(`Actualizamos el total por cambio de precio: ${changeSummary}.`);
-        }
+      const submission = await prepareCheckoutSubmission({
+        values,
+        lines: cart.lines,
+        catalogProducts: productsQuery.data,
+        settings: settingsQuery.data,
+        protocolDraft: cart.protocolDraft,
+        validateAvailability: (lines) => api.validateAvailability(lines),
+        syncWithLiveCatalog: (products) => cart.syncWithLiveCatalog(products)
+      });
+
+      if (submission.priceNotice) {
+        setPriceNotice(submission.priceNotice);
       }
-
-      // 2. Validación en tiempo real de disponibilidad y stock en base de datos
-      const availability = await api.validateAvailability(
-        cart.lines.map((line) => ({ productId: line.productId, quantity: line.quantity }))
-      );
-
-      if (!availability.ok) {
-        const issue = availability.issues[0];
-        if (issue) {
-          if (issue.available <= 0) {
-            throw new AppError('business', `El producto “${issue.productName}” se quedó sin stock.`, {
-              nextAction: 'Volvé al carrito y quitalo para poder continuar.'
-            });
-          }
-          throw new AppError(
-            'business',
-            `Ahora quedan ${issue.available} unidades de “${issue.productName}” (pediste ${issue.requested}).`,
-            {
-              nextAction: 'Volvé al carrito y ajustá la cantidad antes de continuar.'
-            }
-          );
-        }
-        throw new AppError('business', 'Cambió la disponibilidad de uno o más productos.', {
-          nextAction: 'Volvé al carrito y revisá las cantidades antes de continuar.'
-        });
-      }
-
-      // 3. Sanitización de estado al construir el protocolo
-      const sanitizedValues: CheckoutData = {
-        ...values,
-        shippingType: values.deliveryMethod === 'shipping' ? values.shippingType : null,
-        address: values.deliveryMethod === 'shipping' ? values.address : null,
-        addressNumber: values.deliveryMethod === 'shipping' ? values.addressNumber : null,
-        phone: values.deliveryMethod === 'shipping' ? values.phone : null
-      };
-
-      // 4. Estabilidad de Protocol Order ID vs Invalidación si hubo cambios
-      const currentFingerprint = createOrderFingerprint(
-        sanitizedValues,
-        cart.lines,
-        shippingFee
-      );
-
-      const existingOrderId =
-        cart.protocolDraft?.fingerprint === currentFingerprint
-          ? cart.protocolDraft.orderId
-          : undefined;
-
-      const protocol = buildWhatsAppProtocol(
-        sanitizedValues,
-        cart.lines,
-        settingsQuery.data,
-        existingOrderId
-      );
 
       // Guardar el borrador del protocolo para reutilizar si no hay cambios
       cart.setProtocolDraft({
-        orderId: protocol.orderId,
-        fingerprint: currentFingerprint
+        orderId: submission.protocol.orderId,
+        fingerprint: submission.fingerprint
       });
 
       // Tocar timestamp de actividad porque el usuario avanzó
       cart.touchActivity();
 
-      const url = buildWhatsAppUrl(settingsQuery.data.whatsappPhone, protocol.message);
-
       if (desktopWindow) {
-        desktopWindow.location.href = url;
+        desktopWindow.location.href = submission.whatsappUrl;
       } else {
-        window.location.href = url;
+        window.location.href = submission.whatsappUrl;
       }
     } catch (error) {
       desktopWindow?.close();
