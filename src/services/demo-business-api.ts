@@ -807,7 +807,7 @@ export const demoBusinessApi: BusinessApi = {
     return latency(paginate(state.movements, page, pageSize));
   },
 
-  async listCustomers(page = 1, pageSize = 30) {
+  async listCustomers(page = 1, pageSize = 30, search?: string) {
     // Sincronizar estadísticas de clientes con pedidos reales
     for (const customer of state.customers) {
       const orders = state.orders.filter(
@@ -821,9 +821,29 @@ export const demoBusinessApi: BusinessApi = {
         customer.totalPaidCents = orders
           .filter((o) => o.paymentState === 'paid' && o.orderState !== 'cancelled')
           .reduce((sum, o) => sum + o.totalCents, 0);
+        customer.pendingOrderCount = orders.filter((o) => o.paymentState === 'pending' && o.orderState !== 'cancelled').length;
+        customer.pendingTotalCents = orders
+          .filter((o) => o.paymentState === 'pending' && o.orderState !== 'cancelled')
+          .reduce((sum, o) => sum + o.totalCents, 0);
+      } else {
+        customer.pendingOrderCount = 0;
+        customer.pendingTotalCents = 0;
       }
     }
-    return latency(paginate(state.customers, page, pageSize));
+
+    let items = state.customers;
+    if (search && search.trim()) {
+      const term = search.toLowerCase();
+      const digits = search.replace(/[^0-9]/g, '');
+      items = items.filter((c) => {
+        const nameMatch = c.name.toLowerCase().includes(term);
+        const phoneMatch = (c.phone ?? '').includes(term);
+        const digitMatch = digits.length > 0 && (c.phone ?? '').replace(/[^0-9]/g, '').includes(digits);
+        return nameMatch || phoneMatch || digitMatch;
+      });
+    }
+
+    return latency(paginate(items, page, pageSize));
   },
 
   async getAnalytics(from, to) {

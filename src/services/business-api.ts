@@ -102,7 +102,7 @@ export interface BusinessApi {
   receivePurchase(purchaseId: string, items?: ReceivePurchaseItemInput[], operationId?: string): Promise<ReceivePurchaseResult>;
   closePurchaseWithShortage(purchaseId: string, notes?: string): Promise<ReceivePurchaseResult>;
   listMovements(page?: number, pageSize?: number): Promise<Page<StockMovement>>;
-  listCustomers(page?: number, pageSize?: number): Promise<Page<Customer>>;
+  listCustomers(page?: number, pageSize?: number, search?: string): Promise<Page<Customer>>;
   getAnalytics(from: string, to: string): Promise<AnalyticsSummary>;
   listInflationIndices(): Promise<InflationIndex[]>;
   saveInflationIndex(input: InflationIndex): Promise<InflationIndex>;

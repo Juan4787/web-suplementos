@@ -196,6 +196,8 @@ export type Customer = {
   lastOrderAt: string;
   orderCount: number;
   totalPaidCents: number | null;
+  pendingOrderCount?: number;
+  pendingTotalCents?: number | null;
 };
 
 export type StockMovement = {

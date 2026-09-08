@@ -11,7 +11,7 @@ export const queryKeys = {
   purchasesRoot: ['purchases'] as const,
   purchases: (page = 1) => ['purchases', page] as const,
   movements: (page = 1) => ['movements', page] as const,
-  customers: (page = 1) => ['customers', page] as const,
+  customers: (page = 1, search = '') => ['customers', page, search] as const,
   analytics: (from: string, to: string) => ['analytics', from, to] as const,
   inflation: ['inflation-indices'] as const
 };

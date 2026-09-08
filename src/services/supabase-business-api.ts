@@ -312,8 +312,8 @@ export const supabaseBusinessApi: BusinessApi = {
     }),
   listMovements: (page = 1, pageSize = 30) =>
     rpc('list_stock_movements', { p_page: page, p_page_size: pageSize }),
-  listCustomers: (page = 1, pageSize = 30) =>
-    rpc('list_customers', { p_page: page, p_page_size: pageSize }),
+  listCustomers: (page = 1, pageSize = 30, search?: string) =>
+    rpc('list_customers', { p_page: page, p_page_size: pageSize, p_search: search || null }),
   getAnalytics: (from, to) =>
     rpc<AnalyticsSummary>('get_sales_analytics', { p_from: from, p_to: to }),
   listInflationIndices: () => rpc('list_inflation_indices'),

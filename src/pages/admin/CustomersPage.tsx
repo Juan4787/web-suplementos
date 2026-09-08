@@ -26,8 +26,8 @@ export default function CustomersPage() {
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
 
   const customersQuery = useBusinessQuery({
-    queryKey: queryKeys.customers(page),
-    queryFn: (api) => api.listCustomers(page, 30)
+    queryKey: queryKeys.customers(page, search),
+    queryFn: (api) => api.listCustomers(page, 30, search)
   });
 
   const ordersQuery = useBusinessQuery({
@@ -37,49 +37,7 @@ export default function CustomersPage() {
 
   const financial = can(user, 'view_financials');
 
-  const filteredCustomers = useMemo(() => {
-    const raw = customersQuery.data?.items ?? [];
-    // Consolidar clientes duplicados por teléfono (si existe) o por nombre normalizado
-    const customerMap = new Map<string, Customer>();
-
-    for (const c of raw) {
-      const key = c.phone && c.phone.trim() !== ''
-        ? `phone:${c.phone.replace(/[^0-9]/g, '')}`
-        : `name:${c.name.trim().toLowerCase()}`;
-
-      const existing = customerMap.get(key);
-      if (!existing) {
-        customerMap.set(key, { ...c });
-      } else {
-        const isMoreRecent = new Date(c.lastOrderAt) > new Date(existing.lastOrderAt);
-        const isEarlierFirst = new Date(c.firstOrderAt) < new Date(existing.firstOrderAt);
-
-        customerMap.set(key, {
-          ...existing,
-          id: isMoreRecent ? c.id : existing.id,
-          name: isMoreRecent ? c.name : existing.name,
-          phone: existing.phone || c.phone,
-          lastOrderAt: isMoreRecent ? c.lastOrderAt : existing.lastOrderAt,
-          firstOrderAt: isEarlierFirst ? c.firstOrderAt : existing.firstOrderAt,
-          orderCount: (existing.orderCount || 0) + (c.orderCount || 0),
-          totalPaidCents:
-            existing.totalPaidCents !== null || c.totalPaidCents !== null
-              ? (existing.totalPaidCents ?? 0) + (c.totalPaidCents ?? 0)
-              : null
-        });
-      }
-    }
-
-    const consolidated = Array.from(customerMap.values()).sort(
-      (a, b) => new Date(b.lastOrderAt).getTime() - new Date(a.lastOrderAt).getTime()
-    );
-
-    if (!search.trim()) return consolidated;
-    const term = search.toLowerCase();
-    return consolidated.filter(
-      (c) => c.name.toLowerCase().includes(term) || (c.phone ?? '').includes(term)
-    );
-  }, [customersQuery.data?.items, search]);
+  const customers = customersQuery.data?.items ?? [];
 
   const selectedCustomerOrders = useMemo(() => {
     if (!selectedCustomer) return [];
@@ -119,28 +77,13 @@ export default function CustomersPage() {
     );
   }, [selectedCustomerOrders]);
 
-  const selectedCustomerPaidOrders = useMemo(() => {
-    return selectedCustomerOrders.filter(
-      (o) => o.paymentState === 'paid' && o.orderState !== 'cancelled'
-    );
-  }, [selectedCustomerOrders]);
-
-  const selectedCustomerTotalPaidCents = useMemo(() => {
-    if (!selectedCustomer) return 0;
-    if (selectedCustomerOrders.length > 0) {
-      return selectedCustomerPaidOrders.reduce((sum, o) => sum + o.totalCents, 0);
-    }
-    return selectedCustomer.totalPaidCents ?? 0;
-  }, [selectedCustomer, selectedCustomerOrders.length, selectedCustomerPaidOrders]);
-
-  const selectedCustomerOrderCount = useMemo(() => {
-    if (!selectedCustomer) return 0;
-    if (selectedCustomerOrders.length > 0) {
-      const nonCancelled = selectedCustomerOrders.filter((o) => o.orderState !== 'cancelled');
-      return nonCancelled.length > 0 ? nonCancelled.length : selectedCustomerOrders.length;
-    }
-    return selectedCustomer.orderCount;
-  }, [selectedCustomer, selectedCustomerOrders]);
+  // Métricas autoritativas del cliente calculadas en DB sobre el 100% de su historial
+  const authoritativeOrderCount = selectedCustomer?.orderCount ?? 0;
+  const authoritativeTotalPaidCents = selectedCustomer?.totalPaidCents ?? 0;
+  const authoritativePendingCount = selectedCustomer?.pendingOrderCount ?? selectedCustomerPendingOrders.length;
+  const authoritativePendingTotalCents =
+    selectedCustomer?.pendingTotalCents ??
+    selectedCustomerPendingOrders.reduce((sum, o) => sum + o.totalCents, 0);
 
   return (
     <div className="page-enter">
@@ -157,7 +100,10 @@ export default function CustomersPage() {
             type="search"
             placeholder="Buscar cliente o teléfono…"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(1);
+            }}
             className="h-11 w-full rounded-full border border-ink-950/15 bg-white pl-10 pr-4 text-[14.5px] font-semibold text-ink-950 placeholder:text-ink-600/70 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
           />
         </div>
@@ -180,15 +126,8 @@ export default function CustomersPage() {
             </div>
 
             <div className="divide-y divide-ink-950/6">
-              {filteredCustomers.map((customer) => {
-                const customerOrders = (ordersQuery.data?.items ?? []).filter(
-                  (o) =>
-                    o.customerId === customer.id ||
-                    o.customerName.toLowerCase() === customer.name.toLowerCase()
-                );
-                const hasPending = customerOrders.some(
-                  (o) => o.paymentState === 'pending' && o.orderState !== 'cancelled'
-                );
+              {customers.map((customer) => {
+                const hasPending = (customer.pendingOrderCount ?? 0) > 0;
 
                 return (
                   <article
@@ -233,7 +172,7 @@ export default function CustomersPage() {
             </div>
           </div>
 
-          {filteredCustomers.length === 0 ? (
+          {customers.length === 0 ? (
             <div className="rounded-2xl border border-ink-950/8 bg-white p-8 text-center text-sm font-semibold text-ink-600 shadow-sm">
               No hay clientes que coincidan con la búsqueda.
             </div>
@@ -328,22 +267,22 @@ export default function CustomersPage() {
                   Pagos pendientes
                 </h4>
 
-                {selectedCustomerPendingOrders.length === 0 ? (
+                {authoritativePendingCount === 0 ? (
                   <div className="rounded-xl bg-emerald-50 p-3.5 border border-emerald-200/80 text-[14px] font-bold text-emerald-900">
                     ✓ Al día · Sin pagos pendientes
                   </div>
                 ) : (
                   <div className="rounded-xl bg-amber-50 p-3.5 border border-amber-200/80 text-[14px] space-y-1">
                     <p className="font-black text-amber-900">
-                      {selectedCustomerPendingOrders.length === 1
+                      {authoritativePendingCount === 1
                         ? '1 pedido pendiente'
-                        : `${selectedCustomerPendingOrders.length} pedidos pendientes`} · {formatMoney(
-                        selectedCustomerPendingOrders.reduce((sum, o) => sum + o.totalCents, 0)
-                      )}
+                        : `${authoritativePendingCount} pedidos pendientes`} · {formatMoney(authoritativePendingTotalCents)}
                     </p>
-                    <p className="text-amber-800 font-semibold text-xs">
-                      {selectedCustomerPendingOrders.map((o) => `#${o.number}`).join(', ')} (pendiente de cobro)
-                    </p>
+                    {selectedCustomerPendingOrders.length > 0 ? (
+                      <p className="text-amber-800 font-semibold text-xs">
+                        {selectedCustomerPendingOrders.map((o) => `#${o.number}`).join(', ')} (pendiente de cobro)
+                      </p>
+                    ) : null}
                   </div>
                 )}
               </div>
@@ -355,8 +294,8 @@ export default function CustomersPage() {
                     Pedidos
                   </h4>
                   <span className="text-sm font-bold text-ink-700">
-                    {selectedCustomerOrderCount}{' '}
-                    {selectedCustomerOrderCount === 1 ? 'pedido' : 'pedidos'}
+                    {authoritativeOrderCount}{' '}
+                    {authoritativeOrderCount === 1 ? 'pedido' : 'pedidos'}
                   </span>
                 </div>
 
@@ -364,7 +303,7 @@ export default function CustomersPage() {
                   <div className="rounded-xl bg-cream-50 p-3.5 border border-ink-950/6 text-[14px] flex justify-between items-center">
                     <span className="font-bold text-ink-700">Total cobrado:</span>
                     <strong className="font-display text-lg font-black text-ink-950">
-                      {formatMoney(selectedCustomerTotalPaidCents)}
+                      {formatMoney(authoritativeTotalPaidCents)}
                     </strong>
                   </div>
                 ) : null}
