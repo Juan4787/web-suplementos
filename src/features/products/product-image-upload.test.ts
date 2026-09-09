@@ -4,7 +4,7 @@ import { productImageUploadError, storagePathFromProductImageUrl, validateProduc
 
 describe('product image upload guard', () => {
   it.each([
-    [{ statusCode: '403', message: 'new row violates row-level security policy' }, 'permission', /dueña/],
+    [{ statusCode: '403', message: 'new row violates row-level security policy' }, 'permission', /permisos de tu cuenta/],
     [{ statusCode: '401', message: 'JWT expired' }, 'auth', /iniciar sesión/],
     [{ statusCode: '413' }, 'validation', /más pequeña/],
     [{ code: 'InvalidMimeType' }, 'validation', /otra imagen/],

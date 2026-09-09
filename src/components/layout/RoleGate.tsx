@@ -21,9 +21,8 @@ export function RoleGate({
       <LockKeyhole className="mx-auto size-8 text-ink-600" aria-hidden="true" />
       <h2 className="mt-4 font-display text-xl font-black">Esta información es privada</h2>
       <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-ink-600">
-        Tu acceso está pensado para la operación diaria. La dueña puede abrir esta sección desde su usuario.
+        Tu cuenta no tiene acceso a esta sección. Si la necesitás para trabajar, solicitá que revisen tus permisos.
       </p>
     </div>
   );
 }
-

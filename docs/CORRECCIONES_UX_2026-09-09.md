@@ -59,4 +59,4 @@ Reducción de la carpeta publicada: **22.449.491 bytes**. Es reducción de archi
 
 ## Pendientes externos
 
-La carga del stock físico inicial sigue pendiente de las cantidades del negocio. La compra #2033 es posterior a la limpieza de pruebas y debe preservarse. No se hicieron nuevas escrituras de negocio ni limpieza de operaciones remotas durante estas verificaciones.
+Durante esta ronda no se hicieron escrituras de negocio ni limpieza de operaciones remotas. La carga posterior del stock físico real y la nueva autorización para retirar las pruebas, incluida #2033, se documentan en [la entrega con stock real](ENTREGA_STOCK_REAL_2026-09-09.md). La dueña aclaró posteriormente que son dos compras distintas: ya se cargaron 145 unidades en camino, con 8 reservadas, y se conservaron las 49 físicas. Las reservas previas tienen un recorrido propio de recepción y entrega, sin inventar clientes ni ventas.

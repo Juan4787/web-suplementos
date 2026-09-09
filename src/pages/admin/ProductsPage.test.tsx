@@ -15,6 +15,7 @@ const clients: QueryClient[] = [];
 afterEach(() => {
   cleanup();
   clients.splice(0).forEach(client => client.clear());
+  vi.restoreAllMocks();
 });
 
 function Navigation() {
@@ -27,6 +28,17 @@ function Navigation() {
 }
 
 describe('Compras reflejadas en Productos', () => {
+  it.each([3, 10])('muestra las 10 unidades en camino aunque %i estén reservadas', async (reserved) => {
+    vi.spyOn(demoBusinessApi, 'listAdminProducts').mockResolvedValue([
+      { ...demoProducts[0]!, onHand: 0, reserved: 0, incoming: 10, incomingReserved: reserved }
+    ]);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+    clients.push(client);
+    render(<QueryClientProvider client={client}><ProductsPage /></QueryClientProvider>);
+    expect((await screen.findByText('En camino')).nextElementSibling).toHaveTextContent('10 unidades');
+    expect(screen.getByText(`Ya reservadas: ${reserved}. Libres para nuevos pedidos: ${10 - reserved}.`)).toBeVisible();
+  });
+
   it('separa las unidades disponibles de las pendientes y actualiza ambas al recibir o cerrar la compra', async () => {
     // A new product starts without physical stock or purchases; all mutations use the local API.
     const { id: _id, ...template } = demoProducts[0]!;

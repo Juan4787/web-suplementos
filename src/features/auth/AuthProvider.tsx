@@ -35,7 +35,7 @@ const profileRequestError = (error: unknown): AppError => {
   if (payload?.code === 'P0001' && payload.message === 'FORBIDDEN') {
     return new AppError('auth', 'Tu acceso al panel todavía no está habilitado.', {
       cause: error,
-      nextAction: 'Pedile a la dueña que habilite tu usuario.'
+      nextAction: 'Solicitá que habiliten el acceso de tu cuenta.'
     });
   }
   return new AppError('temporary', 'No pudimos comprobar tu acceso en este momento.', {
@@ -58,7 +58,7 @@ const profileFromRpc = (data: unknown, fallbackEmail: string): AppUser => {
     (profile.role !== 'owner' && profile.role !== 'staff')
   ) {
     throw new AppError('auth', 'Tu usuario todavía no tiene un perfil activo.', {
-      nextAction: 'Pedile a la dueña que termine de habilitarlo.'
+      nextAction: 'Solicitá que completen la habilitación de tu cuenta.'
     });
   }
   return {

@@ -99,7 +99,7 @@ export const productImageUploadError = (error: unknown): AppError => {
     return new AppError('auth', 'Tu sesión venció y no pudimos subir la imagen.', { cause: error, nextAction: 'Volvé a iniciar sesión y cargá la imagen nuevamente.' });
   }
   if (status === 403 || /AccessDenied|Unauthorized/i.test(code) || /row.level security|permission denied/i.test(message)) {
-    return new AppError('permission', 'Tu cuenta no tiene permiso para subir esta imagen.', { cause: error, nextAction: 'Pedile a la dueña que revise tu acceso antes de volver a intentarlo.' });
+    return new AppError('permission', 'Tu cuenta no tiene permiso para subir esta imagen.', { cause: error, nextAction: 'Solicitá que revisen los permisos de tu cuenta antes de volver a intentarlo.' });
   }
   if (status === 413 || /EntityTooLarge/i.test(code)) {
     return new AppError('validation', 'La imagen supera el tamaño permitido.', { cause: error, nextAction: 'Elegí una imagen más pequeña y volvé a cargarla.' });

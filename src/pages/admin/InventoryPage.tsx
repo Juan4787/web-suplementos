@@ -1,4 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { OpeningReservations } from '@/features/inventory/OpeningReservations';
 import { useSearch } from '@tanstack/react-router';
 import {
   AlertTriangle,
@@ -360,6 +361,9 @@ function ReceivePurchaseModal({
     },
     onSuccess: async (data) => {
       await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.openingReservations }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.storefrontProducts }),
+        queryClient.invalidateQueries({ queryKey: ['storefront-product'] }),
         queryClient.invalidateQueries({ queryKey: queryKeys.purchasesRoot }),
         queryClient.invalidateQueries({ queryKey: queryKeys.inventory }),
         queryClient.invalidateQueries({ queryKey: queryKeys.ordersRoot }),
@@ -387,6 +391,9 @@ function ReceivePurchaseModal({
     },
     onSuccess: async () => {
       await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.openingReservations }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.storefrontProducts }),
+        queryClient.invalidateQueries({ queryKey: ['storefront-product'] }),
         queryClient.invalidateQueries({ queryKey: queryKeys.purchasesRoot }),
         queryClient.invalidateQueries({ queryKey: queryKeys.inventory }),
         queryClient.invalidateQueries({ queryKey: queryKeys.ordersRoot }),
@@ -734,7 +741,7 @@ function StockDetailDrawer({
                 <div>
                   <p className="font-bold text-brand-950">En camino</p>
                   <p className="text-[12.5px] text-brand-800 mt-0.5">
-                    Hay <strong>{item.incoming} {item.incoming === 1 ? 'unidad' : 'unidades'}</strong> en tránsito de compra. Al recibirlas en Inventario se sumarán al stock disponible.
+                    Hay <strong>{item.incoming} {item.incoming === 1 ? 'unidad' : 'unidades'}</strong> en camino. Al recibirlas se sumarán al stock físico; las que ya están reservadas seguirán apartadas para esos pedidos.
                   </p>
                 </div>
               </div>
@@ -965,8 +972,11 @@ function StockDetailDrawer({
                 {item.incoming} {item.incoming === 1 ? 'unidad en camino' : 'unidades en camino'}
               </p>
               <p className="text-xs font-medium text-brand-800">
-                Cuando lleguen vas a tener <strong className="font-black text-brand-950">{item.projected} {item.projected === 1 ? 'unidad' : 'unidades'}</strong>.
+                Cuando lleguen vas a tener <strong className="font-black text-brand-950">{item.projected} {item.projected === 1 ? 'unidad disponible' : 'unidades disponibles'}</strong> para nuevos pedidos.
               </p>
+              {(item.incomingReserved ?? 0) > 0 ? (
+                <p className="text-xs font-semibold text-brand-800">De lo que viene, {item.incomingReserved} {item.incomingReserved === 1 ? 'unidad ya está reservada' : 'unidades ya están reservadas'}.</p>
+              ) : null}
             </div>
           </div>
         ) : null}
@@ -1324,6 +1334,7 @@ export default function InventoryPage() {
       {activeTab === 'stock' ? (
         <section aria-labelledby="stock-section-title">
           <h2 id="stock-section-title" className="sr-only">Stock disponible</h2>
+          <OpeningReservations canReceive={can(user, 'manage_purchases')} onOpenPurchases={() => setActiveTab('compras')} />
           
           {/* Controls */}
           <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -1580,6 +1591,7 @@ export default function InventoryPage() {
                         <p className="mt-1 text-[14px] font-bold text-ink-600">
                           {purchase.supplierName || 'Sin proveedor'}
                         </p>
+                        {purchase.notes ? <p className="mt-2 whitespace-pre-line break-words text-sm text-ink-700">{purchase.notes}</p> : null}
 
                         {/* Fila 3: 15 unidades · $1.125.000 · Llega 8 sep | Marcar como recibido */}
                         <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-ink-950/6 pb-4">

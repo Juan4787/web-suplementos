@@ -11,6 +11,7 @@ import type {
   ImportOrderInput,
   InflationIndex,
   InventoryItem,
+  OpeningReservation,
   Order,
   OrderAction,
   Purchase,
@@ -110,6 +111,8 @@ export interface BusinessApi {
   confirmImportedOrder(input: ImportOrderInput): Promise<Order>;
   transitionOrder(orderId: string, action: OrderAction): Promise<Order>;
   listPurchases(page?: number, pageSize?: number, state?: 'ordered' | 'received' | 'all'): Promise<PurchasesPage>;
+  listOpeningReservations(): Promise<OpeningReservation[]>;
+  resolveOpeningReservation(purchaseItemId: string, quantity: number, action: 'deliver' | 'release', operationId: string): Promise<{ quantity: number; action: 'deliver' | 'release' }>;
   createPurchase(input: PurchaseCreateInput): Promise<Purchase>;
   receivePurchase(purchaseId: string, items?: ReceivePurchaseItemInput[], operationId?: string): Promise<ReceivePurchaseResult>;
   closePurchaseWithShortage(purchaseId: string, notes?: string): Promise<ReceivePurchaseResult>;

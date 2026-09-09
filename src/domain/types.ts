@@ -37,6 +37,7 @@ export type AdminProduct = StorefrontProduct & {
   onHand: number;
   reserved: number;
   incoming: number;
+  incomingReserved?: number;
   currentCostCents: number | null;
   updatedAt: string;
 };
@@ -51,6 +52,7 @@ export type InventoryItem = Pick<
   | 'onHand'
   | 'reserved'
   | 'incoming'
+  | 'incomingReserved'
   | 'reorderPoint'
   | 'safetyStock'
   | 'leadTimeDays'
@@ -146,6 +148,18 @@ export type OrderAction =
   | 'cancel';
 
 export type PurchaseState = 'draft' | 'ordered' | 'received' | 'cancelled';
+
+export type OpeningReservation = {
+  purchaseItemId: string;
+  purchaseId: string;
+  purchaseNumber: number;
+  productId: string;
+  productName: string;
+  physicalQuantity: number;
+  incomingQuantity: number;
+  uncoveredQuantity: number;
+  totalQuantity: number;
+};
 
 export type PurchaseItem = {
   id: string;
@@ -323,7 +337,8 @@ export type ExportDataset = {
   inflation: InflationIndex[];
   reservations: Array<{
     id: string;
-    orderId: string;
+    orderId: string | null;
+    isOpening?: boolean;
     orderItemId?: string | null;
     productId: string;
     quantity: number;

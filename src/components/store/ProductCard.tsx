@@ -18,7 +18,7 @@ export function ProductCard({ product }: { product: StorefrontProduct }) {
   const { lines, add, setQuantity } = useCart();
   const isIncoming =
     product.availability === 'incoming' ||
-    ((product.incomingAvailable ?? 0) > 0 && product.availability !== 'available');
+    ((product.incomingAvailable ?? 0) > 0 && product.availability === 'out_of_stock');
   const soldOut = product.maxOrderQuantity <= 0 || (product.availability === 'out_of_stock' && !isIncoming);
 
   const currentLine = lines.find((line) => line.productId === product.id);

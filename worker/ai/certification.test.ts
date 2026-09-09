@@ -68,7 +68,7 @@ class MockProvider implements AIProvider {
 
 describe('AI Certification Suite - Asesor Comercial Impulso', () => {
   it('certifica la versión del prompt y modelo de políticas unificado', () => {
-    expect(PROMPT_VERSION).toBe('impulso_business_advisor_v3');
+    expect(PROMPT_VERSION).toBe('impulso_business_advisor_v4');
     expect(MODEL_POLICY.primary).toBe('gpt_oss_120b_groq_v1');
     expect(MODEL_POLICY.fallback).toBe('glm_4_7_flash_cf_v1');
     expect(MODEL_POLICY.maxProviderSwitches).toBe(1);

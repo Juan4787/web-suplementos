@@ -448,7 +448,8 @@ export const toDemoInventory = (products: AdminProduct[]): InventoryItem[] =>
       reserved: item.reserved,
       available,
       incoming: item.incoming,
-      projected: available + item.incoming,
+      incomingReserved: item.incomingReserved ?? 0,
+      projected: available + item.incoming - (item.incomingReserved ?? 0),
       reorderPoint: item.reorderPoint,
       safetyStock: item.safetyStock,
       leadTimeDays: item.leadTimeDays,
@@ -456,7 +457,7 @@ export const toDemoInventory = (products: AdminProduct[]): InventoryItem[] =>
       coverageDays: averageDailySales > 0 ? Math.round((available / averageDailySales) * 10) / 10 : null,
       suggestedPurchase: suggestedPurchase(
         available,
-        item.incoming,
+        item.incoming - (item.incomingReserved ?? 0),
         averageDailySales,
         item.leadTimeDays,
         item.safetyStock

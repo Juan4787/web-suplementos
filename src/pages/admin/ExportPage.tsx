@@ -48,7 +48,7 @@ export default function ExportPage() {
             <p className="mt-3 text-xs leading-5 text-ink-600">Exportar es una operación de lectura: no borra ni modifica datos.</p>
           </section>
           <aside className="space-y-5">
-            <section className="rounded-[1.75rem] bg-ink-950 p-5 text-white"><ShieldCheck className="size-6 text-brand-300" /><h2 className="mt-4 font-display text-xl font-black">Acceso protegido</h2><p className="mt-2 text-sm leading-6 text-white/60">Solo la dueña tiene acceso para descargar los costos y datos financieros de la tienda.</p></section>
+            <section className="rounded-[1.75rem] bg-ink-950 p-5 text-white"><ShieldCheck className="size-6 text-brand-300" /><h2 className="mt-4 font-display text-xl font-black">Acceso protegido</h2><p className="mt-2 text-sm leading-6 text-white/60">El respaldo incluye los costos y datos financieros de tu tienda. Compartilo únicamente con personas autorizadas.</p></section>
             <section className="rounded-[1.75rem] border border-amber-200 bg-amber-50 p-5"><ImageOff className="size-6 text-amber-800" /><h2 className="mt-4 font-display text-xl font-black">Qué no incluye</h2><p className="mt-2 text-sm leading-6 text-amber-950/70">Descarga los registros comerciales en Excel. No incluye los archivos pesados de fotos ni claves internas del sistema.</p></section>
           </aside>
         </div>

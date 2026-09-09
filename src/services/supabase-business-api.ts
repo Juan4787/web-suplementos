@@ -28,6 +28,9 @@ const configurationError = (): AppError =>
 export const translateDatabaseError = (error: { message?: string; code?: string }): AppError => {
   const diagnostic = `${error.code ?? ''} ${error.message ?? ''}`;
   const businessMessages: Record<string, [string, string]> = {
+    OPENING_RESERVATION_NOT_RECEIVED: ['No hay suficientes unidades recibidas de esta reserva.', 'Registrá primero la recepción de la compra o revisá si otra persona ya anotó la entrega.'],
+    OPENING_RESERVATION_CHANGED: ['Esta reserva cambió o ya fue resuelta.', 'Actualizá Inventario y revisá las unidades pendientes antes de continuar.'],
+    INVALID_OPENING_RESERVATION_ACTION: ['La cantidad de la reserva no es válida.', 'Ingresá unidades enteras, entre una y la cantidad pendiente.'],
     STALE_STOCK_COUNT: ['El stock cambió mientras hacías el conteo.', 'Cerrá esta corrección y volvé a abrirla para revisar el stock actualizado antes de guardar.'],
     CANNOT_DELIVER_ORDER_WAITING_FOR_STOCK: ['Todavía falta mercadería para entregar este pedido.', 'Registrá la recepción de la compra pendiente en Inventario antes de continuar.'],
     IDEMPOTENCY_KEY_REUSE_MISMATCH: ['Los datos cambiaron respecto del intento anterior.', 'Revisá si la operación ya aparece en Pedidos o Compras antes de iniciar otra.'],
@@ -54,7 +57,7 @@ export const translateDatabaseError = (error: { message?: string; code?: string 
   }
   if (/FORBIDDEN|PERMISSION|42501/i.test(diagnostic)) {
     return new AppError('permission', 'No tenés permiso para hacer esta acción.', {
-      nextAction: 'Pedile a la dueña que revise tu acceso.'
+      nextAction: 'Solicitá que revisen los permisos de tu cuenta.'
     });
   }
   if (/INSUFFICIENT_STOCK/i.test(diagnostic)) {
@@ -246,6 +249,10 @@ export const supabaseBusinessApi: BusinessApi = {
       p_state: state === 'all' ? null : state
     }),
   createPurchase: (input) => rpc<Purchase>('create_purchase', { p_purchase: input }),
+  listOpeningReservations: () => rpc('list_opening_reservations'),
+  resolveOpeningReservation: (purchaseItemId, quantity, action, operationId) => rpc('resolve_opening_reservation', {
+    p_purchase_item_id: purchaseItemId, p_quantity: quantity, p_action: action, p_operation_id: operationId
+  }),
   receivePurchase: async (purchaseId, items, operationId) => {
     let itemsPayload = items;
     if (!itemsPayload || itemsPayload.length === 0) {

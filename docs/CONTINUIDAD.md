@@ -2,11 +2,19 @@
 
 Este archivo existe para que una compactación de contexto no convierta decisiones firmes en suposiciones.
 
+## Estado actual: carga de stock real del 09/09/2026
+
+Consultar [la preparación de entrega con stock real](ENTREGA_STOCK_REAL_2026-09-09.md). El usuario terminó las pruebas y autorizó reemplazar todas sus operaciones, incluida la compra #2033. Se cargaron **49 unidades físicas reales en 16 productos**, sin alterar catálogo, costos, imágenes, configuración ni cuentas. No repetir la limpieza: las nuevas operaciones que se creen después de esta carga deben preservarse.
+
+**Aclaración recibida y carga completada:** son dos compras distintas. La #2034 contiene 62 unidades que están en el correo de Santa Fe; la #2035 contiene 83 unidades pagadas al proveedor y pendientes de despacho. Total: **145 en camino**, de las cuales **8 están reservadas** en la primera compra (Thyroid 3, Sleep 4, Vitality 1). Quedan 137 unidades entrantes libres y 186 disponibles proyectadas junto con las 49 físicas. No se inventaron nombres de clientes, cobros, proveedor ni fecha de llegada. Los costos de estas compras se tomaron del catálogo y sus notas piden verificarlos contra el comprobante.
+
+Las reservas anteriores al sistema se atienden desde **Inventario → Stock → Reservas previas**. Al recibir la compra quedan apartadas; registrar su entrega descuenta stock sin generar una venta nueva. Se pueden entregar parcialmente o liberar si se cancelan. Las nuevas ventas continúan por Pedidos. La migración `20260909170000_opening_reservations.sql` está aplicada; el detalle de validación y publicación queda en el documento de entrega. **No volver a ejecutar limpiezas ni cargas iniciales: desde ahora los datos son reales.**
+
 ## Correcciones del 09/09/2026
 
 Consultar [las correcciones de UX y fiabilidad](CORRECCIONES_UX_2026-09-09.md): precio y disponibilidad, checkout vacío, recuperación de imágenes, acciones y confirmaciones de pedidos, unidades monetarias y esperas de IA, y reducción de archivos públicos. Primera publicación en `1f92547`; se conservó un original de las imágenes retiradas del despliegue en `assets/originals/`.
 
-El usuario cargó después la compra **#2033**, con 118 unidades pendientes en siete productos. Es una operación actual: **no repetir la limpieza histórica ni tratar las compras nuevas como pruebas**. Se confirmó por lectura remota que Productos recibe las cantidades correctas, pero omitía mostrarlas. Ahora distingue «Disponible ahora» de la cantidad «En camino», incluso si hay stock físico. La regresión cruza creación de compra, Productos, recepción parcial, total y cierre con faltante; las escrituras de prueba se limitan a la demo local.
+El usuario cargó después la compra **#2033**, con 118 unidades pendientes en siete productos. Se preservó durante esa corrección; posteriormente el usuario confirmó que también era una prueba y autorizó retirarla al cargar el stock real. Productos distingue «Disponible ahora» de la cantidad «En camino», incluso si hay stock físico. La regresión cruza creación de compra, Productos, recepción parcial, total y cierre con faltante; las escrituras de prueba se limitan a la demo local.
 
 ## Entrega del 08/09/2026
 

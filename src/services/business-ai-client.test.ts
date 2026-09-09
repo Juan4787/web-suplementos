@@ -77,7 +77,7 @@ describe('business AI HTTP client', () => {
         JSON.stringify({
           error: {
             kind: 'permission',
-            message: 'El asistente está disponible únicamente para la dueña.',
+            message: 'Tu cuenta no tiene acceso al asistente.',
             nextAction: 'Ingresá con una cuenta de dueña habilitada.',
             retryable: false,
             internal: 'FORBIDDEN RPC secret'

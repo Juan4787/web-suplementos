@@ -733,6 +733,11 @@ export const demoBusinessApi: BusinessApi = {
     return latency(purchase);
   },
 
+  async listOpeningReservations() { return latency([]); },
+  async resolveOpeningReservation() {
+    throw new AppError('business', 'Esta reserva ya no está pendiente.', { nextAction: 'Actualizá Inventario para ver las reservas actuales.' });
+  },
+
   async receivePurchase(purchaseId, itemsInput, operationId) {
     const canonicalPayload = JSON.stringify(
       (itemsInput ?? [])

@@ -435,7 +435,7 @@ function ProductForm({
             </div>
           ) : (
             <div className="rounded-2xl bg-cream-100 p-3.5 text-sm font-medium text-ink-700">
-              Podés editar la información del catálogo. Los costos y márgenes financieros están reservados para la dueña.
+              Podés editar la información del catálogo. Tu cuenta no tiene acceso a los costos ni a los márgenes financieros.
             </div>
           )}
 
@@ -833,6 +833,11 @@ export default function ProductsPage() {
                       <dd className="col-span-2 text-xs font-medium">
                         Se suman al stock al recibir la mercadería.
                       </dd>
+                      {(product.incomingReserved ?? 0) > 0 ? (
+                        <dd className="col-span-2 text-xs font-semibold">
+                          Ya reservadas: {product.incomingReserved}. Libres para nuevos pedidos: {product.incoming - (product.incomingReserved ?? 0)}.
+                        </dd>
+                      ) : null}
                     </div>
                   ) : null}
                 </dl>

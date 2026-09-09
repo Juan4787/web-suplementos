@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { demoProducts, demoOwner, toDemoInventory } from '@/data/demo-data';
 import InventoryPage, { PurchaseFormModal } from './InventoryPage';
 
-const api = vi.hoisted(() => ({ listAdminProducts: vi.fn(), createPurchase: vi.fn(), listInventory: vi.fn(), listMovements: vi.fn(), listPurchases: vi.fn(), adjustStock: vi.fn() }));
+const api = vi.hoisted(() => ({ listAdminProducts: vi.fn(), createPurchase: vi.fn(), listInventory: vi.fn(), listMovements: vi.fn(), listPurchases: vi.fn(), adjustStock: vi.fn(), listOpeningReservations: vi.fn() }));
 const auth = vi.hoisted(() => ({ staff: false }));
 vi.mock('@/services/business-api', () => ({ getBusinessApi: async () => api }));
 vi.mock('@/features/auth/AuthProvider', () => ({ useAuth: () => ({ user: { ...demoOwner, role: auth.staff ? 'staff' : 'owner' } }) }));
@@ -17,7 +17,7 @@ function Wrapper({ children }: PropsWithChildren) {
 }
 
 describe('Carga de compras', () => {
-  beforeEach(() => { vi.resetAllMocks(); auth.staff = false; api.listAdminProducts.mockResolvedValue(demoProducts); });
+  beforeEach(() => { vi.resetAllMocks(); auth.staff = false; api.listAdminProducts.mockResolvedValue(demoProducts); api.listOpeningReservations.mockResolvedValue([]); });
   afterEach(cleanup);
 
   it('explica qué fila está incompleta y conserva los centavos al escribir', async () => {

@@ -153,7 +153,7 @@ function BackupsTab() {
           <ShieldCheck className="size-5 text-brand-300" />
           <h4 className="mt-3 font-display text-lg font-black">Acceso protegido</h4>
           <p className="mt-1 text-xs text-white/70 leading-5">
-            Solo la Dueña puede descargar los datos financieros y costos. El rol de Personal no tiene acceso a esta sección.
+            El respaldo incluye los costos y datos financieros de tu tienda. Compartilo únicamente con personas autorizadas.
           </p>
         </div>
         <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-amber-950">

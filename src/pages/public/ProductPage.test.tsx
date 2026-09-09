@@ -45,6 +45,15 @@ describe('Precio y disponibilidad de productos', () => {
     expect(screen.getByText('Agotado')).toBeInTheDocument();
   });
 
+  it.each(['tarjeta', 'detalle'])('muestra las últimas unidades físicas aunque también haya reposición en la %s', (view) => {
+    const product = { ...demoProducts[0]!, availability: 'low' as const, maxOrderQuantity: 10, incomingAvailable: 8 };
+    mocks.query.mockReturnValue({ data: product, isSuccess: true });
+    render(view === 'tarjeta' ? <ProductCard product={product} /> : <ProductPage />);
+    expect(screen.getByText('Últimas unidades')).toBeInTheDocument();
+    expect(screen.queryByText('En camino')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Agregar.*al carrito/i })).toBeEnabled();
+  });
+
   it('no simula agregar unidades cuando el carrito ya contiene el máximo disponible', () => {
     mocks.lines = [{ productId: demoProducts[0]!.id, quantity: 2 }];
     mocks.query.mockReturnValue({ data: { ...demoProducts[0], availability: 'available', maxOrderQuantity: 2, incomingAvailable: 0 }, isSuccess: true });

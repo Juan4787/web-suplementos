@@ -24,7 +24,7 @@ export default function ProductPage() {
 
   const isIncoming =
     productQuery.data?.availability === 'incoming' ||
-    ((productQuery.data?.incomingAvailable ?? 0) > 0 && productQuery.data?.availability !== 'available');
+    ((productQuery.data?.incomingAvailable ?? 0) > 0 && productQuery.data?.availability === 'out_of_stock');
   const isOutOfStock = (productQuery.data?.maxOrderQuantity ?? 0) <= 0 ||
     (productQuery.data?.availability === 'out_of_stock' && !isIncoming);
   const maxAvailable = productQuery.data?.maxOrderQuantity ?? 10;

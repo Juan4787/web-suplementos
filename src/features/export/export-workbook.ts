@@ -94,8 +94,8 @@ export const buildBusinessWorkbook = (data: ExportDataset): BusinessWorkbook => 
     sheet('Movimientos', ['ID', 'Producto ID', 'Producto', 'Tipo', 'Variación física', 'Variación reservada', 'Motivo', 'Pedido ID', 'Compra ID', 'Fecha', 'Realizado por'], [38, 38, 28, 22, 16, 18, 45, 38, 38, 25, 22], data.movements.map((movement) => [
       text(movement.id), text(movement.productId), text(movement.productName), text(movement.kind), number(movement.physicalDelta), number(movement.reservedDelta), text(movement.reason), text(movement.orderId), text(movement.purchaseId), text(movement.createdAt), text(movement.createdByName)
     ])),
-    sheet('Reservas', ['ID', 'Pedido ID', 'Producto ID', 'Cantidad', 'Estado', 'Tipo de reserva', 'Creada', 'Resuelta'], [38, 38, 38, 12, 16, 20, 25, 25], data.reservations.map((reservation) => [
-      text(reservation.id), text(reservation.orderId), text(reservation.productId), number(reservation.quantity), text(reservation.state), text(reservation.sourceType ?? 'physical'), text(reservation.createdAt), text(reservation.resolvedAt)
+    sheet('Reservas', ['ID', 'Pedido ID', 'Producto ID', 'Cantidad', 'Estado', 'Tipo de reserva', 'Creada', 'Resuelta', 'Origen', 'Ítem de compra ID', 'Ítem de pedido ID'], [38, 38, 38, 12, 16, 20, 25, 25, 28, 38, 38], data.reservations.map((reservation) => [
+      text(reservation.id), text(reservation.orderId), text(reservation.productId), number(reservation.quantity), text(reservation.state), text(reservation.sourceType ?? 'physical'), text(reservation.createdAt), text(reservation.resolvedAt), text(reservation.isOpening ? 'Reserva previa al sistema' : 'Pedido'), text(reservation.purchaseItemId), text(reservation.orderItemId)
     ])),
     sheet('Clientes', ['ID', 'Nombre', 'Teléfono', 'Primera compra', 'Última compra', 'Cantidad pedidos', 'Total pagado ARS', 'Creado'], [38, 30, 22, 25, 25, 16, 20, 25], data.customers.map((customer) => [
       text(customer.id), text(customer.name), text(customer.phone), text(customer.firstOrderAt), text(customer.lastOrderAt), number(customer.orderCount), pesos(customer.totalPaidCents), text(customer.createdAt)
