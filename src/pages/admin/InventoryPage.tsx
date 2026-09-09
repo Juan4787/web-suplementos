@@ -1228,10 +1228,10 @@ export default function InventoryPage() {
       })
       .sort((left, right) => {
         const getPriority = (item: typeof left) => {
-          // 1. En camino (sin stock disponible pero con compras en tránsito): primero todos juntos
-          if (item.available <= 0 && item.incoming > 0) return 0;
-          // 2. Sin stock (sin stock disponible y sin compras en tránsito): después todos juntos
-          if (item.status === 'out' || item.available <= 0) return 1;
+          // 1. Sin stock (sin stock disponible y sin compras en tránsito): primero todos juntos
+          if (item.available <= 0 && (!item.incoming || item.incoming <= 0)) return 0;
+          // 2. En camino (sin stock disponible pero con compras en tránsito): segundo todos juntos
+          if (item.available <= 0 && item.incoming > 0) return 1;
           // 3. Resto de estados si existiera stock disponible
           if (item.status === 'critical') return 2;
           if (item.status === 'low') return 3;
