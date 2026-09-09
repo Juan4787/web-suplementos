@@ -93,8 +93,12 @@ function NavigationItems({ close }: { close?: (() => void) | undefined }) {
           <div className="space-y-1">{ownerNav.map(item)}</div>
         </>
       ) : null}
-      <p className="mb-2 mt-7 px-4 text-[13px] font-bold uppercase tracking-wider text-white/50">Cuenta</p>
-      <div className="space-y-1">{settingsNav.map(item)}</div>
+      {can(user, 'manage_pricing') ? (
+        <>
+          <p className="mb-2 mt-7 px-4 text-[13px] font-bold uppercase tracking-wider text-white/50">Cuenta</p>
+          <div className="space-y-1">{settingsNav.map(item)}</div>
+        </>
+      ) : null}
     </nav>
   );
 }
@@ -137,7 +141,9 @@ function UserPanel() {
         </span>
         <span className="min-w-0 flex-1">
           <span className="block truncate text-[15px] font-black text-white">{user.displayName}</span>
-          <span className="block text-[13.5px] font-semibold text-white/65">{user.role === 'owner' ? 'Dueña' : 'Personal'}</span>
+          {user.role === 'owner' ? (
+            <span className="block text-[13.5px] font-semibold text-white/65">Dueña</span>
+          ) : null}
         </span>
         <ChevronDown className={cn('size-4 text-white/50 transition', open && 'rotate-180')} />
       </button>
