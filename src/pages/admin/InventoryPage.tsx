@@ -1227,8 +1227,19 @@ export default function InventoryPage() {
         return true;
       })
       .sort((left, right) => {
-        const priority = { out: 0, critical: 1, low: 2, ok: 3 };
-        return priority[left.status] - priority[right.status] || left.name.localeCompare(right.name);
+        const getPriority = (item: typeof left) => {
+          // 1. En camino (sin stock disponible pero con compras en tránsito): primero todos juntos
+          if (item.available <= 0 && item.incoming > 0) return 0;
+          // 2. Sin stock (sin stock disponible y sin compras en tránsito): después todos juntos
+          if (item.status === 'out' || item.available <= 0) return 1;
+          // 3. Resto de estados si existiera stock disponible
+          if (item.status === 'critical') return 2;
+          if (item.status === 'low') return 3;
+          return 4;
+        };
+
+        const priorityDiff = getPriority(left) - getPriority(right);
+        return priorityDiff !== 0 ? priorityDiff : left.name.localeCompare(right.name, 'es');
       });
   }, [inventoryQuery.data, stockSearch, stockFilter]);
 
