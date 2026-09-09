@@ -1,6 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Link, Navigate, useNavigate } from '@tanstack/react-router';
-import { ArrowLeft, LockKeyhole, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, Eye, EyeOff, LockKeyhole, ShieldCheck } from 'lucide-react';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
@@ -21,6 +21,7 @@ export default function LoginPage() {
   const { user, signIn, isDemo, authError } = useAuth();
   const navigate = useNavigate();
   const [error, setError] = useState<unknown>(null);
+  const [showPassword, setShowPassword] = useState(false);
   const { register, handleSubmit, setValue, formState: { errors, isSubmitting } } = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: { email: isDemo ? 'duena@demo.local' : '', password: isDemo ? 'demostracion' : '' }
@@ -67,7 +68,26 @@ export default function LoginPage() {
             ) : null}
             <form className="mt-6 space-y-5" onSubmit={submit} noValidate>
               <Field label="Correo" htmlFor="email" error={errors.email?.message}><Input id="email" type="email" autoComplete="email" {...register('email')} /></Field>
-              <Field label="Contraseña" htmlFor="password" error={errors.password?.message}><Input id="password" type="password" autoComplete="current-password" {...register('password')} /></Field>
+              <Field label="Contraseña" htmlFor="password" error={errors.password?.message}>
+                <div className="relative">
+                  <Input
+                    id="password"
+                    type={showPassword ? 'text' : 'password'}
+                    autoComplete="current-password"
+                    className="pr-12"
+                    {...register('password')}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((prev) => !prev)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 grid size-9 place-items-center rounded-xl text-ink-500 hover:text-ink-950 hover:bg-cream-200/60 transition active:scale-95"
+                    aria-label={showPassword ? 'Ocultar contraseña' : 'Ver contraseña'}
+                    title={showPassword ? 'Ocultar contraseña' : 'Ver contraseña'}
+                  >
+                    {showPassword ? <EyeOff className="size-5" /> : <Eye className="size-5" />}
+                  </button>
+                </div>
+              </Field>
               {error || authError ? <ErrorState error={error ?? authError} /> : null}
               <Button type="submit" size="lg" className="w-full" loading={isSubmitting}>Ingresar</Button>
             </form>
