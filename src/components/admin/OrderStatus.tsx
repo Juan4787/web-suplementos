@@ -4,15 +4,21 @@ import type { Order } from '@/domain/types';
 
 export function OrderStatus({ order, compact = false }: { order: Order; compact?: boolean }) {
   if (order.orderState === 'cancelled') {
-    return <StatusChip label="Cancelado" tone="danger" />;
+    return (
+      <div className="flex flex-wrap items-center gap-2">
+        <StatusChip label="Cancelado" tone="danger" />
+      </div>
+    );
   }
 
   // Estado completado: chip discreto y suave pero perfectamente legible
   if (order.fulfillmentState === 'delivered' && order.paymentState === 'paid') {
     return (
-      <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 border border-emerald-300 px-3 py-1 text-[13.5px] font-black text-emerald-800 select-none">
-        <Check className="size-4" /> Completado
-      </span>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 border border-emerald-300 px-3 py-1 text-[13.5px] font-black text-emerald-800 select-none">
+          <Check className="size-4" /> Completado
+        </span>
+      </div>
     );
   }
 

@@ -330,7 +330,7 @@ export default function CreateOrderPage() {
   if (settingsQuery.isError) return <ErrorState error={settingsQuery.error} onRetry={() => void settingsQuery.refetch()} />;
 
   return (
-    <div className="page-enter">
+    <div className="page-enter min-w-0">
       <div className="mb-4">
         <Link
           to="/app/pedidos"
@@ -433,11 +433,11 @@ export default function CreateOrderPage() {
         </div>
       ) : (
         /* Formulario de Carga Manual */
-        <div className="grid gap-8 lg:grid-cols-[1.1fr_0.9fr] xl:grid-cols-[1.2fr_0.8fr] items-start">
+        <div className="grid min-w-0 gap-6 lg:gap-8 lg:grid-cols-[1.1fr_0.9fr] xl:grid-cols-[1.2fr_0.8fr] items-start">
           {/* Columna Izquierda: Selección de Productos y Carrito */}
-          <div className="space-y-6">
+          <div className="min-w-0 space-y-6">
             {/* Buscador de Productos */}
-            <section className="rounded-3xl border border-ink-950/8 bg-white p-5 shadow-sm sm:p-6">
+            <section className="rounded-2xl sm:rounded-3xl border border-ink-950/8 bg-white p-4 sm:p-6 shadow-sm min-w-0">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <h2 className="font-display text-lg font-black text-ink-950">
@@ -451,7 +451,7 @@ export default function CreateOrderPage() {
                   <select
                     value={selectedCategory}
                     onChange={(e) => setSelectedCategory(e.target.value)}
-                    className="h-10 rounded-xl border border-ink-950/15 bg-white px-3 text-xs font-bold text-ink-800 focus:border-brand-500 focus:outline-none"
+                    className="h-10 w-full sm:w-auto rounded-xl border border-ink-950/15 bg-white px-3 text-xs font-bold text-ink-800 focus:border-brand-500 focus:outline-none shrink-0"
                   >
                     <option value="all">Todas las categorías</option>
                     {categories.map((c) => (
@@ -491,7 +491,7 @@ export default function CreateOrderPage() {
                     return (
                       <div
                         key={p.id}
-                        className="flex items-center justify-between gap-3 p-2.5 transition rounded-xl hover:bg-white"
+                        className="flex flex-col gap-2.5 p-3 rounded-xl border border-ink-950/6 bg-white/70 sm:flex-row sm:items-center sm:justify-between sm:p-2.5 sm:border-0 sm:bg-transparent sm:hover:bg-white transition"
                       >
                         <div className="flex items-center gap-3 min-w-0">
                           {p.imageUrl ? (
@@ -505,7 +505,7 @@ export default function CreateOrderPage() {
                               <Package className="size-5 text-ink-500" />
                             </div>
                           )}
-                          <div className="min-w-0">
+                          <div className="min-w-0 flex-1">
                             <h4 className="font-bold text-sm text-ink-950 truncate">{p.name}</h4>
                             <p className="text-xs text-ink-600 truncate">
                               {p.presentation} • <span className="font-mono text-ink-500">{p.sku}</span>
@@ -528,7 +528,7 @@ export default function CreateOrderPage() {
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-3 shrink-0">
+                        <div className="flex items-center justify-between gap-3 border-t border-ink-950/6 pt-2 sm:border-t-0 sm:pt-0 sm:justify-end shrink-0">
                           <span className="font-display font-black text-sm text-ink-950">
                             {formatMoney(p.priceCents)}
                           </span>
@@ -537,7 +537,7 @@ export default function CreateOrderPage() {
                             variant={inCart ? 'secondary' : 'primary'}
                             disabled={!canAdd}
                             onClick={() => handleAddProduct(p)}
-                            className="h-9 px-3 text-xs font-bold"
+                            className="h-9 px-3 text-xs font-bold shrink-0"
                           >
                             <Plus className="size-3.5" />
                             {inCart ? `Agregar (+${inCart.quantity})` : 'Agregar'}
@@ -551,7 +551,7 @@ export default function CreateOrderPage() {
             </section>
 
             {/* Carrito de Productos Seleccionados */}
-            <section className="rounded-3xl border border-ink-950/8 bg-white p-5 shadow-sm sm:p-6">
+            <section className="rounded-2xl sm:rounded-3xl border border-ink-950/8 bg-white p-4 sm:p-6 shadow-sm min-w-0">
               <div className="flex items-center justify-between mb-4">
                 <div>
                   <h2 className="font-display text-lg font-black text-ink-950">
@@ -589,7 +589,7 @@ export default function CreateOrderPage() {
                     return (
                       <div
                         key={item.productId}
-                        className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-2xl border border-ink-950/8 bg-cream-50/50"
+                        className="flex flex-col gap-3 p-3.5 rounded-2xl border border-ink-950/8 bg-cream-50/50 sm:flex-row sm:items-center sm:justify-between"
                       >
                         <div className="flex items-center gap-3 min-w-0">
                           {item.imageUrl ? (
@@ -603,7 +603,7 @@ export default function CreateOrderPage() {
                               <Package className="size-5 text-ink-500" />
                             </div>
                           )}
-                          <div className="min-w-0">
+                          <div className="min-w-0 flex-1">
                             <h4 className="font-bold text-sm text-ink-950 truncate">{item.name}</h4>
                             <p className="text-xs text-ink-600 truncate">
                               {item.presentation} • {formatMoney(item.unitPriceCents)} c/u
@@ -616,7 +616,7 @@ export default function CreateOrderPage() {
                           </div>
                         </div>
 
-                        <div className="flex items-center justify-between sm:justify-end gap-4 shrink-0">
+                        <div className="flex items-center justify-between gap-3 border-t border-ink-950/6 pt-2 sm:border-t-0 sm:pt-0 sm:justify-end shrink-0">
                           {/* Controles de Cantidad */}
                           <div className="flex items-center rounded-xl border border-ink-950/15 bg-white shadow-2xs">
                             <button
@@ -641,7 +641,7 @@ export default function CreateOrderPage() {
                             </button>
                           </div>
 
-                          <div className="text-right min-w-20">
+                          <div className="text-right min-w-16 sm:min-w-20">
                             <span className="block font-display font-black text-sm text-ink-950">
                               {formatMoney(item.unitPriceCents * item.quantity)}
                             </span>
@@ -665,8 +665,8 @@ export default function CreateOrderPage() {
           </div>
 
           {/* Columna Derecha: Datos del Cliente, Entrega, Pago y Confirmación */}
-          <div className="space-y-6">
-            <section className="rounded-3xl border border-ink-950/8 bg-white p-5 shadow-sm sm:p-6">
+          <div className="min-w-0 space-y-6">
+            <section className="rounded-2xl sm:rounded-3xl border border-ink-950/8 bg-white p-4 sm:p-6 shadow-sm min-w-0">
               <h2 className="font-display text-lg font-black text-ink-950 mb-4">
                 3. Datos del cliente
               </h2>
@@ -712,7 +712,7 @@ export default function CreateOrderPage() {
             </section>
 
             {/* Entrega */}
-            <section className="rounded-3xl border border-ink-950/8 bg-white p-5 shadow-sm sm:p-6">
+            <section className="rounded-2xl sm:rounded-3xl border border-ink-950/8 bg-white p-4 sm:p-6 shadow-sm min-w-0">
               <h2 className="font-display text-lg font-black text-ink-950 mb-4">
                 4. Forma de entrega
               </h2>
@@ -795,8 +795,8 @@ export default function CreateOrderPage() {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-3 gap-2">
-                    <div className="col-span-2">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:gap-2">
+                    <div className="sm:col-span-2">
                       <Field label="Calle / Dirección *" htmlFor="address">
                         <Input
                           id="address"
@@ -828,12 +828,12 @@ export default function CreateOrderPage() {
             </section>
 
             {/* Medio de Pago */}
-            <section className="rounded-3xl border border-ink-950/8 bg-white p-5 shadow-sm sm:p-6">
+            <section className="rounded-2xl sm:rounded-3xl border border-ink-950/8 bg-white p-4 sm:p-6 shadow-sm min-w-0">
               <h2 className="font-display text-lg font-black text-ink-950 mb-4">
                 5. Medio de pago acordado
               </h2>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <button
                   type="button"
                   onClick={() => setPaymentMethod('cash')}
@@ -844,8 +844,8 @@ export default function CreateOrderPage() {
                       : 'border-ink-950/12 bg-white text-ink-700 hover:border-ink-950/25'
                   )}
                 >
-                  <Banknote className="size-5 text-emerald-600" />
-                  <div>
+                  <Banknote className="size-5 text-emerald-600 shrink-0" />
+                  <div className="min-w-0">
                     <span className="block text-sm font-black">Efectivo</span>
                     <span className="text-[11px] text-ink-500">Cobro en entrega</span>
                   </div>
@@ -861,8 +861,8 @@ export default function CreateOrderPage() {
                       : 'border-ink-950/12 bg-white text-ink-700 hover:border-ink-950/25'
                   )}
                 >
-                  <CreditCard className="size-5 text-blue-600" />
-                  <div>
+                  <CreditCard className="size-5 text-blue-600 shrink-0" />
+                  <div className="min-w-0">
                     <span className="block text-sm font-black">Transferencia</span>
                     <span className="text-[11px] text-ink-500">Alias o CBU</span>
                   </div>
@@ -871,7 +871,7 @@ export default function CreateOrderPage() {
             </section>
 
             {/* Resumen Económico y Botón de Confirmación */}
-            <section className="rounded-3xl border border-ink-950/10 bg-white p-6 shadow-card">
+            <section className="rounded-2xl sm:rounded-3xl border border-ink-950/10 bg-white p-5 sm:p-6 shadow-card min-w-0">
               <h3 className="font-display text-xl font-black text-ink-950 mb-4">
                 Resumen del pedido
               </h3>

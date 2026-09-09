@@ -222,7 +222,7 @@ export function AdminShell() {
               <Menu className="size-5" />
             </Button>
           </header>
-          <main className="min-h-0 flex-1 overflow-y-auto">
+          <main className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
             <div className="mx-auto w-full max-w-[94rem] px-4 py-6 sm:px-6 sm:py-8 xl:px-10">
               <Outlet />
             </div>
