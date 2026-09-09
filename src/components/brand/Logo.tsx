@@ -19,7 +19,7 @@ export function Logo({
       aria-label="TIENDA DE SUPLEMENTOS, ir al inicio"
     >
       <img
-        src="/logo-tiendadesuplementos.png"
+        src="/logo-tiendadesuplementos.webp"
         alt="Logo Tienda de Suplementos"
         className={cn('size-10 object-contain shrink-0', compact && 'size-8')}
         width="40"
@@ -27,7 +27,7 @@ export function Logo({
       />
       <span
         className={cn(
-          'font-display font-black tracking-[-0.03em] whitespace-nowrap',
+          'min-w-0 font-display font-black leading-tight tracking-[-0.03em] whitespace-normal min-[375px]:whitespace-nowrap',
           textClassName
             ? textClassName
             : compact

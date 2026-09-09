@@ -297,13 +297,10 @@ export default function AiPage() {
     }
   ]);
   const ask = useMutation({
-    mutationFn: async (question: string) =>
+    mutationFn: async ({ question, history }: { question: string; history: Array<{ role: 'user' | 'assistant'; content: string }> }) =>
       (await getBusinessApi()).askBusinessAi(
         question,
-        messages
-          .filter((message) => message.id !== 'welcome')
-          .slice(-6)
-          .map(({ role, content }) => ({ role, content }))
+        history
       ),
     onSuccess: (result) => {
       setMessages((current) => [
@@ -325,7 +322,7 @@ export default function AiPage() {
     if (!clean || ask.isPending) return;
     setMessages((current) => [...current, { id: crypto.randomUUID(), role: 'user', content: clean }]);
     setInput('');
-    ask.mutate(clean);
+    ask.mutate({ question: clean, history: messages.filter(message => message.id !== 'welcome').slice(-6).map(({ role, content }) => ({ role, content })) });
   };
   if (!appEnv.aiEnabled) {
     return (
@@ -348,7 +345,7 @@ export default function AiPage() {
         <PageHeader title="Asistente del negocio" description="La base de datos calcula los números exactos de tu tienda y el asistente te ayuda a interpretarlos y tomar decisiones." />
         <div className="grid gap-6 xl:grid-cols-[1fr_20rem]">
           <section className="flex min-h-[42rem] flex-col overflow-hidden rounded-[2rem] bg-white shadow-card">
-            <div className="flex items-center justify-between gap-3 border-b border-ink-950/8 px-5 py-4 sm:px-6"><div className="flex items-center gap-3"><span className="grid size-10 place-items-center rounded-2xl bg-brand-100 text-brand-700"><Bot className="size-5" /></span><div><h2 className="font-black">Analista Impulso</h2><p className="text-xs font-semibold text-brand-600">Disponible · Modo solo lectura</p></div></div><div className="flex items-center gap-2"><span className="hidden items-center gap-2 rounded-full bg-cream-100 px-3 py-2 text-xs font-black text-ink-600 lg:inline-flex"><Database className="size-3.5" /> Datos de la tienda</span><span className="inline-flex items-center rounded-full border border-ink-950/10 bg-white px-3 py-2 text-xs font-black text-ink-700">Automático</span></div></div>
+            <div className="flex items-center justify-between gap-3 border-b border-ink-950/8 px-5 py-4 sm:px-6"><div className="flex items-center gap-3"><span className="grid size-10 place-items-center rounded-2xl bg-brand-100 text-brand-700"><Bot className="size-5" /></span><div><h2 className="font-black">Analista Impulso</h2><p className="text-xs font-semibold text-brand-600">{ask.isPending ? 'Consultando…' : ask.isError ? 'La última consulta no pudo completarse' : 'Listo para consultar'} · Modo solo lectura</p></div></div><div className="flex items-center gap-2"><span className="hidden items-center gap-2 rounded-full bg-cream-100 px-3 py-2 text-xs font-black text-ink-600 lg:inline-flex"><Database className="size-3.5" /> Datos de la tienda</span><span className="inline-flex items-center rounded-full border border-ink-950/10 bg-white px-3 py-2 text-xs font-black text-ink-700">Automático</span></div></div>
             <div className="flex-1 space-y-5 overflow-y-auto bg-cream-50 p-4 sm:p-6">
               {messages.map((message) => (
                 <article key={message.id} className={`flex gap-3 ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
@@ -362,7 +359,7 @@ export default function AiPage() {
                 </article>
               ))}
               {ask.isPending ? <div className="flex gap-3"><span className="grid size-9 place-items-center rounded-full bg-ink-950 text-brand-300"><Bot className="size-4" /></span><div className="flex items-center gap-2 rounded-[1.5rem] rounded-bl-md bg-white px-4 py-3 shadow-sm"><span className="size-2 animate-bounce rounded-full bg-brand-600" /><span className="size-2 animate-bounce rounded-full bg-brand-600 [animation-delay:120ms]" /><span className="size-2 animate-bounce rounded-full bg-brand-600 [animation-delay:240ms]" /></div></div> : null}
-              {ask.error ? <ErrorState error={ask.error} /> : null}
+              {ask.error ? <ErrorState error={ask.error} onRetry={() => { if (!ask.isPending && ask.variables) ask.mutate(ask.variables); }} /> : null}
             </div>
             <div className="border-t border-ink-950/8 bg-white p-4 sm:p-5">
               <div className="relative"><Textarea className="min-h-24 resize-none pr-16" maxLength={1200} placeholder="Ej. ¿Qué debería reponer esta semana y por qué?" value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); submit(); } }} /><Button className="absolute bottom-3 right-3 size-11 px-0" onClick={() => submit()} disabled={!input.trim() || ask.isPending} aria-label="Enviar pregunta"><ArrowUp className="size-5" /></Button></div>

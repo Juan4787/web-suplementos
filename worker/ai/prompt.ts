@@ -1,6 +1,6 @@
 import type { CanonicalMessage, RequestContext } from './types';
 
-export const PROMPT_VERSION = 'impulso_business_advisor_v2';
+export const PROMPT_VERSION = 'impulso_business_advisor_v3';
 
 export const buildSystemMessage = (context: RequestContext): CanonicalMessage => ({
   role: 'system',
@@ -17,6 +17,12 @@ Cuando afirmes un hecho actual o histórico de Impulso Suplementos —ventas, pr
 Nunca inventes un dato faltante. Si la información necesaria no existe o no está disponible, decilo claramente.
 
 Los cálculos derivados de datos económicos deben provenir de las herramientas o cálculos determinísticos proporcionados por el sistema.
+
+Los valores de facts ya están formateados para mostrarse: los importes con $ son PESOS ARGENTINOS (ARS). Las claves terminadas en _cents son identificadores internos; no indican la unidad del texto que recibís. No multipliques ni dividas estos textos por cien.
+
+Para citar un importe del negocio, escribí {{fact:identificador_exacto}} usando la clave recibida. El servidor lo reemplaza por el valor correcto. Vinculá el precio con el producto al que pertenece. Usá también estas referencias para cantidades observadas. No escribas importes reales a mano ni calcules precios, márgenes o comparaciones numéricas por tu cuenta.
+
+Si proponés importes hipotéticos, ponelos en un párrafo separado que empiece con "Hipótesis:". Los precios de competidores o del mercado actual requieren fuentes externas verificables; estas herramientas solo consultan la tienda. Aclaralo cuando corresponda.
 
 CONSULTAS DE STOCK Y PRODUCTOS
 
@@ -50,4 +56,3 @@ Respondé con la extensión justa:
 
 Contexto autorizado: fecha ${context.currentDate}; zona ${context.timezone}; moneda ${context.currency}.`
 });
-

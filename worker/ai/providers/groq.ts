@@ -62,117 +62,119 @@ export class GroqProvider implements AIProvider {
   ): Promise<CanonicalAIResponse> {
     const timeout = deadline.signal(model.timeoutMs);
     const fetchImpl = this.fetchImpl;
-    let response: Response;
-
     try {
-      response = await fetchImpl(GROQ_CHAT_COMPLETIONS_URL, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${this.apiKey}`,
-          'Content-Type': 'application/json',
-          Accept: 'application/json'
-        },
-        body: JSON.stringify(toChatCompletionPayload(model, request)),
-        signal: timeout.signal
-      });
-    } catch (error) {
-      if (timeout.signal.aborted || isAbortError(error)) {
-        throw new ProviderFailure('groq', 'timeout', {
+      let response: Response;
+
+      try {
+        response = await fetchImpl(GROQ_CHAT_COMPLETIONS_URL, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${this.apiKey}`,
+            'Content-Type': 'application/json',
+            Accept: 'application/json'
+          },
+          body: JSON.stringify(toChatCompletionPayload(model, request)),
+          signal: timeout.signal
+        });
+      } catch (error) {
+        if (timeout.signal.aborted || isAbortError(error)) {
+          throw new ProviderFailure('groq', 'timeout', {
+            retrySameProvider: false,
+            fallbackEligible: true,
+            cause: error
+          });
+        }
+        throw new ProviderFailure('groq', 'network', {
+          retrySameProvider: true,
+          fallbackEligible: true,
+          cause: error
+        });
+      }
+
+      let text: string;
+      try {
+        text = await readLimitedResponseText(response, response.ok ? 128_000 : 16_000, timeout.signal);
+      } catch (error) {
+        throw new ProviderFailure('groq', timeout.signal.aborted ? 'timeout' : 'invalid_model_output', {
           retrySameProvider: false,
           fallbackEligible: true,
           cause: error
         });
       }
-      throw new ProviderFailure('groq', 'network', {
-        retrySameProvider: true,
-        fallbackEligible: true,
-        cause: error
-      });
-    } finally {
-      timeout.cleanup();
-    }
+      const payload = parseJsonSafely(text);
 
-    let text: string;
-    try {
-      text = await readLimitedResponseText(response, response.ok ? 128_000 : 16_000);
-    } catch (error) {
-      throw new ProviderFailure('groq', 'invalid_model_output', {
-        retrySameProvider: false,
-        fallbackEligible: true,
-        cause: error
-      });
-    }
-    const payload = parseJsonSafely(text);
+      if (!response.ok) {
+        // Keep only provider metadata in the tail; response bodies may contain
+        // request details and must never be copied to logs.
+        const safeHeader = (name: string): string | undefined => {
+          const value = response.headers.get(name);
+          return value && value.length <= 80 ? value : undefined;
+        };
+        console.warn(JSON.stringify({
+          event: 'ai_groq_http_failure',
+          status: response.status,
+          retryAfter: safeHeader('retry-after'),
+          requestLimit: safeHeader('x-ratelimit-limit-requests'),
+          requestRemaining: safeHeader('x-ratelimit-remaining-requests'),
+          tokenLimit: safeHeader('x-ratelimit-limit-tokens'),
+          tokenRemaining: safeHeader('x-ratelimit-remaining-tokens'),
+          ...safeErrorMetadata(payload)
+        }));
+        if (response.status === 408) {
+          throw new ProviderFailure('groq', 'timeout', {
+            retrySameProvider: false,
+            fallbackEligible: true
+          });
+        }
+        if (response.status === 429) {
+          throw new ProviderFailure('groq', 'rate_limit', {
+            retrySameProvider: false,
+            fallbackEligible: true,
+            openCircuitMs: retryAfterMilliseconds(response)
+          });
+        }
+        if (response.status === 404) {
+          throw new ProviderFailure('groq', 'model_unavailable', {
+            retrySameProvider: false,
+            fallbackEligible: true,
+            openCircuitMs: 15 * 60_000
+          });
+        }
+        if (response.status === 401 || response.status === 403) {
+          throw new ProviderFailure('groq', 'authentication', {
+            retrySameProvider: false,
+            fallbackEligible: true,
+            openCircuitMs: 15 * 60_000
+          });
+        }
+        if (response.status === 400 && hasFailedGeneration(payload)) {
+          throw new ProviderFailure('groq', 'invalid_model_output', {
+            retrySameProvider: false,
+            fallbackEligible: true
+          });
+        }
+        if (response.status >= 500) {
+          throw new ProviderFailure('groq', 'server', {
+            retrySameProvider: true,
+            fallbackEligible: true
+          });
+        }
+        throw new ProviderFailure('groq', 'invalid_request', {
+          retrySameProvider: false,
+          fallbackEligible: false
+        });
+      }
 
-    if (!response.ok) {
-      // Keep only provider metadata in the tail; response bodies may contain
-      // request details and must never be copied to logs.
-      const safeHeader = (name: string): string | undefined => {
-        const value = response.headers.get(name);
-        return value && value.length <= 80 ? value : undefined;
-      };
-      console.warn(JSON.stringify({
-        event: 'ai_groq_http_failure',
-        status: response.status,
-        retryAfter: safeHeader('retry-after'),
-        requestLimit: safeHeader('x-ratelimit-limit-requests'),
-        requestRemaining: safeHeader('x-ratelimit-remaining-requests'),
-        tokenLimit: safeHeader('x-ratelimit-limit-tokens'),
-        tokenRemaining: safeHeader('x-ratelimit-remaining-tokens'),
-        ...safeErrorMetadata(payload)
-      }));
-      if (response.status === 408) {
-        throw new ProviderFailure('groq', 'timeout', {
-          retrySameProvider: false,
-          fallbackEligible: true
-        });
-      }
-      if (response.status === 429) {
-        throw new ProviderFailure('groq', 'rate_limit', {
-          retrySameProvider: false,
-          fallbackEligible: true,
-          openCircuitMs: retryAfterMilliseconds(response)
-        });
-      }
-      if (response.status === 404) {
-        throw new ProviderFailure('groq', 'model_unavailable', {
-          retrySameProvider: false,
-          fallbackEligible: true,
-          openCircuitMs: 15 * 60_000
-        });
-      }
-      if (response.status === 401 || response.status === 403) {
-        throw new ProviderFailure('groq', 'authentication', {
-          retrySameProvider: false,
-          fallbackEligible: true,
-          openCircuitMs: 15 * 60_000
-        });
-      }
-      if (response.status === 400 && hasFailedGeneration(payload)) {
+      if (payload === undefined) {
         throw new ProviderFailure('groq', 'invalid_model_output', {
           retrySameProvider: false,
           fallbackEligible: true
         });
       }
-      if (response.status >= 500) {
-        throw new ProviderFailure('groq', 'server', {
-          retrySameProvider: true,
-          fallbackEligible: true
-        });
-      }
-      throw new ProviderFailure('groq', 'invalid_request', {
-        retrySameProvider: false,
-        fallbackEligible: false
-      });
-    }
 
-    if (payload === undefined) {
-      throw new ProviderFailure('groq', 'invalid_model_output', {
-        retrySameProvider: false,
-        fallbackEligible: true
-      });
+      return normalizeChatCompletion('groq', model, payload);
+    } finally {
+      timeout.cleanup();
     }
-
-    return normalizeChatCompletion('groq', model, payload);
   }
 }

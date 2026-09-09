@@ -9,6 +9,21 @@ const input = {
 };
 
 describe('business AI HTTP client', () => {
+  it('termina la espera aunque lleguen encabezados y el cuerpo quede incompleto', async () => {
+    vi.useFakeTimers();
+    try {
+      let signal: AbortSignal | undefined;
+      const fetchMock = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+        signal = init?.signal as AbortSignal;
+        return { ok: true, json: () => new Promise(() => undefined) } as Response;
+      });
+      const failure = expect(requestBusinessAI(input, fetchMock)).rejects.toMatchObject({ kind: 'temporary', message: 'El asistente tardó demasiado en responder.' });
+      await vi.advanceTimersByTimeAsync(40_000);
+      await failure;
+      expect(signal?.aborted).toBe(true);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally { vi.useRealTimers(); }
+  });
   it('envía solo el contrato permitido y valida la respuesta', async () => {
     const fetchMock = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
       expect(JSON.parse(String(init?.body))).toEqual({

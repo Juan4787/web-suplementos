@@ -1,3 +1,4 @@
+import { withAbortSignal } from '@/lib/abortable';
 import { AppError, type AppErrorKind } from '@/domain/errors';
 import type { AIAnswer } from './business-api';
 
@@ -103,70 +104,78 @@ export const requestBusinessAI = async (
 ): Promise<AIAnswer> => {
   const controller = new AbortController();
   const timer = window.setTimeout(() => controller.abort(), 40_000);
-  let response: Response;
-
   try {
-    response = await fetchImpl('/api/ai', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${input.accessToken}`,
-        'Content-Type': 'application/json',
-        Accept: 'application/json'
-      },
-      credentials: 'same-origin',
-      body: JSON.stringify({
-        message: input.message,
-        history: input.history,
-        modelPreference: 'auto'
-      }),
-      signal: controller.signal
-    });
-  } catch (error) {
-    throw new AppError('temporary', 'No pudimos comunicarnos con el asistente.', {
-      cause: error,
-      retryable: true,
-      nextAction: 'Revisá tu conexión y volvé a intentarlo. Tus datos no fueron modificados.'
-    });
+    let response: Response;
+
+    try {
+      response = await withAbortSignal(() => fetchImpl('/api/ai', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${input.accessToken}`,
+          'Content-Type': 'application/json',
+          Accept: 'application/json'
+        },
+        credentials: 'same-origin',
+        body: JSON.stringify({
+          message: input.message,
+          history: input.history,
+          modelPreference: 'auto'
+        }),
+        signal: controller.signal
+      }), controller.signal);
+    } catch (error) {
+      if (controller.signal.aborted) {
+        throw new AppError('temporary', 'El asistente tardó demasiado en responder.', { cause: error, retryable: true, nextAction: 'Intentá de nuevo. Conservamos tu pregunta.' });
+      }
+      throw new AppError('temporary', 'No pudimos comunicarnos con el asistente.', {
+        cause: error,
+        retryable: true,
+        nextAction: 'Revisá tu conexión y volvé a intentarlo. Tus datos no fueron modificados.'
+      });
+    }
+
+    let payload: unknown;
+    try {
+      payload = await withAbortSignal(() => response.json(), controller.signal);
+    } catch (error) {
+      if (controller.signal.aborted) {
+        throw new AppError('temporary', 'El asistente tardó demasiado en responder.', { cause: error, retryable: true, nextAction: 'Intentá de nuevo. Conservamos tu pregunta.' });
+      }
+      throw new AppError('unexpected', 'El asistente devolvió una respuesta incompleta.', {
+        cause: error,
+        retryable: true,
+        nextAction: 'Volvé a intentarlo.'
+      });
+    }
+
+    if (!response.ok) {
+      const publicError = parsePublicError(payload);
+      if (publicError) {
+        throw new AppError(publicError.kind, publicError.message, {
+          retryable: publicError.retryable,
+          ...(publicError.nextAction ? { nextAction: publicError.nextAction } : {})
+        });
+      }
+      throw new AppError('temporary', 'El asistente no está disponible en este momento.', {
+        retryable: true,
+        nextAction: 'Volvé a intentarlo más tarde. El resto de la aplicación sigue disponible.'
+      });
+    }
+
+    let parsed: AIAnswer | null;
+    try {
+      parsed = parseSuccess(payload);
+    } catch {
+      parsed = null;
+    }
+    if (!parsed) {
+      throw new AppError('unexpected', 'El asistente devolvió una respuesta incompleta.', {
+        retryable: true,
+        nextAction: 'Volvé a intentarlo.'
+      });
+    }
+    return parsed;
   } finally {
     window.clearTimeout(timer);
   }
-
-  let payload: unknown;
-  try {
-    payload = await response.json();
-  } catch (error) {
-    throw new AppError('unexpected', 'El asistente devolvió una respuesta incompleta.', {
-      cause: error,
-      retryable: true,
-      nextAction: 'Volvé a intentarlo.'
-    });
-  }
-
-  if (!response.ok) {
-    const publicError = parsePublicError(payload);
-    if (publicError) {
-      throw new AppError(publicError.kind, publicError.message, {
-        retryable: publicError.retryable,
-        ...(publicError.nextAction ? { nextAction: publicError.nextAction } : {})
-      });
-    }
-    throw new AppError('temporary', 'El asistente no está disponible en este momento.', {
-      retryable: true,
-      nextAction: 'Volvé a intentarlo más tarde. El resto de la aplicación sigue disponible.'
-    });
-  }
-
-  let parsed: AIAnswer | null;
-  try {
-    parsed = parseSuccess(payload);
-  } catch {
-    parsed = null;
-  }
-  if (!parsed) {
-    throw new AppError('unexpected', 'El asistente devolvió una respuesta incompleta.', {
-      retryable: true,
-      nextAction: 'Volvé a intentarlo.'
-    });
-  }
-  return parsed;
 };

@@ -9,9 +9,10 @@ import {
   MoreHorizontal,
   Plus,
   Search,
-  ShoppingBasket
+  ShoppingBasket,
+  X
 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from '@/app/query-keys';
 import { useBusinessQuery } from '@/app/use-business-query';
@@ -116,6 +117,11 @@ export default function OrdersPage() {
   }, [routeSearchParams?.search]);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [mutationError, setMutationError] = useState<Error | null>(null);
+  const [successNotice, setSuccessNotice] = useState<{ order: Order; completed: boolean; message: string } | null>(null);
+  const noticeRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (successNotice?.completed) noticeRef.current?.focus();
+  }, [successNotice]);
   const [showSecondaryActions, setShowSecondaryActions] = useState<Record<string, boolean>>({});
   const [confirmAction, setConfirmAction] = useState<{ order: Order; action: OrderAction } | null>(null);
 
@@ -132,8 +138,14 @@ export default function OrdersPage() {
   const transition = useMutation({
     mutationFn: async (variables: { orderId: string; action: OrderAction }) =>
       (await getBusinessApi()).transitionOrder(variables.orderId, variables.action),
-    onSuccess: async () => {
+    onSuccess: async (order, variables) => {
       setMutationError(null);
+      const cancelled = order.orderState === 'cancelled';
+      const completed = cancelled || (order.paymentState === 'paid' && order.fulfillmentState === 'delivered');
+      const state = variables.action === 'mark_paid' ? 'cobrado' : variables.action === 'mark_delivered' ? 'entregado' : 'actualizado';
+      setSuccessNotice({ order, completed, message: completed
+        ? `Pedido #${order.number} ${cancelled ? 'cancelado' : 'completado'}. Lo encontrás en Completados.`
+        : `Pedido #${order.number} ${state}.` });
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['orders'] }),
         queryClient.invalidateQueries({ queryKey: queryKeys.dashboard }),
@@ -146,7 +158,7 @@ export default function OrdersPage() {
         queryClient.invalidateQueries({ queryKey: ['movements'] })
       ]);
     },
-    onError: setMutationError
+    onError: error => { setSuccessNotice(null); setMutationError(error); }
   });
 
   const items = ordersQuery.data?.items ?? [];
@@ -235,6 +247,18 @@ export default function OrdersPage() {
         </div>
       </div>
 
+      {successNotice ? (
+        <div ref={noticeRef} tabIndex={-1} className="mb-5 flex flex-wrap items-center gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-950">
+          <p role="status" className="flex-1 font-semibold">{successNotice.message}</p>
+          {successNotice.completed ? <Button variant="secondary" size="sm" onClick={() => {
+            const order = successNotice.order;
+            setPage(1); setFilter('completed'); setSearch(String(order.number));
+            setDebouncedSearch(String(order.number)); setExpanded(order.id); setSuccessNotice(null);
+          }}>Ver pedido</Button> : null}
+          <button type="button" className="grid size-11 place-items-center rounded-full hover:bg-emerald-100" aria-label="Cerrar aviso" onClick={() => setSuccessNotice(null)}><X className="size-5" /></button>
+        </div>
+      ) : null}
+
       {mutationError ? (
         <div className="mb-5">
           <ErrorState error={mutationError} />
@@ -304,6 +328,7 @@ export default function OrdersPage() {
                           open && 'rotate-180'
                         )}
                       />
+                      <span className="text-sm font-bold text-brand-700">{open ? 'Ocultar acciones' : 'Ver pedido y acciones'}</span>
                     </div>
                   </button>
 

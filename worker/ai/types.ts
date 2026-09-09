@@ -81,9 +81,9 @@ export type ExactEvidence = {
 
 export type OrchestratorResult = {
   answer: string;
-  modelKey: ModelKey;
+  modelKey: ModelKey | null;
   modelLabel: string;
-  provider: ProviderKey;
+  provider: ProviderKey | null;
   providerLabel: string;
   usedTools: string[];
   evidence: ExactEvidence[];

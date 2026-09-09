@@ -1,3 +1,4 @@
+import { ProductImage } from '@/components/store/ProductImage';
 import { Link } from '@tanstack/react-router';
 import {
   AlertCircle,
@@ -185,7 +186,7 @@ export default function CartPage() {
                           : 'border-ink-950/8 bg-white'
                     }`}
                   >
-                    <img
+                    <ProductImage
                       src={line.imageUrl}
                       alt=""
                       className="aspect-square w-full rounded-2xl bg-cream-100 object-contain p-1"

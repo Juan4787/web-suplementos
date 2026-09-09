@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Link, Navigate } from '@tanstack/react-router';
+import { Link } from '@tanstack/react-router';
 import {
   AlertCircle,
   ArrowLeft,
@@ -17,8 +17,8 @@ import { useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from '@/app/query-keys';
 import { useBusinessQuery } from '@/app/use-business-query';
 import { PublicShell } from '@/components/layout/PublicShell';
-import { Button } from '@/components/ui/Button';
-import { ErrorState, LoadingState } from '@/components/ui/DataState';
+import { Button, buttonStyles } from '@/components/ui/Button';
+import { EmptyState, ErrorState, LoadingState } from '@/components/ui/DataState';
 import { Field, Input } from '@/components/ui/Field';
 import { formatMoney } from '@/domain/money';
 import type { CheckoutData } from '@/domain/types';
@@ -209,7 +209,18 @@ export default function CheckoutPage() {
   });
 
   if (cart.lines.length === 0) {
-    return <Navigate to="/carrito" replace />;
+    return (
+      <PublicShell>
+        <div className="mx-auto min-h-[60vh] max-w-3xl px-4 py-12">
+          <h1 className="mb-6 font-display text-3xl font-black">Finalizar pedido</h1>
+          <EmptyState
+            title="Tu carrito está vacío"
+            description="Sumá productos para continuar con tu pedido."
+            action={<Link to="/" hash="productos" className={buttonStyles()}>Ver productos</Link>}
+          />
+        </div>
+      </PublicShell>
+    );
   }
 
   return (

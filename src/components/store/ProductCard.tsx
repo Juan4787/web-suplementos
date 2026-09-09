@@ -5,6 +5,7 @@ import { StatusChip } from '@/components/ui/StatusChip';
 import { formatMoney } from '@/domain/money';
 import type { StorefrontProduct } from '@/domain/types';
 import { useCart } from '@/features/cart/CartProvider';
+import { ProductImage } from './ProductImage';
 
 const availabilityLabel: Record<StorefrontProduct['availability'], string> = {
   available: 'Disponible',
@@ -18,7 +19,7 @@ export function ProductCard({ product }: { product: StorefrontProduct }) {
   const isIncoming =
     product.availability === 'incoming' ||
     ((product.incomingAvailable ?? 0) > 0 && product.availability !== 'available');
-  const soldOut = product.availability === 'out_of_stock' && !isIncoming;
+  const soldOut = product.maxOrderQuantity <= 0 || (product.availability === 'out_of_stock' && !isIncoming);
 
   const currentLine = lines.find((line) => line.productId === product.id);
   const cartQty = currentLine?.quantity ?? 0;
@@ -50,7 +51,7 @@ export function ProductCard({ product }: { product: StorefrontProduct }) {
         className="relative flex aspect-[1.05] items-center justify-center overflow-hidden bg-cream-100 p-2.5"
         aria-label={`Ver ${product.name}`}
       >
-        <img
+        <ProductImage
           src={product.imageUrl}
           alt={product.imageAlt}
           className="h-full w-full object-contain transition duration-500 group-hover:scale-[1.04]"
@@ -76,7 +77,7 @@ export function ProductCard({ product }: { product: StorefrontProduct }) {
           <h3 className="font-display text-xl font-black leading-tight tracking-[-0.025em] text-ink-950 sm:text-2xl">{product.name}</h3>
         </Link>
         <p className="mt-2 text-sm font-bold text-ink-600">{product.presentation}</p>
-        <div className="mt-auto flex items-end justify-between gap-3 pt-6">
+        <div className="mt-auto flex flex-wrap items-end justify-between gap-3 pt-6">
           <div>
             <p className="font-display text-2xl font-black tracking-tight">{formatMoney(product.priceCents)}</p>
             {isMaxStock && cartQty > 0 ? (
@@ -118,10 +119,10 @@ export function ProductCard({ product }: { product: StorefrontProduct }) {
               className="min-h-[44px] rounded-full px-3.5 sm:px-4"
               onClick={handleAddFirst}
               disabled={soldOut}
-              aria-label={`Agregar ${product.name} al carrito`}
+              aria-label={soldOut ? `${product.name}: agotado` : `Agregar ${product.name} al carrito`}
             >
-              <Plus className="size-4" aria-hidden="true" />
-              <span className="hidden sm:inline">{soldOut ? 'Agotado' : 'Agregar'}</span>
+              {!soldOut ? <Plus className="size-4" aria-hidden="true" /> : null}
+              <span>{soldOut ? 'Agotado' : 'Agregar'}</span>
             </Button>
           )}
         </div>

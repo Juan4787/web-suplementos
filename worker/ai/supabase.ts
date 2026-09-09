@@ -59,54 +59,56 @@ export class SupabaseAIClient {
   ): Promise<unknown> {
     const timeout = deadline.signal(Math.min(8_000, deadline.remainingMs()));
     const fetchImpl = this.fetchImpl;
-    let response: Response;
     try {
-      response = await fetchImpl(`${this.baseUrl}/rest/v1/rpc/${name}`, {
-        method: 'POST',
-        headers: {
-          apikey: this.anonKey,
-          Authorization: `Bearer ${this.accessToken}`,
-          'Content-Type': 'application/json',
-          Accept: 'application/json'
-        },
-        body: JSON.stringify(args),
-        signal: timeout.signal
-      });
-    } catch (error) {
-      console.warn(JSON.stringify({
-        event: 'ai_rpc_transport_failure',
-        operation: name,
-        errorType: error instanceof Error ? error.name : 'unknown'
-      }));
-      throw new ToolDependencyFailure('temporary', error);
+      let response: Response;
+      try {
+        response = await fetchImpl(`${this.baseUrl}/rest/v1/rpc/${name}`, {
+          method: 'POST',
+          headers: {
+            apikey: this.anonKey,
+            Authorization: `Bearer ${this.accessToken}`,
+            'Content-Type': 'application/json',
+            Accept: 'application/json'
+          },
+          body: JSON.stringify(args),
+          signal: timeout.signal
+        });
+      } catch (error) {
+        console.warn(JSON.stringify({
+          event: 'ai_rpc_transport_failure',
+          operation: name,
+          errorType: error instanceof Error ? error.name : 'unknown'
+        }));
+        throw new ToolDependencyFailure('temporary', error);
+      }
+
+      let text: string;
+      try {
+        text = await readLimitedResponseText(response, maxResponseBytes, timeout.signal);
+      } catch (error) {
+        throw new ToolDependencyFailure('temporary', error);
+      }
+
+      if (!response.ok) {
+        console.warn(JSON.stringify({
+          event: 'ai_rpc_failure',
+          operation: name,
+          status: response.status
+        }));
+        if (response.status === 401) throw new ToolDependencyFailure('auth');
+        if (response.status === 403 || /FORBIDDEN/i.test(text)) {
+          throw new ToolDependencyFailure('permission');
+        }
+        throw new ToolDependencyFailure('temporary');
+      }
+
+      if (text === '') return null;
+      const payload = parseJsonSafely(text);
+      if (payload === undefined) throw new ToolDependencyFailure('temporary');
+      return payload;
     } finally {
       timeout.cleanup();
     }
-
-    let text: string;
-    try {
-      text = await readLimitedResponseText(response, maxResponseBytes);
-    } catch (error) {
-      throw new ToolDependencyFailure('temporary', error);
-    }
-
-    if (!response.ok) {
-      console.warn(JSON.stringify({
-        event: 'ai_rpc_failure',
-        operation: name,
-        status: response.status
-      }));
-      if (response.status === 401) throw new ToolDependencyFailure('auth');
-      if (response.status === 403 || /FORBIDDEN/i.test(text)) {
-        throw new ToolDependencyFailure('permission');
-      }
-      throw new ToolDependencyFailure('temporary');
-    }
-
-    if (text === '') return null;
-    const payload = parseJsonSafely(text);
-    if (payload === undefined) throw new ToolDependencyFailure('temporary');
-    return payload;
   }
 
   async claim(inputChars: number, deadline: Deadline): Promise<ClaimResult> {

@@ -1,6 +1,6 @@
 import { Link, useParams } from '@tanstack/react-router';
 import { ArrowLeft, Check, Minus, Plus, ShieldCheck, ShoppingBag, Sparkles } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { queryKeys } from '@/app/query-keys';
 import { useBusinessQuery } from '@/app/use-business-query';
 import { PublicShell } from '@/components/layout/PublicShell';
@@ -9,12 +9,14 @@ import { ErrorState, LoadingState } from '@/components/ui/DataState';
 import { StatusChip } from '@/components/ui/StatusChip';
 import { formatMoney } from '@/domain/money';
 import { useCart } from '@/features/cart/CartProvider';
+import { ProductImage } from '@/components/store/ProductImage';
 
 export default function ProductPage() {
   const { slug } = useParams({ strict: false }) as { slug: string };
   const [quantity, setQuantity] = useState(1);
   const [added, setAdded] = useState(false);
-  const { add } = useCart();
+  const { add, lines } = useCart();
+  useEffect(() => { setQuantity(1); setAdded(false); }, [slug]);
   const productQuery = useBusinessQuery({
     queryKey: queryKeys.storefrontProduct(slug),
     queryFn: (api) => api.getStorefrontProduct(slug)
@@ -23,16 +25,23 @@ export default function ProductPage() {
   const isIncoming =
     productQuery.data?.availability === 'incoming' ||
     ((productQuery.data?.incomingAvailable ?? 0) > 0 && productQuery.data?.availability !== 'available');
-  const isOutOfStock = productQuery.data?.availability === 'out_of_stock' && !isIncoming;
+  const isOutOfStock = (productQuery.data?.maxOrderQuantity ?? 0) <= 0 ||
+    (productQuery.data?.availability === 'out_of_stock' && !isIncoming);
   const maxAvailable = productQuery.data?.maxOrderQuantity ?? 10;
-  const maxAllowed = Math.max(1, maxAvailable);
+  const cartQuantity = lines.find(line => line.productId === productQuery.data?.id)?.quantity ?? 0;
+  const remainingForCart = Math.max(0, maxAvailable - cartQuantity);
+  const cartFull = !isOutOfStock && remainingForCart === 0;
+  const maxAllowed = Math.max(1, remainingForCart);
+  const selectedQuantity = Math.min(quantity, maxAllowed);
 
   const handleIncrement = () => {
+    setAdded(false);
     setQuantity((prev) => Math.min(maxAllowed, prev + 1));
   };
 
   const handleDecrement = () => {
-    setQuantity((prev) => Math.max(1, prev - 1));
+    setAdded(false);
+    setQuantity((prev) => Math.max(1, Math.min(prev, maxAllowed) - 1));
   };
 
   return (
@@ -53,7 +62,7 @@ export default function ProductPage() {
         {productQuery.data ? (
           <article className="page-enter mt-8 grid gap-8 lg:grid-cols-2 lg:gap-14">
             <div className="flex items-center justify-center overflow-hidden rounded-[2.5rem] border border-ink-950/7 bg-white p-3 shadow-card sm:p-5">
-              <img
+              <ProductImage
                 src={productQuery.data.imageUrl}
                 alt={productQuery.data.imageAlt}
                 className="aspect-square w-full rounded-[2rem] object-contain"
@@ -129,60 +138,66 @@ export default function ProductPage() {
 
               <div className="mt-8 flex flex-col gap-1 sm:flex-row sm:items-baseline sm:gap-3">
                 <p className="font-display text-4xl sm:text-5xl font-black tracking-tight text-ink-950 transition-all">
-                  {formatMoney(productQuery.data.priceCents * (isOutOfStock ? 0 : Math.max(1, quantity)))}
+                  {formatMoney(productQuery.data.priceCents)}
                 </p>
                 <div className="flex flex-wrap items-center gap-2">
-                  {!isOutOfStock && quantity > 1 ? (
+                  {!isOutOfStock && !cartFull && selectedQuantity > 1 ? (
                     <span className="rounded-md bg-brand-50 px-2 py-0.5 text-xs font-bold text-brand-700 border border-brand-200/60">
-                      {quantity} × {formatMoney(productQuery.data.priceCents)}
+                      Subtotal por {selectedQuantity} unidades: {formatMoney(productQuery.data.priceCents * selectedQuantity)}
                     </span>
                   ) : null}
-                  <span className="text-xs font-semibold text-ink-600">Precio final con impuestos incluidos</span>
+                  <span className="text-xs font-semibold text-ink-600">Precio por unidad, con impuestos incluidos</span>
                 </div>
               </div>
 
               <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-                <div className="inline-flex h-13 items-center justify-between rounded-full border border-ink-950/15 bg-white px-2 shadow-sm select-none">
+                {!isOutOfStock && !cartFull ? <div className="inline-flex h-13 items-center justify-between rounded-full border border-ink-950/15 bg-white px-2 shadow-sm select-none">
                   <button
                     type="button"
                     className="grid size-10 place-items-center rounded-full hover:bg-cream-100 text-ink-700 active:scale-90 transition disabled:opacity-30 disabled:cursor-not-allowed"
                     onClick={handleDecrement}
-                    disabled={quantity <= 1 || isOutOfStock}
+                    disabled={selectedQuantity <= 1}
                     aria-label="Restar una unidad"
                   >
                     <Minus className="size-4" />
                   </button>
                   <span className="min-w-10 text-center font-black text-ink-950 text-lg">
-                    {isOutOfStock ? 0 : quantity}
+                    {selectedQuantity}
                   </span>
                   <button
                     type="button"
                     className="grid size-10 place-items-center rounded-full hover:bg-cream-100 text-ink-700 active:scale-90 transition disabled:opacity-30 disabled:cursor-not-allowed"
                     onClick={handleIncrement}
-                    disabled={quantity >= maxAllowed || isOutOfStock}
+                    disabled={selectedQuantity >= maxAllowed}
                     aria-label="Sumar una unidad"
                   >
                     <Plus className="size-4" />
                   </button>
-                </div>
+                </div> : null}
                 <Button
                   size="lg"
                   className="flex-1 shadow-[0_8px_24px_rgba(37,99,235,0.28)]"
-                  disabled={isOutOfStock}
+                  disabled={isOutOfStock || cartFull}
                   onClick={() => {
-                    add(productQuery.data!, quantity);
+                    if (isOutOfStock || cartFull) return;
+                    add(productQuery.data!, selectedQuantity);
                     setAdded(true);
                   }}
                 >
-                  <ShoppingBag className="size-5" /> {added ? '¡Agregado al carrito!' : 'Agregar al carrito'}
+                  {!isOutOfStock ? <ShoppingBag className="size-5" /> : null}
+                  {isOutOfStock ? 'Agotado' : cartFull ? 'Máximo en carrito' : added ? '¡Agregado al carrito!' : 'Agregar al carrito'}
                 </Button>
               </div>
+              {isOutOfStock ? (
+                <p className="mt-3 text-sm text-ink-600">Por ahora este producto no está disponible. <Link to="/" hash="productos" className="font-bold underline">Ver otros productos</Link></p>
+              ) : null}
               {quantity >= maxAllowed && maxAllowed > 1 && !isOutOfStock ? (
                 <p className="mt-2 text-xs font-semibold text-amber-600">
                   Límite máximo disponible seleccionado ({maxAllowed} unidades).
                 </p>
               ) : null}
-              {added ? <Link to="/carrito" className={buttonStyles({ variant: 'ghost', className: 'mt-3 text-brand-600 font-black' })}>Ver carrito y finalizar pedido →</Link> : null}
+              {cartFull ? <p className="mt-3 text-sm text-ink-600">Ya tenés en el carrito todas las unidades disponibles de este producto.</p> : null}
+              {added || cartFull ? <Link to="/carrito" className={buttonStyles({ variant: 'ghost', className: 'mt-3 text-brand-600 font-black' })}>Ver carrito y finalizar pedido →</Link> : null}
             </div>
           </article>
         ) : null}

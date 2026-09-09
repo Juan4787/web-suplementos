@@ -1,3 +1,4 @@
+import { ProductImage } from '@/components/store/ProductImage';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -97,7 +98,7 @@ const defaults: FormValues = {
   reorderPoint: 5,
   safetyStock: 2,
   leadTimeDays: 7,
-  imageUrl: '/products/imagen-suplemento.png',
+  imageUrl: '/product-placeholder.svg',
   imageAlt: '',
   published: true,
   active: true,
@@ -196,7 +197,7 @@ function ProductForm({
         ? storagePathFromProductImageUrl(product.imageUrl)
         : null;
       let uploadedStoragePath: string | null = null;
-      let imageUrl = values.imageUrl?.trim() || product?.imageUrl || '/products/imagen-suplemento.png';
+      let imageUrl = values.imageUrl?.trim() || product?.imageUrl || '/product-placeholder.svg';
 
       if (imageFile) {
         const uploaded = await uploadProductImage(imageFile);
@@ -361,7 +362,7 @@ function ProductForm({
               <div className="grid gap-4 sm:grid-cols-[6rem_1fr] sm:items-center">
                 <div className="aspect-square size-24 overflow-hidden rounded-2xl bg-cream-100 border border-ink-950/10">
                   {imagePreviewUrl || currentImageUrl ? (
-                    <img
+                    <ProductImage
                       src={imagePreviewUrl || currentImageUrl}
                       alt="Vista previa"
                       className="size-full object-contain p-1.5"
@@ -773,7 +774,7 @@ export default function ProductsPage() {
                 className="overflow-hidden rounded-2xl border border-ink-950/8 bg-white shadow-sm transition hover:border-ink-950/20"
               >
                 <div className="grid grid-cols-[5.5rem_1fr] gap-4 p-5">
-                  <img
+                  <ProductImage
                     src={product.imageUrl}
                     alt={product.imageAlt}
                     className="aspect-square rounded-xl bg-cream-100 object-contain p-1.5"

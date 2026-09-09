@@ -127,7 +127,7 @@ export default function StorefrontPage() {
             </div>
             <div className="mt-8 flex justify-center lg:hidden" aria-hidden="true">
               <img
-                src="/logo-tiendadesuplementos.png"
+                src="/logo-tiendadesuplementos.webp"
                 alt="Tienda de Suplementos"
                 className="size-48 object-contain drop-shadow-[0_15px_25px_rgba(0,0,0,0.35)]"
                 width="192"
@@ -138,7 +138,7 @@ export default function StorefrontPage() {
           <div className="relative mx-auto hidden w-full max-w-md lg:block" aria-hidden="true">
             <div className="absolute -inset-8 rotate-6 rounded-[4rem] border-2 border-dashed border-brand-500/20" />
             <img
-              src="/logo-tiendadesuplementos.png"
+              src="/logo-tiendadesuplementos.webp"
               alt="Tienda de Suplementos"
               className="relative aspect-square w-full -rotate-3 object-contain drop-shadow-[0_25px_35px_rgba(0,0,0,0.4)] transition-transform duration-500 hover:scale-105"
               width="720"

@@ -2,6 +2,10 @@
 
 Este archivo existe para que una compactación de contexto no convierta decisiones firmes en suposiciones.
 
+## Correcciones del 09/09/2026
+
+Consultar [las correcciones de UX y fiabilidad](CORRECCIONES_UX_2026-09-09.md): precio y disponibilidad, checkout vacío, recuperación de imágenes, acciones y confirmaciones de pedidos, unidades monetarias y esperas de IA, y reducción de archivos públicos. Cambios verificados localmente; esta ronda no publica ni modifica datos comerciales. Se conservó un original de las imágenes retiradas del despliegue en `assets/originals/`.
+
 ## Entrega del 08/09/2026
 
 Consultar primero [la auditoría final](AUDITORIA_FINAL_2026-09-08.md), que actualiza el estado histórico de este documento. Solo quedan las cuentas de Natalia (dueña) y Florencia (personal). Quedaron 25 productos; se retiraron tres «Item Test» tras confirmar el usuario que eran ficticios. Los demás productos, precios y descripciones son reales; compras, pedidos, clientes y cantidades de stock anteriores eran ficticios. Se retiraron las operaciones y se puso el stock en cero con respaldo y comparación del catálogo. Esperar las cantidades reales antes de habilitar ventas con existencias.

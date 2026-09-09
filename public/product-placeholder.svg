@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="720" viewBox="0 0 720 720">
+  <rect width="720" height="720" rx="40" fill="#f8f4e9"/>
+  <g fill="none" stroke="#65736a" stroke-width="12" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="255" y="225" width="210" height="270" rx="35"/>
+    <rect x="285" y="180" width="150" height="45" rx="10"/>
+    <path d="M255 315h210M255 415h210M335 365h50m-25-25v50"/>
+  </g>
+  <text x="360" y="565" text-anchor="middle" font-family="sans-serif" font-size="25" fill="#48564d">Imagen no disponible</text>
+</svg>

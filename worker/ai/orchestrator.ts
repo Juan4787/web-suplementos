@@ -1,5 +1,6 @@
 import { ProviderCircuitBreaker, providerCircuitBreaker } from './circuit-breaker';
 import { Deadline } from './deadline';
+import { answerCatalogPrice, directPriceQuery } from './catalog-price-answer';
 import {
   buildDeterministicAnswerTemplate,
   requiresBusinessEvidence
@@ -159,6 +160,11 @@ export const orchestrate = async (
 
   if (route.length < 1 || route.length > 2) throw new Error('INVALID_MODEL_ROUTE');
 
+  const priceQuery = directPriceQuery(input.message);
+  if (priceQuery) return answerCatalogPrice(priceQuery, dependencies, deadline);
+  // Reserve time across ALL primary rounds for a fallback and its data read.
+  const primaryDeadline = new Deadline(Math.max(0, deadline.remainingMs() - Math.min(12_000, deadline.remainingMs() * 0.4)), now);
+
   const messages: CanonicalMessage[] = [
     buildSystemMessage(input.context),
     ...input.history.slice(-MAX_CONTEXT_HISTORY_MESSAGES).map((message): CanonicalMessage =>
@@ -221,15 +227,19 @@ export const orchestrate = async (
     const model = currentModel();
     const provider = dependencies.providers[model.provider];
     let retryUsed = false;
+    const providerDeadline = routeIndex === 0 && route.length > 1 ? primaryDeadline : deadline;
 
     while (true) {
       try {
         deadline.assertRemaining(250);
+        if (providerDeadline.remainingMs() < 250) {
+          throw new ProviderFailure(model.provider, 'timeout', { retrySameProvider: false, fallbackEligible: true });
+        }
         breaker.assertClosed(model.provider);
         const response = await provider.generate(
           model,
           createCanonicalRequest(model, messages, shouldExposeTools() ? selectedTools : undefined),
-          deadline
+          providerDeadline
         );
         if (response.modelKey !== model.key || response.provider !== model.provider) {
           throw new ProviderFailure(model.provider, 'invalid_model_output', {
@@ -249,7 +259,7 @@ export const orchestrate = async (
           retrySameProvider: error.options.retrySameProvider && !retryUsed
         }));
 
-        if (error.options.retrySameProvider && !retryUsed && deadline.remainingMs() > 1_000) {
+        if (error.options.retrySameProvider && !retryUsed && providerDeadline.remainingMs() > 1_000) {
           retryUsed = true;
           await sleep(120 + Math.floor(random() * 100));
           continue;
@@ -367,7 +377,7 @@ export const orchestrate = async (
         throw new UngroundedAnswerFailure('missing_evidence');
       }
       const grounded = renderGroundedAnswer(response.text, factCatalog, {
-        allowLiteralNumbers: usedTools.size === 0 && !requiresBusinessEvidence(input.message)
+        requireCurrencyReferences: usedTools.size > 0
       });
       if (usedTools.size > 0 && grounded.evidence.length === 0) {
         throw new UngroundedAnswerFailure('missing_evidence');

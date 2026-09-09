@@ -10,6 +10,24 @@ import {
 import { UngroundedAnswerFailure } from './errors';
 
 describe('exact facts contract', () => {
+  it('rechaza centavos presentados como pesos y mantiene precisión de centavos', () => {
+    const safe = sanitizeToolResult({ schemaVersion: 'ai-facts/v1', tool: 'get_product_catalog', products: [
+      { ref: 'product:CREA300', label: 'Creatina', facts: { 'catalog.price_cents': 3000000 } },
+      { ref: 'product:OTHER1', label: 'Otro', facts: { 'catalog.price_cents': 12550 } }
+    ] }, 'get_product_catalog');
+    const catalog: FactCatalog = new Map();
+    addToolFacts(catalog, safe);
+    const modelResult = JSON.stringify(prepareToolResultForModel(safe));
+    expect(modelResult).not.toContain('3000000');
+    expect(modelResult).toContain('30.000');
+    expect(modelResult).toContain('125,50');
+    expect(() => renderGroundedAnswer('La creatina cuesta $3.000.000.', catalog, { requireCurrencyReferences: true })).toThrow(UngroundedAnswerFailure);
+    expect(() => renderGroundedAnswer('La creatina cuesta tres millones de pesos.', catalog, { requireCurrencyReferences: true })).toThrow(UngroundedAnswerFailure);
+    expect(() => renderGroundedAnswer('3000000', catalog, { strictLiteralNumbers: true })).toThrow(UngroundedAnswerFailure);
+    expect(() => renderGroundedAnswer('Creatina cuesta 3000000.', catalog, { requireCurrencyReferences: true })).toThrow(UngroundedAnswerFailure);
+    expect(renderGroundedAnswer('La creatina cuesta {{fact:product:CREA300.catalog.price_cents}}.', catalog, { requireCurrencyReferences: true }).answer).toMatch(/30\.000/);
+    expect(renderGroundedAnswer('{{fact:product:OTHER1.catalog.price_cents}}', catalog).answer).toMatch(/125,50/);
+  });
   it('reduce el resultado a campos autorizados y renderiza cifras desde PostgreSQL', () => {
     const safe = sanitizeToolResult(
       {

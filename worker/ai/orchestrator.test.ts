@@ -81,6 +81,35 @@ const dependencies = (
 });
 
 describe('sticky AI orchestration', () => {
+  it('consulta el precio exacto sin usar proveedores y muestra las presentaciones coincidentes', async () => {
+    const groq = new QueueProvider('groq', []);
+    const cloudflare = new QueueProvider('cloudflare', []);
+    const executeTool = vi.fn(async () => ({ schemaVersion: 'ai-facts/v1', tool: 'get_product_catalog', products: [
+      { ref: 'product:CREA300', label: 'CREATINA · 300 GRS', facts: { 'catalog.price_cents': 3000000 } },
+      { ref: 'product:CREA500', label: 'CREATINA · 500 GRS', facts: { 'catalog.price_cents': 4500050 } },
+      { ref: 'product:OMEGA1', label: 'OMEGA', facts: { 'catalog.price_cents': 9000000 } }
+    ] }));
+    const result = await orchestrate({ ...input, message: '¿Qué precio tiene la creatina?' }, dependencies(groq, cloudflare, executeTool));
+    expect(result.answer).toContain('30.000');
+    expect(result.answer).toContain('45.000,50');
+    expect(result.answer).not.toContain('90.000');
+    expect(result.answer).not.toContain('3.000.000');
+    expect(result.modelKey).toBeNull();
+    expect(groq.calls).toHaveLength(0);
+    expect(cloudflare.calls).toHaveLength(0);
+    expect(executeTool).toHaveBeenCalledOnce();
+  });
+
+  it('rescata precios exactos si ambos modelos redactan el importe en centavos como pesos', async () => {
+    const groq = new QueueProvider('groq', [tool('get_product_catalog'), final('Creatina cuesta $3.000.000.')]);
+    const cloudflare = new QueueProvider('cloudflare', [final('Creatina cuesta $3.000.000.')]);
+    const executeTool = vi.fn(async () => ({ schemaVersion: 'ai-facts/v1', tool: 'get_product_catalog', products: [
+      { ref: 'product:CREA300', label: 'Creatina', facts: { 'catalog.price_cents': 3000000 } }
+    ] }));
+    const result = await orchestrate({ ...input, message: 'Revisá los precios de mi catálogo.' }, dependencies(groq, cloudflare, executeTool));
+    expect(result.answer).toContain('30.000');
+    expect(result.answer).not.toContain('3.000.000');
+  });
   it('ejecuta una tool validada y renderiza únicamente hechos exactos', async () => {
     const groq = new QueueProvider('groq', [
       tool('get_inventory_status'),

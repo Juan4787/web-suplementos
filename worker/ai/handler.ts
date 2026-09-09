@@ -62,7 +62,7 @@ const publicErrorFor = (error: unknown): Response => {
           kind: 'temporary',
           message: 'El cupo gratuito diario del asistente se agotó por hoy.',
           nextAction: 'Volvé a intentarlo mañana. El resto de la aplicación sigue disponible.',
-          retryable: true
+          retryable: false
         },
         503
       );
@@ -77,6 +77,9 @@ const publicErrorFor = (error: unknown): Response => {
         },
         503
       );
+    }
+    if (error instanceof AgentDeadlineFailure || (error instanceof ProviderFailure && error.kind === 'timeout')) {
+      return errorResponse({ kind: 'temporary', message: 'El asistente tardó demasiado en responder.', nextAction: 'Intentá de nuevo. Conservamos tu pregunta y tus datos no fueron modificados.', retryable: true }, 503);
     }
     return errorResponse(
       {
@@ -169,7 +172,7 @@ export const handleAIRequest = async (request: Request, env: Env): Promise<Respo
             claim.retryAfter === 'next_minute'
               ? 'Esperá un minuto antes de volver a intentarlo.'
               : 'Volvé a intentarlo mañana. El resto de la aplicación sigue disponible.',
-          retryable: true
+          retryable: claim.retryAfter === 'next_minute'
         },
         429
       );

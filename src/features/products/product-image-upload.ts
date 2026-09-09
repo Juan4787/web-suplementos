@@ -36,7 +36,7 @@ const canvasBlob = async (
   context.fillRect(0, 0, width, height);
   context.drawImage(bitmap, 0, 0, width, height);
   const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/webp', quality));
-  if (!blob) throw new AppError('unexpected', 'No pudimos convertir la imagen.', { nextAction: 'Probá con otro archivo.' });
+  if (!blob || blob.type !== 'image/webp') throw new AppError('validation', 'Este navegador no pudo preparar la imagen.', { nextAction: 'Actualizá el navegador o probá cargarla desde otro dispositivo.' });
   return blob;
 };
 
@@ -89,6 +89,27 @@ const blobToDataUrl = (blob: Blob): Promise<string> =>
 
 export type UploadedProductImage = { url: string; storagePath: string | null };
 
+export const productImageUploadError = (error: unknown): AppError => {
+  const detail = typeof error === 'object' && error !== null ? error as Record<string, unknown> : {};
+  const status = Number(detail.statusCode ?? detail.status);
+  const code = String(detail.code ?? '');
+  // Inspect internal metadata only for classification; never display it.
+  const message = String(detail.message ?? '');
+  if (status === 401 || /InvalidJWT|JWTExpired/i.test(code) || /jwt.*(?:expired|invalid)/i.test(message)) {
+    return new AppError('auth', 'Tu sesión venció y no pudimos subir la imagen.', { cause: error, nextAction: 'Volvé a iniciar sesión y cargá la imagen nuevamente.' });
+  }
+  if (status === 403 || /AccessDenied|Unauthorized/i.test(code) || /row.level security|permission denied/i.test(message)) {
+    return new AppError('permission', 'Tu cuenta no tiene permiso para subir esta imagen.', { cause: error, nextAction: 'Pedile a la dueña que revise tu acceso antes de volver a intentarlo.' });
+  }
+  if (status === 413 || /EntityTooLarge/i.test(code)) {
+    return new AppError('validation', 'La imagen supera el tamaño permitido.', { cause: error, nextAction: 'Elegí una imagen más pequeña y volvé a cargarla.' });
+  }
+  if (status === 415 || /InvalidMimeType/i.test(code)) {
+    return new AppError('validation', 'No pudimos guardar el formato de esta imagen.', { cause: error, nextAction: 'Probá con otra imagen JPG, PNG, WebP o AVIF.' });
+  }
+  return new AppError('temporary', 'No pudimos subir la imagen en este momento.', { cause: error, retryable: true, nextAction: 'Revisá tu conexión e intentá de nuevo. Si continúa, probá más tarde.' });
+};
+
 export const uploadProductImage = async (file: File): Promise<UploadedProductImage> => {
   const optimized = await optimizeProductImage(file);
   if (appEnv.mode === 'demo') {
@@ -103,13 +124,9 @@ export const uploadProductImage = async (file: File): Promise<UploadedProductIma
     cacheControl: '31536000',
     contentType: 'image/webp',
     upsert: false
-  });
+  }).catch(error => { throw productImageUploadError(error); });
   if (error) {
-    throw new AppError('temporary', 'No pudimos subir la imagen.', {
-      cause: error,
-      retryable: true,
-      nextAction: 'Revisá tu conexión y volvé a intentarlo.'
-    });
+    throw productImageUploadError(error);
   }
   const { data } = bucket.getPublicUrl(storagePath);
   return { url: data.publicUrl, storagePath };

@@ -36,6 +36,14 @@ describe('Checkout con cambios o fallos de conexión', () => {
   });
   afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
+  it('explica cómo continuar al entrar con el carrito vacío', () => {
+    localStorage.clear();
+    render(<CheckoutPage />, { wrapper: Wrapper });
+    expect(screen.getByText('Tu carrito está vacío')).toBeInTheDocument();
+    expect(screen.getByText('Sumá productos para continuar con tu pedido.')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Ver productos' })).toHaveAttribute('href', '/');
+  });
+
   it('permite recuperar la configuración sin borrar los datos del cliente', async () => {
     api.getSettings.mockRejectedValueOnce(new Error('Failed to fetch')).mockResolvedValue(demoSettings);
     render(<CheckoutPage />, { wrapper: Wrapper });

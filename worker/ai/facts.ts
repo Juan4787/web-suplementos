@@ -1,5 +1,6 @@
 import { UngroundedAnswerFailure } from './errors';
 import type { ExactEvidence } from './types';
+import { formatMoney } from '../../src/domain/money';
 
 type PrimitiveFact = string | number | boolean | null;
 
@@ -281,11 +282,7 @@ export const formatFact = (id: string, value: PrimitiveFact): string => {
     return value;
   }
   if (id.endsWith('_cents')) {
-    return new Intl.NumberFormat('es-AR', {
-      style: 'currency',
-      currency: 'ARS',
-      maximumFractionDigits: 0
-    }).format(value / 100);
+    return formatMoney(value);
   }
   if (id.endsWith('_percent')) {
     return new Intl.NumberFormat('es-AR', { maximumFractionDigits: 2 }).format(value) + ' %';
@@ -332,13 +329,20 @@ export const addToolFacts = (catalog: FactCatalog, result: SafeToolResult): void
  * naturally. The server still treats every label as untrusted text and never
  * executes it as an instruction.
  */
-export const prepareToolResultForModel = (result: SafeToolResult): SafeToolResult => ({
+const modelFacts = (facts: Record<string, PrimitiveFact> = {}): Record<string, string> =>
+  Object.fromEntries(Object.entries(facts).map(([id, value]) => [id, formatFact(id, value)]));
+
+export const prepareToolResultForModel = (result: SafeToolResult) => ({
   ...result,
+  factEncoding: 'formatted-display-values',
+  currency: 'ARS',
+  facts: modelFacts(result.facts),
   ...(result.products
     ? {
         products: result.products.map((product) => ({
           ...product,
-          label: product.label
+          label: product.label,
+          facts: modelFacts(product.facts)
         }))
       }
     : {})
@@ -552,7 +556,7 @@ export const inspectPotentialUnsupportedClaims = (
   const numericIndex = new Map<string, string[]>();
   for (const [id, fact] of catalog) {
     if (typeof fact.rawValue === 'number') {
-      const normalized = normalizeNumericToken(String(fact.rawValue));
+      const normalized = id.endsWith('_cents') ? null : normalizeNumericToken(String(fact.rawValue));
       if (normalized) {
         const ids = numericIndex.get(normalized) ?? [];
         if (!ids.includes(id)) ids.push(id);
@@ -626,7 +630,8 @@ const addTrustedLiteralEvidence = (
 
   for (const [id, fact] of catalog) {
     if (typeof fact.rawValue === 'number') {
-      addIndexValue(String(fact.rawValue), id);
+      // Centavos are an internal representation, never evidence for a peso amount.
+      if (!id.endsWith('_cents')) addIndexValue(String(fact.rawValue), id);
       for (const formattedToken of fact.formatted.match(NUMERIC_TOKEN_PATTERN) ?? []) {
         addIndexValue(formattedToken, id);
       }
@@ -679,7 +684,7 @@ const addTrustedLiteralEvidence = (
 export const renderGroundedAnswer = (
   template: string | null,
   catalog: FactCatalog,
-  options: { allowLiteralNumbers?: boolean; strictLiteralNumbers?: boolean } = {}
+  options: { strictLiteralNumbers?: boolean; requireCurrencyReferences?: boolean } = {}
 ): { answer: string; evidence: ExactEvidence[] } => {
   const trimmed = template?.trim() ?? '';
   if (!trimmed) throw new UngroundedAnswerFailure('empty_answer');
@@ -706,6 +711,18 @@ export const renderGroundedAnswer = (
   }
 
   const isStrict = options.strictLiteralNumbers ?? false;
+  if (options.requireCurrencyReferences) {
+    // Monetary facts must be inserted by the server. Explicit hypothetical
+    // paragraphs remain available for advice, without certifying their figures.
+    const factualText = withoutPlaceholders.replace(
+      /(?:^|\n)\s*(?:Hipótesis|Ejemplo hipotético|Objetivo propuesto):[^\n]*/giu, ''
+    );
+    const normalizedFactual = factualText.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    const bareMonetaryAmount = /\b(?:cuesta|cuestan|vale|valen|precio|costo|facturacion|ingresos)\b[^.!?\n]*\d/u.test(normalizedFactual);
+    if (bareMonetaryAmount || /(?:\$|\bARS\b)\s*[-+]?\s*\d|\d[\d.,\s]*\s*(?:pesos|centavos|ARS)\b|\b(?:un|una|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|cien|ciento|mil|millon(?:es)?)\s+(?:de\s+)?(?:pesos|centavos)\b/iu.test(normalizedFactual)) {
+      throw new UngroundedAnswerFailure('literal_number');
+    }
+  }
   addTrustedLiteralEvidence(withoutPlaceholders, catalog, usedIds, isStrict);
 
   const answer = normalizedTemplate.replace(
