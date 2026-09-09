@@ -12,6 +12,7 @@ import {
   Search,
   Sliders,
   Sparkles,
+  Truck,
   X
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
@@ -763,15 +764,15 @@ export default function ProductsPage() {
         <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {filteredProducts.map((product) => {
             const available = product.onHand - product.reserved;
-            const isIncoming = available <= 0 && product.incoming > 0;
-            const isOutOfStock = available <= 0 && !isIncoming;
+            const hasIncoming = product.incoming > 0;
+            const isOutOfStock = available <= 0;
             const isCritical = available > 0 && available <= product.safetyStock;
             const isLow = available > product.safetyStock && available <= product.reorderPoint;
 
             return (
               <article
                 key={product.id}
-                className="overflow-hidden rounded-2xl border border-ink-950/8 bg-white shadow-sm transition hover:border-ink-950/20"
+                className="flex flex-col overflow-hidden rounded-2xl border border-ink-950/8 bg-white shadow-sm transition hover:border-ink-950/20"
               >
                 <div className="grid grid-cols-[5.5rem_1fr] gap-4 p-5">
                   <ProductImage
@@ -781,9 +782,6 @@ export default function ProductsPage() {
                   />
                   <div className="min-w-0">
                     <div className="flex flex-wrap gap-1.5">
-                      {isIncoming ? (
-                        <StatusChip label="En camino" tone="info" />
-                      ) : null}
                       {!product.active ? (
                         <StatusChip label="Archivado" tone="neutral" />
                       ) : null}
@@ -795,26 +793,24 @@ export default function ProductsPage() {
                     <p className="mt-0.5 text-[14.5px] font-semibold text-ink-700">{product.presentation}</p>
                   </div>
                 </div>
-                <div className="grid grid-cols-2 border-y border-ink-950/8 bg-cream-50/70 px-5 py-3.5">
+                <dl className="grid grid-cols-2 gap-x-3 gap-y-3 border-y border-ink-950/8 bg-cream-50/70 px-5 py-3.5">
                   <div>
-                    <p className="text-[13px] font-black uppercase tracking-wider text-ink-700">
+                    <dt className="text-[13px] font-black uppercase tracking-wider text-ink-700">
                       Precio
-                    </p>
-                    <p className="mt-0.5 font-display text-xl font-black text-ink-950">
+                    </dt>
+                    <dd className="mt-0.5 font-display text-xl font-black text-ink-950">
                       {formatMoney(product.priceCents)}
-                    </p>
+                    </dd>
                   </div>
                   <div>
-                    <p className="text-[13px] font-black uppercase tracking-wider text-ink-700">
-                      Disponible
-                    </p>
-                    <p
+                    <dt className="text-[13px] font-black uppercase tracking-wider text-ink-700">
+                      Disponible ahora
+                    </dt>
+                    <dd
                       className={cn(
                         'mt-0.5 font-display text-xl font-black',
                         isOutOfStock
                           ? 'text-red-700'
-                          : isIncoming
-                          ? 'text-brand-700'
                           : isCritical
                           ? 'text-red-700'
                           : isLow
@@ -822,11 +818,25 @@ export default function ProductsPage() {
                           : 'text-ink-950'
                       )}
                     >
-                      {available} {isIncoming ? '· En camino' : available === 0 ? '· Sin stock' : ''}
-                    </p>
+                      {available}{' '}
+                      <span className="font-sans text-sm font-semibold">{available === 1 ? 'unidad' : 'unidades'}</span>
+                    </dd>
                   </div>
-                </div>
-                <div className="flex items-center justify-between p-3 sm:px-5">
+                  {hasIncoming ? (
+                    <div className="col-span-2 grid grid-cols-[1fr_auto] items-baseline gap-x-3 gap-y-1 rounded-xl border border-brand-200 bg-brand-50 px-3 py-2.5 text-brand-900">
+                      <dt className="flex items-center gap-2 text-sm font-bold">
+                        <Truck className="size-4 shrink-0 self-center" aria-hidden="true" /> En camino
+                      </dt>
+                      <dd className="font-display text-lg font-black">
+                        {product.incoming} {product.incoming === 1 ? 'unidad' : 'unidades'}
+                      </dd>
+                      <dd className="col-span-2 text-xs font-medium">
+                        Se suman al stock al recibir la mercadería.
+                      </dd>
+                    </div>
+                  ) : null}
+                </dl>
+                <div className="mt-auto flex items-center justify-between p-3 sm:px-5">
                   <div className="flex items-center gap-1">
                     {can(user, 'manage_pricing') ? (
                       product.active ? (

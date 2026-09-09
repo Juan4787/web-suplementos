@@ -1,6 +1,22 @@
 # Correcciones de uso diario — 09/09/2026
 
-Estado: implementadas y verificadas localmente. Esta ronda no publica en GitHub ni Cloudflare y no modifica datos, cuentas, stock ni políticas de Supabase. Complementa la auditoría del 08/09; no reemplaza sus límites ni certifica disponibilidad de proveedores externos.
+Estado: las correcciones iniciales se publicaron en GitHub y Cloudflare con `1f92547`. Complementa la auditoría del 08/09; no reemplaza sus límites ni certifica disponibilidad de proveedores externos. Las verificaciones posteriores no alteran datos comerciales, cuentas, stock ni políticas de Supabase.
+
+## Corrección posterior: cantidad en camino en Productos
+
+El usuario detectó que, después de cargar la compra #2033, Productos mostraba «0 · En camino». Faltaba cobertura del cruce Compras → Productos: las pruebas anteriores no comprobaban la cantidad pendiente visible en la tarjeta.
+
+La lectura remota confirmó que la compra y el dato `incoming` estaban bien: ACID SUPPORT 30, ANDRO SUPPORT 15, B COMPLEX ACTIVE 12, CREATINA 30, FEMME BALANCE 1, INOSITOL CARE 18 y THYROID SUPPORT 12. Total 118, sin recepciones y con stock físico cero al verificar. No se modificó esta compra.
+
+`ProductsPage.tsx` omitía el número `incoming` y pegaba la etiqueta «En camino» al disponible físico. Ahora muestra «Disponible ahora: 0 unidades» y un bloque separado «En camino: 30 unidades», con la aclaración de que se suman al stock al recibir la mercadería. También muestra reposiciones cuando todavía hay stock disponible. Conserva el cálculo físico menos reservado y no suma compras pendientes al disponible actual.
+
+- Regresión permanente en `ProductsPage.test.tsx`, con API de demo y caché compartida entre pantallas: comprar 30 → 0 disponibles/30 pendientes → recibir 5 → 5/25 → recibir 25 → 30/0; comprar una unidad adicional → 30/1 → cerrar con faltante → 30/0. La caché se configura sin vencimiento para que la prueba dependa de las invalidaciones reales de las operaciones.
+- Pruebas dirigidas de Productos, Inventario y API de demo: **20/20**. Después del ajuste tipográfico final, Productos vuelve a aprobar **1/1**. Logs `output/audit/incoming-products-focused.log` y `incoming-products-final-unit.log`.
+- TypeScript y build de producción aprobados; log `output/audit/incoming-products-build.log`.
+- Navegador en demo: crear una compra de 30 con 4 unidades ya disponibles muestra 4/30; recibir 5 actualiza a 9/25 al navegar, sin recarga. Sin desborde horizontal en 320, 375 y 1280 px. Capturas en `output/playwright/incoming-products-*.png`.
+- Pruebas, build y navegador secuenciales; un solo trabajador y heap de Node limitado a 768 MB.
+- Corrección publicada en `tienda.desuplementos.workers.dev`, versión de Cloudflare `0a16e676-4edf-42c0-a968-c034059257a5`. El archivo remoto `ProductsPage-pIWxZRe0.js` coincide byte por byte con el build local (SHA-256 `30dcd59651c668be7fadd2343119b7e95b0ac381180c502ab4517fb3447fbb7b`).
+- Verificación autenticada en producción, de solo lectura: las siete tarjetas muestran las cantidades pendientes indicadas arriba, y cero disponible físico. Diseño final sin desborde a 320, 375 y 1280 px; evidencia en `output/audit/incoming-products-live-verification.log` y capturas `output/playwright/incoming-products-live-*.png`.
 
 ## Cambios
 
@@ -43,4 +59,4 @@ Reducción de la carpeta publicada: **22.449.491 bytes**. Es reducción de archi
 
 ## Pendientes externos
 
-Publicar esta versión cuando corresponda. El stock real sigue pendiente de las cantidades del negocio. No se hicieron nuevas escrituras ni limpieza de operaciones remotas durante esta ronda.
+La carga del stock físico inicial sigue pendiente de las cantidades del negocio. La compra #2033 es posterior a la limpieza de pruebas y debe preservarse. No se hicieron nuevas escrituras de negocio ni limpieza de operaciones remotas durante estas verificaciones.

@@ -4,7 +4,9 @@ Este archivo existe para que una compactación de contexto no convierta decision
 
 ## Correcciones del 09/09/2026
 
-Consultar [las correcciones de UX y fiabilidad](CORRECCIONES_UX_2026-09-09.md): precio y disponibilidad, checkout vacío, recuperación de imágenes, acciones y confirmaciones de pedidos, unidades monetarias y esperas de IA, y reducción de archivos públicos. Cambios verificados localmente; esta ronda no publica ni modifica datos comerciales. Se conservó un original de las imágenes retiradas del despliegue en `assets/originals/`.
+Consultar [las correcciones de UX y fiabilidad](CORRECCIONES_UX_2026-09-09.md): precio y disponibilidad, checkout vacío, recuperación de imágenes, acciones y confirmaciones de pedidos, unidades monetarias y esperas de IA, y reducción de archivos públicos. Primera publicación en `1f92547`; se conservó un original de las imágenes retiradas del despliegue en `assets/originals/`.
+
+El usuario cargó después la compra **#2033**, con 118 unidades pendientes en siete productos. Es una operación actual: **no repetir la limpieza histórica ni tratar las compras nuevas como pruebas**. Se confirmó por lectura remota que Productos recibe las cantidades correctas, pero omitía mostrarlas. Ahora distingue «Disponible ahora» de la cantidad «En camino», incluso si hay stock físico. La regresión cruza creación de compra, Productos, recepción parcial, total y cierre con faltante; las escrituras de prueba se limitan a la demo local.
 
 ## Entrega del 08/09/2026
 
