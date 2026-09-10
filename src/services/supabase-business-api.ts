@@ -249,6 +249,7 @@ export const supabaseBusinessApi: BusinessApi = {
       p_state: state === 'all' ? null : state
     }),
   createPurchase: (input) => rpc<Purchase>('create_purchase', { p_purchase: input }),
+  updatePurchase: (input) => rpc<Purchase>('update_purchase', { p_purchase: input }),
   listOpeningReservations: () => rpc('list_opening_reservations'),
   resolveOpeningReservation: (purchaseItemId, quantity, action, operationId) => rpc('resolve_opening_reservation', {
     p_purchase_item_id: purchaseItemId, p_quantity: quantity, p_action: action, p_operation_id: operationId

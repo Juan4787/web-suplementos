@@ -16,6 +16,7 @@ import {
   Info,
   PackageCheck,
   PackagePlus,
+  Pencil,
   Plus,
   Search,
   SlidersHorizontal,
@@ -70,14 +71,32 @@ const movementKindLabels = {
 
 type DraftLine = { productId: string; quantity: number; unitCostPesos: string };
 
-export function PurchaseFormModal({ onClose }: { onClose: () => void }) {
+export function PurchaseFormModal({
+  purchase,
+  onClose
+}: {
+  purchase?: Purchase | null;
+  onClose: () => void;
+}) {
   const queryClient = useQueryClient();
-  const [supplier, setSupplier] = useState('');
-  const [expectedAt, setExpectedAt] = useState('');
-  const [notes, setNotes] = useState('');
-  const [lines, setLines] = useState<DraftLine[]>([{ productId: '', quantity: 1, unitCostPesos: '0' }]);
+  const isEdit = Boolean(purchase);
+  const [supplier, setSupplier] = useState(() => (
+    purchase ? (purchase.supplierName === 'Sin proveedor' || purchase.supplierName === 'Proveedor no informado' ? '' : purchase.supplierName) : ''
+  ));
+  const [expectedAt, setExpectedAt] = useState(() => (purchase?.expectedAt ? purchase.expectedAt.slice(0, 10) : ''));
+  const [notes, setNotes] = useState(() => purchase?.notes ?? '');
+  const [lines, setLines] = useState<DraftLine[]>(() => {
+    if (purchase && purchase.items.length > 0) {
+      return purchase.items.map((item) => ({
+        productId: item.productId,
+        quantity: item.quantity,
+        unitCostPesos: String(item.unitCostCents / 100)
+      }));
+    }
+    return [{ productId: '', quantity: 1, unitCostPesos: '0' }];
+  });
   const productsQuery = useBusinessQuery({ queryKey: queryKeys.products, queryFn: (api) => api.listAdminProducts() });
-  const create = useMutation({
+  const saveMutation = useMutation({
     mutationFn: async () => {
       if (purchaseIssue) throw new AppError('validation', purchaseIssue);
       const consolidated = new Map<string, { quantity: number; totalCostPesos: number }>();
@@ -100,7 +119,18 @@ export function PurchaseFormModal({ onClose }: { onClose: () => void }) {
         unitCostCents: pesosToCents(data.totalCostPesos / (data.quantity || 1))
       }));
 
-      return (await getBusinessApi()).createPurchase({
+      const api = await getBusinessApi();
+      if (purchase) {
+        return api.updatePurchase({
+          id: purchase.id,
+          supplierName: supplier.trim() || 'Sin proveedor',
+          expectedAt: expectedAt ? new Date(`${expectedAt}T12:00:00-03:00`).toISOString() : null,
+          notes: notes.trim() || null,
+          items: mergedItems
+        });
+      }
+
+      return api.createPurchase({
         supplierName: supplier.trim() || 'Sin proveedor',
         expectedAt: expectedAt ? new Date(`${expectedAt}T12:00:00-03:00`).toISOString() : null,
         notes: notes.trim() || null,
@@ -132,7 +162,7 @@ export function PurchaseFormModal({ onClose }: { onClose: () => void }) {
   return (
     <Modal
       isOpen={true}
-      onClose={() => { if (!create.isPending) onClose(); }}
+      onClose={() => { if (!saveMutation.isPending) onClose(); }}
       ariaLabelledBy="purchase-title"
       maxWidth="lg"
       className="p-0 sm:p-0 flex flex-col max-h-[90vh] overflow-hidden"
@@ -141,15 +171,15 @@ export function PurchaseFormModal({ onClose }: { onClose: () => void }) {
       <div className="flex items-start justify-between border-b border-ink-950/6 bg-white px-6 pt-6 pb-4 sm:px-8 sm:pt-8 shrink-0">
         <div>
           <h2 id="purchase-title" className="font-display text-2xl sm:text-3xl font-black text-ink-950">
-            Nuevo pedido al proveedor
+            {isEdit ? `Editar pedido #${purchase!.number}` : 'Nuevo pedido al proveedor'}
           </h2>
           <p className="mt-1 text-[14.5px] font-medium text-ink-700">
-            Anotá qué pediste y cuándo debería llegar.
+            {isEdit ? 'Modificá los productos o datos de este pedido.' : 'Anotá qué pediste y cuándo debería llegar.'}
           </p>
         </div>
         <button
           className="grid size-11 shrink-0 place-items-center rounded-full hover:bg-cream-100 text-ink-600 transition"
-          onClick={() => { if (!create.isPending) onClose(); }}
+          onClick={() => { if (!saveMutation.isPending) onClose(); }}
           aria-label="Cerrar modal"
         >
           <X className="size-5" />
@@ -306,22 +336,22 @@ export function PurchaseFormModal({ onClose }: { onClose: () => void }) {
         {productsQuery.isPending ? <LoadingState label="Cargando productos…" /> : null}
         {productsQuery.isError ? <ErrorState error={productsQuery.error} onRetry={() => void productsQuery.refetch()} /> : null}
         {purchaseIssue ? <p role="status" className="rounded-xl bg-amber-50 p-3 text-sm font-bold text-amber-900">{purchaseIssue}</p> : null}
-        {create.error ? <ErrorState error={create.error} /> : null}
+        {saveMutation.error ? <ErrorState error={saveMutation.error} /> : null}
       </div>
 
       {/* Footer fijo sticky */}
       <div className="flex items-center justify-end gap-3 border-t border-ink-950/8 bg-cream-50/70 px-6 py-4 sm:px-8 shrink-0 rounded-b-[2rem]">
-        <Button variant="ghost" onClick={() => { if (!create.isPending) onClose(); }} className="min-h-12 px-5 text-[15px] font-bold">
+        <Button variant="ghost" onClick={() => { if (!saveMutation.isPending) onClose(); }} className="min-h-12 px-5 text-[15px] font-bold">
           Cancelar
         </Button>
         <Button
           variant="dark"
           disabled={!valid}
-          loading={create.isPending}
-          onClick={() => create.mutate()}
+          loading={saveMutation.isPending}
+          onClick={() => saveMutation.mutate()}
           className="min-h-12 px-6 text-[15px] font-black"
         >
-          Guardar pedido
+          {isEdit ? 'Guardar cambios' : 'Guardar pedido'}
         </Button>
       </div>
     </Modal>
@@ -1142,6 +1172,7 @@ export default function InventoryPage() {
   const [purchasesPage, setPurchasesPage] = useState(1);
   const [purchaseFilter, setPurchaseFilter] = useState<'pending' | 'received' | 'all'>('pending');
   const [expandedPurchases, setExpandedPurchases] = useState<Record<string, boolean>>({});
+  const [editingPurchase, setEditingPurchase] = useState<Purchase | null>(null);
   const [receivingPurchase, setReceivingPurchase] = useState<Purchase | null>(null);
   const [unblockedNotice, setUnblockedNotice] = useState<Array<{ id: string; number: number }> | null>(null);
 
@@ -1613,14 +1644,25 @@ export default function InventoryPage() {
 
                           <div className="flex items-center gap-2 shrink-0">
                             {purchase.state === 'ordered' ? (
-                              <Button
-                                variant="secondary"
-                                size="sm"
-                                onClick={() => setReceivingPurchase(purchase)}
-                                className="font-bold text-xs rounded-xl min-h-9 px-4"
-                              >
-                                <CheckCircle2 className="size-4 text-emerald-600" /> Recibir mercadería
-                              </Button>
+                              <>
+                                <Button
+                                  variant="secondary"
+                                  size="sm"
+                                  onClick={() => setEditingPurchase(purchase)}
+                                  className="font-bold text-xs rounded-xl min-h-9 px-3.5 text-ink-700 hover:text-ink-950 border border-ink-950/10 hover:border-ink-950/20 shadow-xs"
+                                  aria-label={`Editar pedido #${purchase.number}`}
+                                >
+                                  <Pencil className="size-3.5" /> Editar
+                                </Button>
+                                <Button
+                                  variant="secondary"
+                                  size="sm"
+                                  onClick={() => setReceivingPurchase(purchase)}
+                                  className="font-bold text-xs rounded-xl min-h-9 px-4"
+                                >
+                                  <CheckCircle2 className="size-4 text-emerald-600" /> Recibir mercadería
+                                </Button>
+                              </>
                             ) : (
                               <span className="inline-flex items-center gap-1.5 text-xs font-black text-emerald-700 bg-emerald-50 border border-emerald-200/60 px-3 py-1.5 rounded-xl">
                                 <Check className="size-3.5" /> Stock actualizado
@@ -1957,6 +1999,14 @@ export default function InventoryPage() {
 
       {/* Modal: Nueva Compra */}
       {showPurchaseForm ? <PurchaseFormModal onClose={() => setShowPurchaseForm(false)} /> : null}
+
+      {/* Modal: Editar Compra */}
+      {editingPurchase ? (
+        <PurchaseFormModal
+          purchase={editingPurchase}
+          onClose={() => setEditingPurchase(null)}
+        />
+      ) : null}
 
       {/* Modal: Recepción de Compra */}
       {receivingPurchase ? (

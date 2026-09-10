@@ -76,6 +76,18 @@ export type PurchaseCreateInput = {
   }>;
 };
 
+export type PurchaseUpdateInput = {
+  id: string;
+  supplierName?: string;
+  expectedAt?: string | null;
+  notes?: string | null;
+  items: Array<{
+    productId: string;
+    quantity: number;
+    unitCostCents: number;
+  }>;
+};
+
 export type AIAnswerEvidence = {
   label: string;
   value: string | number | boolean | null;
@@ -114,6 +126,7 @@ export interface BusinessApi {
   listOpeningReservations(): Promise<OpeningReservation[]>;
   resolveOpeningReservation(purchaseItemId: string, quantity: number, action: 'deliver' | 'release', operationId: string): Promise<{ quantity: number; action: 'deliver' | 'release' }>;
   createPurchase(input: PurchaseCreateInput): Promise<Purchase>;
+  updatePurchase(input: PurchaseUpdateInput): Promise<Purchase>;
   receivePurchase(purchaseId: string, items?: ReceivePurchaseItemInput[], operationId?: string): Promise<ReceivePurchaseResult>;
   closePurchaseWithShortage(purchaseId: string, notes?: string): Promise<ReceivePurchaseResult>;
   listMovements(page?: number, pageSize?: number, search?: string, filter?: 'all' | 'sales' | 'purchases' | 'adjustments'): Promise<Page<StockMovement>>;

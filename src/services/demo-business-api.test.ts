@@ -389,6 +389,44 @@ describe('demoBusinessApi lifecycle and domain guarantees', () => {
     expect(purchase.supplierName).toBe('Proveedor no informado');
   });
 
+  it('updates an unreceived purchase and recalibrates totals and product incoming', async () => {
+    const products = await demoBusinessApi.listAdminProducts();
+    const targetProduct = products[0]!;
+
+    const purchase = await demoBusinessApi.createPurchase({
+      supplierName: 'Distribuidora Inicial',
+      expectedAt: null,
+      notes: 'Nota inicial',
+      items: [{ productId: targetProduct.id, quantity: 10, unitCostCents: 50000 }]
+    });
+
+    expect(purchase.totalCostCents).toBe(500000);
+
+    const updated = await demoBusinessApi.updatePurchase({
+      id: purchase.id,
+      supplierName: 'Distribuidora Modificada',
+      notes: 'Nota actualizada',
+      expectedAt: '2026-09-20T12:00:00.000Z',
+      items: [{ productId: targetProduct.id, quantity: 20, unitCostCents: 60000 }]
+    });
+
+    expect(updated.supplierName).toBe('Distribuidora Modificada');
+    expect(updated.notes).toBe('Nota actualizada');
+    expect(updated.items[0]?.quantity).toBe(20);
+    expect(updated.items[0]?.unitCostCents).toBe(60000);
+    expect(updated.totalCostCents).toBe(1200000);
+
+    // Receive purchase and verify update is blocked after received
+    await demoBusinessApi.receivePurchase(purchase.id);
+    await expect(
+      demoBusinessApi.updatePurchase({
+        id: purchase.id,
+        supplierName: 'Otro cambio',
+        items: [{ productId: targetProduct.id, quantity: 5, unitCostCents: 60000 }]
+      })
+    ).rejects.toThrow('Solo se pueden editar pedidos pendientes de recepción.');
+  });
+
   it('calculates sales analytics and respects unpublished IPC months without interpolating', async () => {
     const analytics = await demoBusinessApi.getAnalytics('2026-07-01', '2026-08-28');
     expect(typeof analytics.revenueCents).toBe('number');

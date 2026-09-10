@@ -3,9 +3,10 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import type { PropsWithChildren } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { demoProducts, demoOwner, toDemoInventory } from '@/data/demo-data';
+import type { Purchase } from '@/domain/types';
 import InventoryPage, { PurchaseFormModal } from './InventoryPage';
 
-const api = vi.hoisted(() => ({ listAdminProducts: vi.fn(), createPurchase: vi.fn(), listInventory: vi.fn(), listMovements: vi.fn(), listPurchases: vi.fn(), adjustStock: vi.fn(), listOpeningReservations: vi.fn() }));
+const api = vi.hoisted(() => ({ listAdminProducts: vi.fn(), createPurchase: vi.fn(), updatePurchase: vi.fn(), listInventory: vi.fn(), listMovements: vi.fn(), listPurchases: vi.fn(), adjustStock: vi.fn(), listOpeningReservations: vi.fn() }));
 const auth = vi.hoisted(() => ({ staff: false }));
 vi.mock('@/services/business-api', () => ({ getBusinessApi: async () => api }));
 vi.mock('@/features/auth/AuthProvider', () => ({ useAuth: () => ({ user: { ...demoOwner, role: auth.staff ? 'staff' : 'owner' } }) }));
@@ -19,6 +20,49 @@ function Wrapper({ children }: PropsWithChildren) {
 describe('Carga de compras', () => {
   beforeEach(() => { vi.resetAllMocks(); auth.staff = false; api.listAdminProducts.mockResolvedValue(demoProducts); api.listOpeningReservations.mockResolvedValue([]); });
   afterEach(cleanup);
+
+  it('permite editar un pedido existente al proveedor precargando los datos', async () => {
+    const onClose = vi.fn();
+    api.updatePurchase.mockResolvedValue({});
+    const existingPurchase: Purchase = {
+      id: 'purch-123',
+      number: 42,
+      supplierName: 'Star Nutrition',
+      state: 'ordered',
+      orderedAt: '2026-09-10T12:00:00Z',
+      expectedAt: '2026-09-15T12:00:00Z',
+      receivedAt: null,
+      totalCostCents: 500000,
+      notes: 'Pago 50% al pedir',
+      items: [
+        {
+          id: 'pi-1',
+          productId: demoProducts[0]!.id,
+          productName: demoProducts[0]!.name,
+          quantity: 5,
+          receivedQuantity: 0,
+          shortageQuantity: 0,
+          unitCostCents: 100000
+        }
+      ]
+    };
+    render(<PurchaseFormModal purchase={existingPurchase} onClose={onClose} />, { wrapper: Wrapper });
+    await screen.findByDisplayValue('Star Nutrition');
+    expect(screen.getByText('Editar pedido #42')).toBeVisible();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Guardar cambios' })).toBeEnabled());
+
+    const notesInput = screen.getByLabelText('Notas · opcional');
+    fireEvent.change(notesInput, { target: { value: 'Pago 100% acordado' } });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
+    await waitFor(() => expect(api.updatePurchase).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'purch-123',
+      supplierName: 'Star Nutrition',
+      notes: 'Pago 100% acordado',
+      items: [{ productId: demoProducts[0]!.id, quantity: 5, unitCostCents: 100000 }]
+    })));
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+  });
 
   it('explica qué fila está incompleta y conserva los centavos al escribir', async () => {
     const onClose = vi.fn();

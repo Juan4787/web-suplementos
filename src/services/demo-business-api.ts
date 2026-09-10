@@ -34,7 +34,8 @@ import type {
   BusinessApi,
   Page,
   ProductUpdate,
-  PurchaseCreateInput
+  PurchaseCreateInput,
+  PurchaseUpdateInput
 } from './business-api';
 
 const state: {
@@ -729,6 +730,79 @@ export const demoBusinessApi: BusinessApi = {
       refreshProductAvailability(product);
     }
     state.purchases.unshift(purchase);
+    state.revision += 1;
+    return latency(purchase);
+  },
+
+  async updatePurchase(input: PurchaseUpdateInput) {
+    const purchase = state.purchases.find((entry) => entry.id === input.id);
+    if (!purchase) throw new AppError('business', 'Pedido no encontrado.');
+    if (purchase.state !== 'ordered') {
+      throw new AppError('business', 'Solo se pueden editar pedidos pendientes de recepción.');
+    }
+    if (purchase.items.some((it) => (it.receivedQuantity ?? 0) > 0 || (it.shortageQuantity ?? 0) > 0)) {
+      throw new AppError('business', 'No se puede editar una compra que ya fue recibida parcialmente.');
+    }
+
+    // Revertir incoming previo
+    for (const item of purchase.items) {
+      const product = state.products.find((candidate) => candidate.id === item.productId);
+      if (product) {
+        product.incoming = Math.max(0, product.incoming - item.quantity);
+        refreshProductAvailability(product);
+      }
+    }
+
+    const consolidatedMap = new Map<string, { quantity: number; totalCost: number }>();
+    for (const item of input.items) {
+      const existing = consolidatedMap.get(item.productId);
+      if (existing) {
+        existing.quantity += item.quantity;
+        existing.totalCost += item.quantity * item.unitCostCents;
+      } else {
+        consolidatedMap.set(item.productId, {
+          quantity: item.quantity,
+          totalCost: item.quantity * item.unitCostCents
+        });
+      }
+    }
+    const consolidatedItems = Array.from(consolidatedMap.entries()).map(([productId, data]) => ({
+      productId,
+      quantity: data.quantity,
+      unitCostCents: Math.round(data.totalCost / (data.quantity || 1))
+    }));
+
+    const updatedItems = consolidatedItems.map((item) => {
+      const product = state.products.find((candidate) => candidate.id === item.productId);
+      if (!product) throw new AppError('business', 'Uno de los productos ya no está disponible.');
+      const existingItem = purchase.items.find((it) => it.productId === item.productId);
+      return {
+        id: existingItem ? existingItem.id : nextUuid(),
+        productId: product.id,
+        productName: product.name,
+        quantity: item.quantity,
+        receivedQuantity: 0,
+        shortageQuantity: 0,
+        unitCostCents: item.unitCostCents
+      };
+    });
+
+    for (const item of updatedItems) {
+      const product = state.products.find((candidate) => candidate.id === item.productId);
+      if (product) {
+        product.incoming += item.quantity;
+        refreshProductAvailability(product);
+      }
+    }
+
+    purchase.supplierName = input.supplierName?.trim() || 'Proveedor no informado';
+    purchase.expectedAt = input.expectedAt ?? null;
+    purchase.notes = input.notes ?? null;
+    purchase.items = updatedItems;
+    purchase.totalCostCents = updatedItems.reduce(
+      (sum, item) => sum + item.quantity * item.unitCostCents,
+      0
+    );
     state.revision += 1;
     return latency(purchase);
   },
