@@ -1,9 +1,9 @@
 # Contrato de pedido por WhatsApp v1
 
-El mensaje es un protocolo determinístico y legible. El parser solo acepta mensajes con encabezado y versión generados por la tienda.
+El mensaje es un protocolo determinístico y legible. El parser acepta mensajes con encabezado generado por la tienda (`*PEDIDO DE TIENDA DE SUPLEMENTOS*` o legados).
 
 ```text
-*PEDIDO IMPULSO · V1*
+*PEDIDO DE TIENDA DE SUPLEMENTOS*
 
 *Código de pedido*
 <UUID v4 único>

@@ -47,6 +47,7 @@ describe('WhatsApp order protocol', () => {
   });
   it('round-trips a generated order without guessing fields', () => {
     const protocol = buildWhatsAppProtocol(checkout, lines, settings);
+    expect(protocol.message.startsWith('*PEDIDO DE TIENDA DE SUPLEMENTOS*')).toBe(true);
     const parsed = parseWhatsAppProtocol(protocol.message);
 
     expect(parsed).toMatchObject({
@@ -62,6 +63,57 @@ describe('WhatsApp order protocol', () => {
     expect(parsed.lines).toEqual([
       expect.objectContaining({ sku: 'CREA300', quantity: 2, unitPriceCents: 2_500_000 })
     ]);
+  });
+
+  it('interpreta mensajes generados con el nuevo encabezado *PEDIDO DE TIENDA DE SUPLEMENTOS*', () => {
+    const rawOrder = `*PEDIDO DE TIENDA DE SUPLEMENTOS*
+
+*Código de pedido*
+b57a84f9-45a2-4917-a59c-13005df856f6
+
+*Nombre*
+Compra de prueba
+
+*Productos*
+* [ANDRO_SUPPORT] ANDRO SUPPORT | 30 CAPS | 1 x $ 33.000 = $ 33.000
+
+*Subtotal*
+$ 33.000
+
+*Medio de pago*
+Efectivo
+
+*Entrega*
+Envío a domicilio
+
+*Tipo de envío*
+Tradicional
+
+*Envío*
+A coordinar
+
+*Dirección*
+Av santa fe
+
+*Altura*
+3025
+
+*Teléfono*
+3426987412
+
+*Total*
+$ 33.000
+
+*Código de control*
+F5C7B6B3`;
+
+    const parsed = parseWhatsAppProtocol(rawOrder);
+    expect(parsed.customerName).toBe('Compra de prueba');
+    expect(parsed.protocolOrderId).toBe('b57a84f9-45a2-4917-a59c-13005df856f6');
+    expect(parsed.deliveryMethod).toBe('shipping');
+    expect(parsed.shippingType).toBe('standard');
+    expect(parsed.shippingFeeCents).toBe(0);
+    expect(parsed.quotedTotalCents).toBe(3_300_000);
   });
 
   it('rejects a modified quantity instead of importing uncertain data', () => {

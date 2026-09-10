@@ -235,7 +235,7 @@ test.describe('E2E Real: Ciclo de Vida de Stock Entrante (Cliente a Entrega y Ve
 
     const parsedUrl = new URL(generatedUrl);
     const whatsappMessage = decodeURIComponent(parsedUrl.searchParams.get('text') || '');
-    expect(whatsappMessage).toContain('PEDIDO IMPULSO');
+    expect(whatsappMessage).toContain('PEDIDO DE TIENDA DE SUPLEMENTOS');
     expect(whatsappMessage).toContain(testSku);
     expect(whatsappMessage).toContain('Santiago E2E Lifecycle');
 

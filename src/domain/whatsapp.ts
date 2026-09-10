@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { formatMoney } from './money';
 import type { CartLine, CheckoutData, ImportOrderInput, StoreSettings } from './types';
 
-export const WHATSAPP_PROTOCOL_HEADER = '*PEDIDO IMPULSO*';
+export const WHATSAPP_PROTOCOL_HEADER = '*PEDIDO DE TIENDA DE SUPLEMENTOS*';
 
 const field = (label: string, value: string): string => `*${label}*\n${value}`;
 
@@ -160,13 +160,20 @@ const parseArs = (value: string): number => {
   return Math.round(pesos * 100);
 };
 
+const VALID_HEADERS = new Set([
+  '*PEDIDO DE TIENDA DE SUPLEMENTOS*',
+  '*PEDIDO IMPULSO*',
+  '*PEDIDO IMPULSO · V1*'
+]);
+
 const splitSections = (message: string): Map<string, string> => {
   const chunks = normalizeProtocolText(message).split(/\n\n+/);
-  if (chunks[0] !== '*PEDIDO IMPULSO*' && chunks[0] !== '*PEDIDO IMPULSO · V1*') {
+  const header = chunks[0] ?? '';
+  if (!VALID_HEADERS.has(header)) {
     throw new Error('Encabezado inválido.');
   }
   const sections = new Map<string, string>();
-  sections.set('Encabezado', chunks[0]);
+  sections.set('Encabezado', header);
   for (const chunk of chunks.slice(1)) {
     const match = chunk.match(/^\*([^*]+)\*\n([\s\S]*)$/);
     if (!match?.[1] || match[2] === undefined || sections.has(match[1])) {
