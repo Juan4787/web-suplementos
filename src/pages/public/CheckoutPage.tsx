@@ -6,7 +6,6 @@ import {
   Banknote,
   CheckCircle2,
   Info,
-  MapPin,
   MessageCircle,
   Store,
   Truck
@@ -335,39 +334,23 @@ export default function CheckoutPage() {
                     icon={Truck}
                     onClick={() => {
                       setValue('deliveryMethod', 'shipping', { shouldValidate: true });
-                      setValue('shippingType', shippingType ?? 'standard', { shouldValidate: true });
+                      setValue('shippingType', 'standard', { shouldValidate: true });
                     }}
                   />
                 </div>
                 {deliveryMethod === 'shipping' ? (
                   <div className="mt-5 space-y-5 border-t border-ink-950/8 pt-5">
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <RadioCard
-                        selected={shippingType === 'standard'}
-                        title="Tradicional"
-                        description="Costo a coordinar según localidad (Correo / encomienda)."
-                        icon={Truck}
-                        onClick={() => setValue('shippingType', 'standard', { shouldValidate: true })}
-                      />
-                      <RadioCard
-                        selected={shippingType === 'express'}
-                        title="Express"
-                        description="Costo a coordinar según localidad (Envío prioritario)."
-                        icon={MapPin}
-                        onClick={() => setValue('shippingType', 'express', { shouldValidate: true })}
-                      />
+                    <div className="flex items-start gap-3 rounded-2xl border border-brand-200/70 bg-brand-50/60 p-4 text-xs text-brand-950">
+                      <Info className="mt-0.5 size-4.5 shrink-0 text-brand-700" />
+                      <div>
+                        <strong className="block font-black text-[13px] text-brand-900">
+                          Envíos a todo el país
+                        </strong>
+                        <p className="mt-1 leading-relaxed text-brand-950/80">
+                          El costo del envío no está incluido en este total. Se cotiza y coordina directamente por WhatsApp según tu provincia y localidad.
+                        </p>
+                      </div>
                     </div>
-                    <div className="flex items-start gap-2.5 rounded-xl border border-brand-200/70 bg-brand-50/60 p-3.5 text-xs text-brand-950">
-                      <Info className="mt-0.5 size-4 shrink-0 text-brand-700" />
-                      <p>
-                        <strong>Envíos a todo el país:</strong> El costo del envío no está incluido en este total. Se cotiza y coordina directamente por WhatsApp según tu provincia y localidad.
-                      </p>
-                    </div>
-                    {errors.shippingType?.message ? (
-                      <p className="text-sm font-semibold text-red-700">
-                        {errors.shippingType.message}
-                      </p>
-                    ) : null}
                     <div className="grid gap-5 sm:grid-cols-[1fr_9rem]">
                       <Field
                         label="Dirección"
