@@ -532,7 +532,13 @@ export default function ImportOrderPage() {
               </div>
               <div className="flex justify-between font-semibold text-ink-700">
                 <span>Envío</span>
-                <span className="font-black text-ink-950">{formatMoney(totals.shipping)}</span>
+                <span className="font-black text-ink-950">
+                  {review.source.deliveryMethod === 'shipping'
+                    ? totals.shipping > 0
+                      ? formatMoney(totals.shipping)
+                      : 'A coordinar'
+                    : '$0 (Retiro)'}
+                </span>
               </div>
             </div>
 

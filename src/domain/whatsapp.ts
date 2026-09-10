@@ -69,7 +69,7 @@ const buildProtocolBody = (
   if (checkout.deliveryMethod === 'shipping') {
     sections.push(
       field('Tipo de envío', shippingLabel(checkout.shippingType)),
-      field('Envío', formatMoney(shippingFeeCents)),
+      field('Envío', shippingFeeCents > 0 ? formatMoney(shippingFeeCents) : 'A coordinar'),
       field('Dirección', checkout.address?.trim() ?? ''),
       field('Altura', checkout.addressNumber?.trim() || 'Sin altura'),
       field('Teléfono', checkout.phone?.trim() ?? '')
@@ -253,7 +253,10 @@ export const parseWhatsAppProtocol = (message: string): ParsedWhatsAppOrder => {
 
   const deliveryMethod = parsedDelivery(parsedRequired(sections, 'Entrega'));
   const subtotalCents = parseArs(parsedRequired(sections, 'Subtotal'));
-  const shippingFeeCents = parseArs(parsedRequired(sections, 'Envío'));
+  const rawShipping = parsedRequired(sections, 'Envío');
+  const shippingFeeCents = /coordinar|convenir/i.test(rawShipping)
+    ? 0
+    : parseArs(rawShipping);
   const totalCents = parseArs(parsedRequired(sections, 'Total'));
   const calculatedSubtotal = lines.reduce((total, line) => total + line.lineTotalCents, 0);
   if (subtotalCents !== calculatedSubtotal || totalCents !== subtotalCents + shippingFeeCents) {

@@ -114,20 +114,14 @@ export default function CreateOrderPage() {
   // Cálculos de totales y stock
   const totals = useMemo(() => {
     const subtotal = items.reduce((sum, item) => sum + item.unitPriceCents * item.quantity, 0);
-    let shipping = 0;
-    if (deliveryMethod === 'shipping' && settings) {
-      shipping =
-        shippingType === 'express'
-          ? settings.expressShippingCents
-          : settings.standardShippingCents;
-    }
+    const shipping = 0;
     return {
       subtotal,
       shipping,
-      total: subtotal + shipping,
+      total: subtotal,
       units: items.reduce((sum, item) => sum + item.quantity, 0)
     };
-  }, [items, deliveryMethod, shippingType, settings]);
+  }, [items]);
 
   // Análisis de disponibilidad de stock para los items seleccionados
   const stockReadiness = useMemo(() => {
@@ -773,9 +767,7 @@ export default function CreateOrderPage() {
                         )}
                       >
                         <span className="block font-black">Estándar</span>
-                        <span className="text-ink-600">
-                          {formatMoney(settings?.standardShippingCents ?? 0)}
-                        </span>
+                        <span className="text-ink-600">A coordinar</span>
                       </button>
                       <button
                         type="button"
@@ -788,9 +780,7 @@ export default function CreateOrderPage() {
                         )}
                       >
                         <span className="block font-black">Express</span>
-                        <span className="text-ink-600">
-                          {formatMoney(settings?.expressShippingCents ?? 0)}
-                        </span>
+                        <span className="text-ink-600">A coordinar</span>
                       </button>
                     </div>
                   </div>
@@ -889,7 +879,11 @@ export default function CreateOrderPage() {
                       : '(Retiro)'}
                   </span>
                   <span className="font-bold text-ink-950">
-                    {totals.shipping > 0 ? formatMoney(totals.shipping) : '$0'}
+                    {deliveryMethod === 'shipping'
+                      ? totals.shipping > 0
+                        ? formatMoney(totals.shipping)
+                        : 'A coordinar'
+                      : '$0 (Retiro)'}
                   </span>
                 </div>
               </div>

@@ -292,7 +292,7 @@ export default function CartPage() {
                 <strong className="font-display text-2xl">{formatMoney(subtotalCents)}</strong>
               </div>
               <p className="mt-3 text-xs leading-5 text-white/50">
-                El envío, si corresponde, se calcula en el siguiente paso.
+                El costo de envío se coordina por WhatsApp según el destino de entrega en todo el país.
               </p>
 
               {cartEtaQuery.data?.requiresIncoming ? (

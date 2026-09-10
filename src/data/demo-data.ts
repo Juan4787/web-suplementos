@@ -37,8 +37,8 @@ export const demoSettings: StoreSettings & { taxRateBasisPoints: number } = {
   whatsappPhone: '5491112345678',
   transferAlias: 'IMPULSO.SUPLE',
   transferAccount: 'CVU 0000000000000000000000',
-  standardShippingCents: pesosToCents(2500),
-  expressShippingCents: pesosToCents(4500),
+  standardShippingCents: 0,
+  expressShippingCents: 0,
   taxRateBasisPoints: 350,
   currency: 'ARS'
 };

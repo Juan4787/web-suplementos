@@ -100,6 +100,27 @@ describe('WhatsApp order protocol', () => {
     });
   });
 
+  it('admite envíos a domicilio con flete a coordinar sin tarifa fija', () => {
+    const zeroSettings: StoreSettings = {
+      ...settings,
+      standardShippingCents: 0,
+      expressShippingCents: 0
+    };
+    const protocol = buildWhatsAppProtocol(checkout, lines, zeroSettings);
+    expect(protocol.message).toContain('*Envío*\nA coordinar');
+    expect(protocol.shippingFeeCents).toBe(0);
+    expect(protocol.totalCents).toBe(protocol.subtotalCents);
+
+    const parsed = parseWhatsAppProtocol(protocol.message);
+    expect(parsed).toMatchObject({
+      deliveryMethod: 'shipping',
+      shippingType: 'express',
+      shippingFeeCents: 0,
+      quotedSubtotalCents: 5_000_000,
+      quotedTotalCents: 5_000_000
+    });
+  });
+
   it('handles CRLF line endings from Windows WhatsApp clients seamlessly', () => {
     const protocol = buildWhatsAppProtocol(checkout, lines, settings);
     const crlfMessage = protocol.message.replace(/\n/g, '\r\n');

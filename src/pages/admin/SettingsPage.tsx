@@ -8,6 +8,7 @@ import {
   FileSpreadsheet,
   HardDriveDownload,
   ImageOff,
+  Info,
   MessageCircle,
   Save,
   Shield,
@@ -377,10 +378,6 @@ export default function SettingsPage() {
   const saveSettings = useMutation({
     mutationFn: async () => {
       if (!draft) return;
-      const standardShippingPesos =
-        draft.standardShippingPesosStr === '' ? 0 : parseFloat(draft.standardShippingPesosStr) || 0;
-      const expressShippingPesos =
-        draft.expressShippingPesosStr === '' ? 0 : parseFloat(draft.expressShippingPesosStr) || 0;
       const taxRatePercent =
         draft.taxRatePercentStr === '' ? 0 : parseFloat(draft.taxRatePercentStr) || 0;
 
@@ -390,8 +387,8 @@ export default function SettingsPage() {
         whatsappPhone: draft.whatsappPhone.replace(/[^0-9]/g, ''),
         transferAlias: draft.transferAlias.trim(),
         transferAccount: draft.transferAccount.replace(/\s/g, ''),
-        standardShippingCents: Math.round(standardShippingPesos * 100),
-        expressShippingCents: Math.round(expressShippingPesos * 100),
+        standardShippingCents: 0,
+        expressShippingCents: 0,
         taxRateBasisPoints: Math.round(taxRatePercent * 100),
         currency: 'ARS'
       };
@@ -405,7 +402,7 @@ export default function SettingsPage() {
       setTimeout(() => setJustSavedSettings(false), 3500);
       showToast(
         'Configuración guardada',
-        'Los datos de la tienda, transferencias y tarifas de envío se actualizaron correctamente.'
+        'Los datos de la tienda y cuentas de transferencia se actualizaron correctamente.'
       );
     },
     onError: () => {
@@ -517,52 +514,37 @@ export default function SettingsPage() {
                       <Truck className="size-5" />
                     </span>
                     <div>
-                      <h3 className="font-display text-xl font-black text-ink-950">Tarifas de entrega e impuestos</h3>
-                      <p className="text-xs text-ink-600">Costos aplicados en el checkout.</p>
+                      <h3 className="font-display text-xl font-black text-ink-950">Envíos a todo el país e impuestos</h3>
+                      <p className="text-xs text-ink-600">Configuración comercial y tributaria de la tienda.</p>
                     </div>
                   </div>
-                  <div className="mt-5 grid gap-4 sm:grid-cols-3">
-                    <Field label="Envío estándar ($)">
-                      <Input
-                        type="text"
-                        inputMode="numeric"
-                        pattern="[0-9]*"
-                        placeholder="0"
-                        value={draft.standardShippingPesosStr}
-                        onFocus={(e) => e.target.select()}
-                        onChange={(e) => {
-                          const clean = sanitizeIntegerInput(e.target.value, draft.standardShippingPesosStr);
-                          setDraft({ ...draft, standardShippingPesosStr: clean });
-                        }}
-                      />
-                    </Field>
-                    <Field label="Envío express ($)">
-                      <Input
-                        type="text"
-                        inputMode="numeric"
-                        pattern="[0-9]*"
-                        placeholder="0"
-                        value={draft.expressShippingPesosStr}
-                        onFocus={(e) => e.target.select()}
-                        onChange={(e) => {
-                          const clean = sanitizeIntegerInput(e.target.value, draft.expressShippingPesosStr);
-                          setDraft({ ...draft, expressShippingPesosStr: clean });
-                        }}
-                      />
-                    </Field>
-                    <Field label="Tasa impositiva (%)">
-                      <Input
-                        type="text"
-                        inputMode="decimal"
-                        placeholder="0"
-                        value={draft.taxRatePercentStr}
-                        onFocus={(e) => e.target.select()}
-                        onChange={(e) => {
-                          const clean = sanitizeDecimalInput(e.target.value, draft.taxRatePercentStr);
-                          setDraft({ ...draft, taxRatePercentStr: clean });
-                        }}
-                      />
-                    </Field>
+                  <div className="mt-5 space-y-4">
+                    <div className="rounded-2xl border border-brand-200/60 bg-brand-50/50 p-4 text-sm text-ink-800">
+                      <div className="flex items-start gap-3">
+                        <Info className="mt-0.5 size-5 shrink-0 text-brand-600" />
+                        <div>
+                          <strong className="block font-black text-ink-950">Modalidad de flete: A coordinar</strong>
+                          <p className="mt-1 text-xs text-ink-600 leading-relaxed">
+                            Los pedidos con envío a domicilio se generan sin tarifas fijas. El costo de despacho o encomienda se acuerda y cotiza con el cliente por WhatsApp según la provincia, localidad y transporte elegido.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="max-w-xs">
+                      <Field label="Tasa impositiva (%)" hint="Alícuota interna aplicada a ventas.">
+                        <Input
+                          type="text"
+                          inputMode="decimal"
+                          placeholder="0"
+                          value={draft.taxRatePercentStr}
+                          onFocus={(e) => e.target.select()}
+                          onChange={(e) => {
+                            const clean = sanitizeDecimalInput(e.target.value, draft.taxRatePercentStr);
+                            setDraft({ ...draft, taxRatePercentStr: clean });
+                          }}
+                        />
+                      </Field>
+                    </div>
                   </div>
                 </section>
 

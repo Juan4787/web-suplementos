@@ -331,7 +331,7 @@ export default function CheckoutPage() {
                   <RadioCard
                     selected={deliveryMethod === 'shipping'}
                     title="Envío a domicilio"
-                    description="Elegí tradicional o express."
+                    description="Coordinamos el flete según tu localidad."
                     icon={Truck}
                     onClick={() => {
                       setValue('deliveryMethod', 'shipping', { shouldValidate: true });
@@ -344,18 +344,24 @@ export default function CheckoutPage() {
                     <div className="grid gap-3 sm:grid-cols-2">
                       <RadioCard
                         selected={shippingType === 'standard'}
-                        title={`Tradicional · ${formatMoney(settingsQuery.data?.standardShippingCents ?? 0)}`}
-                        description="La opción más económica."
+                        title="Tradicional"
+                        description="Costo a coordinar según localidad (Correo / encomienda)."
                         icon={Truck}
                         onClick={() => setValue('shippingType', 'standard', { shouldValidate: true })}
                       />
                       <RadioCard
                         selected={shippingType === 'express'}
-                        title={`Express · ${formatMoney(settingsQuery.data?.expressShippingCents ?? 0)}`}
-                        description="Para cuando lo necesitás antes."
+                        title="Express"
+                        description="Costo a coordinar según localidad (Envío prioritario)."
                         icon={MapPin}
                         onClick={() => setValue('shippingType', 'express', { shouldValidate: true })}
                       />
+                    </div>
+                    <div className="flex items-start gap-2.5 rounded-xl border border-brand-200/70 bg-brand-50/60 p-3.5 text-xs text-brand-950">
+                      <Info className="mt-0.5 size-4 shrink-0 text-brand-700" />
+                      <p>
+                        <strong>Envíos a todo el país:</strong> El costo del envío no está incluido en este total. Se cotiza y coordina directamente por WhatsApp según tu provincia y localidad.
+                      </p>
                     </div>
                     {errors.shippingType?.message ? (
                       <p className="text-sm font-semibold text-red-700">
@@ -443,12 +449,21 @@ export default function CheckoutPage() {
             </div>
             <div className="mt-2 flex justify-between text-sm text-white/60">
               <span>Envío</span>
-              <span>{formatMoney(shippingFee)}</span>
+              {deliveryMethod === 'shipping' ? (
+                <span className="font-bold text-brand-300">A coordinar</span>
+              ) : (
+                <span>{formatMoney(0)} (Retiro)</span>
+              )}
             </div>
             <div className="mt-5 flex items-end justify-between">
-              <span className="font-black">Total</span>
+              <div>
+                <span className="font-black">Total productos</span>
+                {deliveryMethod === 'shipping' ? (
+                  <p className="text-[11px] font-normal text-white/50">+ flete a convenir</p>
+                ) : null}
+              </div>
               <strong className="font-display text-3xl">
-                {formatMoney(cart.subtotalCents + shippingFee)}
+                {formatMoney(cart.subtotalCents)}
               </strong>
             </div>
 
