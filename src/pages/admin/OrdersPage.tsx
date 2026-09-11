@@ -473,28 +473,46 @@ export default function OrdersPage() {
                         </div>
 
                         {/* Botones de acción contextuales simplificados: Cobrado / Regalar y Entregado */}
-                        <div className="flex flex-col justify-center gap-3 rounded-2xl bg-white p-6 border border-ink-950/8 shadow-sm h-fit">
-                          <p className="text-[13.5px] font-black uppercase tracking-wider text-ink-700 mb-1">
-                            Acción operativa
-                          </p>
+                        <div className="flex flex-col gap-3 rounded-2xl bg-white p-5 sm:p-6 border border-ink-950/8 shadow-sm h-fit">
+                          <div className="flex items-center justify-between border-b border-ink-950/6 pb-2">
+                            <p className="text-[12.5px] font-black uppercase tracking-wider text-ink-700">
+                              Acción operativa
+                            </p>
+                            {order.isCostSale || order.saleType === 'cost' ? (
+                              <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2 py-0.5 text-[11px] font-bold text-amber-900 border border-amber-200">
+                                <Tag className="size-3 text-amber-600" /> Al costo
+                              </span>
+                            ) : order.paymentState === 'gifted' ? (
+                              <span className="inline-flex items-center gap-1 rounded-md bg-purple-50 px-2 py-0.5 text-[11px] font-bold text-purple-900 border border-purple-200">
+                                <Gift className="size-3 text-purple-600" /> Regalo
+                              </span>
+                            ) : null}
+                          </div>
 
-                          {/* 1. Paso Cobrado / Regalo */}
+                          {/* 1. Paso Cobrado / Regalo / Al costo */}
                           {order.paymentState === 'gifted' ? (
-                            <div className="flex items-center gap-2 rounded-xl bg-purple-50 border border-purple-200 px-3.5 py-2.5 text-[14px] font-black text-purple-800">
+                            <div className="flex items-center gap-2 rounded-xl bg-purple-50 border border-purple-200 px-3.5 py-2.5 text-[13.5px] font-black text-purple-800">
                               <Gift className="size-4 shrink-0 text-purple-600" />
                               <span>Regalo / Cortesía</span>
                             </div>
                           ) : order.paymentState === 'paid' ? (
-                            <div className="flex items-center gap-2 rounded-xl bg-emerald-50 border border-emerald-200 px-3.5 py-2.5 text-[14px] font-black text-emerald-800">
-                              <Check className="size-4 shrink-0 text-emerald-600" />
-                              <span>Cobrado</span>
-                            </div>
+                            order.isCostSale || order.saleType === 'cost' ? (
+                              <div className="flex items-center gap-2 rounded-xl bg-amber-50 border border-amber-200 px-3.5 py-2.5 text-[13.5px] font-black text-amber-900">
+                                <Tag className="size-4 shrink-0 text-amber-600" />
+                                <span>Cobrado al costo</span>
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-2 rounded-xl bg-emerald-50 border border-emerald-200 px-3.5 py-2.5 text-[13.5px] font-black text-emerald-800">
+                                <Check className="size-4 shrink-0 text-emerald-600" />
+                                <span>Cobrado</span>
+                              </div>
+                            )
                           ) : actions.includes('mark_paid') ? (
-                            <div className="flex items-center gap-2">
+                            <div className="space-y-2">
                               <Button
                                 variant="dark"
                                 size="md"
-                                className="flex-1"
+                                className="w-full justify-center text-[14px] font-black shadow-sm"
                                 loading={
                                   transition.isPending &&
                                   transition.variables?.action === 'mark_paid'
@@ -505,31 +523,42 @@ export default function OrdersPage() {
                               >
                                 Marcar como cobrado
                               </Button>
-                              {actions.includes('mark_at_cost') ? (
-                                <Button
-                                  type="button"
-                                  variant="secondary"
-                                  size="md"
-                                  title="Cobrar a precio de costo (ganancia $0, recupero de mercadería)"
-                                  className="shrink-0 text-amber-800 border-amber-200 hover:bg-amber-50 hover:text-amber-900 hover:border-amber-300 font-bold px-3"
-                                  onClick={() => setConfirmAction({ order, action: 'mark_at_cost' })}
+
+                              {actions.includes('mark_at_cost') || actions.includes('mark_gifted') ? (
+                                <div
+                                  className={`grid gap-2 pt-0.5 ${
+                                    actions.includes('mark_at_cost') && actions.includes('mark_gifted')
+                                      ? 'grid-cols-2'
+                                      : 'grid-cols-1'
+                                  }`}
                                 >
-                                  <Tag className="size-4 mr-1 text-amber-600" />
-                                  Al costo
-                                </Button>
-                              ) : null}
-                              {actions.includes('mark_gifted') ? (
-                                <Button
-                                  type="button"
-                                  variant="secondary"
-                                  size="md"
-                                  title="Marcar como cortesía / regalo (descuenta stock sin sumar facturación)"
-                                  className="shrink-0 text-purple-700 border-purple-200 hover:bg-purple-50 hover:text-purple-800 hover:border-purple-300 font-bold px-3"
-                                  onClick={() => setConfirmAction({ order, action: 'mark_gifted' })}
-                                >
-                                  <Gift className="size-4 mr-1 text-purple-600" />
-                                  Regalar
-                                </Button>
+                                  {actions.includes('mark_at_cost') ? (
+                                    <Button
+                                      type="button"
+                                      variant="secondary"
+                                      size="sm"
+                                      title="Cobrar a precio de costo (ganancia $0, recupero de mercadería)"
+                                      className="w-full justify-center text-amber-900 border-amber-200 bg-amber-50/70 hover:bg-amber-100 hover:text-amber-950 hover:border-amber-300 font-bold text-xs py-2 h-auto"
+                                      onClick={() => setConfirmAction({ order, action: 'mark_at_cost' })}
+                                    >
+                                      <Tag className="size-3.5 mr-1 text-amber-600 shrink-0" />
+                                      <span>Al costo</span>
+                                    </Button>
+                                  ) : null}
+                                  {actions.includes('mark_gifted') ? (
+                                    <Button
+                                      type="button"
+                                      variant="secondary"
+                                      size="sm"
+                                      title="Marcar como cortesía / regalo (descuenta stock sin sumar facturación)"
+                                      className="w-full justify-center text-purple-900 border-purple-200 bg-purple-50/70 hover:bg-purple-100 hover:text-purple-950 hover:border-purple-300 font-bold text-xs py-2 h-auto"
+                                      onClick={() => setConfirmAction({ order, action: 'mark_gifted' })}
+                                    >
+                                      <Gift className="size-3.5 mr-1 text-purple-600 shrink-0" />
+                                      <span>Regalar</span>
+                                    </Button>
+                                  ) : null}
+                                </div>
                               ) : null}
                             </div>
                           ) : null}
@@ -762,9 +791,10 @@ export default function OrdersPage() {
                 </div>
               ) : null}
 
-              <div className="mt-6 flex items-center justify-end gap-3">
+              <div className="mt-6 flex flex-col-reverse sm:flex-row sm:items-center sm:justify-end gap-2.5">
                 <Button
                   variant="ghost"
+                  className="w-full sm:w-auto font-bold"
                   onClick={() => setConfirmAction(null)}
                   disabled={transition.isPending}
                 >
@@ -772,15 +802,16 @@ export default function OrdersPage() {
                 </Button>
                 <Button
                   variant="dark"
-                  className={
+                  className={cn(
+                    'w-full sm:w-auto font-black shadow-sm',
                     confirmAction.action === 'mark_gifted'
-                      ? 'bg-purple-700 hover:bg-purple-800 text-white font-bold'
+                      ? 'bg-purple-700 hover:bg-purple-800 text-white'
                       : confirmAction.action === 'mark_at_cost'
-                        ? 'bg-amber-700 hover:bg-amber-800 text-white font-bold'
+                        ? 'bg-amber-700 hover:bg-amber-800 text-white'
                         : confirmAction.action === 'cancel'
-                          ? 'bg-rose-700 hover:bg-rose-800 text-white font-bold'
-                          : 'bg-amber-800 hover:bg-amber-900 text-white font-bold'
-                  }
+                          ? 'bg-rose-700 hover:bg-rose-800 text-white'
+                          : 'bg-amber-800 hover:bg-amber-900 text-white'
+                  )}
                   loading={transition.isPending}
                   onClick={async () => {
                     transition.mutate({
