@@ -123,10 +123,11 @@ const buildProductPerformance = (orders: Order[]): ProductPerformance[] => {
         estimatedMarginCents: 0
       };
       const itemCost = (item.unitCostCents ?? 0) * item.quantity;
+      const isAtCost = order.saleType === 'cost' || order.isCostSale;
       current.units += item.quantity;
       current.revenueCents += item.subtotalCents;
       current.costCents = (current.costCents ?? 0) + itemCost;
-      current.estimatedMarginCents += item.subtotalCents - itemCost;
+      current.estimatedMarginCents += isAtCost ? 0 : (item.subtotalCents - itemCost);
       products.set(item.productId, current);
     }
   }
@@ -454,8 +455,11 @@ export const demoBusinessApi: BusinessApi = {
         nextAction: 'Ajustá las cantidades disponibles antes de confirmarlo.'
       });
     }
+    const isCost = input.saleType === 'cost';
+    const isGift = input.paymentMethod === 'gift' || input.saleType === 'gift';
     const items = input.lines.map((line) => {
       const product = state.products.find((candidate) => candidate.id === line.productId)!;
+      const unitPriceCents = isCost ? (product.currentCostCents ?? line.unitPriceCents) : line.unitPriceCents;
       return {
         id: nextUuid(),
         productId: product.id,
@@ -463,13 +467,13 @@ export const demoBusinessApi: BusinessApi = {
         productName: product.name,
         presentation: product.presentation,
         quantity: line.quantity,
-        unitPriceCents: line.unitPriceCents,
+        unitPriceCents,
         unitCostCents: product.currentCostCents,
-        subtotalCents: line.unitPriceCents * line.quantity
+        subtotalCents: unitPriceCents * line.quantity
       };
     });
     const subtotalCents = items.reduce((sum, item) => sum + item.subtotalCents, 0);
-    if (input.paymentMethod !== 'gift' && subtotalCents !== input.quotedSubtotalCents) {
+    if (!isGift && !isCost && subtotalCents !== input.quotedSubtotalCents) {
       throw new AppError('business', 'Los precios revisados ya no coinciden con el mensaje.', {
         nextAction: 'Volvé a revisar los productos y confirmá el total correcto.'
       });
@@ -503,7 +507,6 @@ export const demoBusinessApi: BusinessApi = {
       }
     }
 
-    const isGift = input.paymentMethod === 'gift';
     const order: Order = {
       id: nextUuid(),
       number,
@@ -518,16 +521,18 @@ export const demoBusinessApi: BusinessApi = {
           ? `${input.address ?? ''}${input.addressNumber ? ` ${input.addressNumber}` : ''}`.trim()
           : null,
       orderState: 'confirmed',
+      saleType: isCost ? 'cost' : isGift ? 'gift' : 'retail',
+      isCostSale: isCost,
       paymentState: isGift ? 'gifted' : 'pending',
       preparationState: 'ready',
       fulfillmentState: isGift ? 'delivered' : 'pending',
       stockReadiness: requiresIncoming ? 'waiting_incoming' : 'ready',
       expectedArrivalAt,
-      subtotalCents: isGift ? 0 : subtotalCents,
+      subtotalCents: isGift ? 0 : isCost ? costTotalCents : subtotalCents,
       shippingFeeCents: isGift ? 0 : input.shippingFeeCents,
-      totalCents: isGift ? 0 : subtotalCents + input.shippingFeeCents,
-      taxRateBasisPoints: state.settings.taxRateBasisPoints,
-      taxAmountCents: isGift ? 0 : calculateBasisPoints(
+      totalCents: isGift ? 0 : isCost ? costTotalCents + input.shippingFeeCents : subtotalCents + input.shippingFeeCents,
+      taxRateBasisPoints: (isGift || isCost) ? 0 : state.settings.taxRateBasisPoints,
+      taxAmountCents: (isGift || isCost) ? 0 : calculateBasisPoints(
         subtotalCents + input.shippingFeeCents,
         state.settings.taxRateBasisPoints ?? 0
       ),
@@ -613,6 +618,15 @@ export const demoBusinessApi: BusinessApi = {
           nextAction: 'Solo se pueden regalar pedidos con cobro pendiente que no hayan sido pagados ni cancelados.'
         });
       }
+    } else if (action === 'mark_at_cost') {
+      if (order.saleType === 'cost' && order.paymentState === 'paid') {
+        return latency(order);
+      }
+      if (order.orderState === 'cancelled' || order.paymentState !== 'pending') {
+        throw new AppError('business', 'INVALID_TRANSITION', {
+          nextAction: 'Solo se pueden cobrar al costo pedidos con cobro pendiente que no hayan sido pagados ni cancelados.'
+        });
+      }
     } else if (!availableOrderActions(order).includes(action)) {
       throw new AppError('business', 'Ese paso ya no está disponible para el pedido.', {
         nextAction: 'Actualizá la lista para ver su estado actual.'
@@ -623,6 +637,28 @@ export const demoBusinessApi: BusinessApi = {
     if (action === 'mark_paid') {
       order.paymentState = 'paid';
       order.paidAt = now;
+      const customer = state.customers.find(
+        (candidate) =>
+          candidate.id === order.customerId ||
+          (candidate.phone && order.customerPhone && candidate.phone === order.customerPhone) ||
+          candidate.name.trim().toLowerCase() === order.customerName.trim().toLowerCase()
+      );
+      if (customer) customer.totalPaidCents = (customer.totalPaidCents ?? 0) + order.totalCents;
+    }
+    if (action === 'mark_at_cost') {
+      for (const item of order.items) {
+        const cost = item.unitCostCents ?? 0;
+        item.unitPriceCents = cost;
+        item.subtotalCents = cost * item.quantity;
+      }
+      order.saleType = 'cost';
+      order.isCostSale = true;
+      order.subtotalCents = order.costTotalCents ?? 0;
+      order.totalCents = (order.costTotalCents ?? 0) + (order.shippingFeeCents ?? 0);
+      order.taxAmountCents = 0;
+      order.paymentState = 'paid';
+      order.paidAt = order.paidAt ?? now;
+
       const customer = state.customers.find(
         (candidate) =>
           candidate.id === order.customerId ||
@@ -1082,6 +1118,9 @@ export const demoBusinessApi: BusinessApi = {
     const giftOrdersList = orders.filter((order) => order.paymentState === 'gifted');
     const giftOrders = giftOrdersList.length;
     const giftCostCents = giftOrdersList.reduce((sum, order) => sum + (order.costTotalCents ?? 0), 0);
+    const costOrdersList = orders.filter((order) => order.saleType === 'cost' || order.isCostSale);
+    const costSaleOrders = costOrdersList.length;
+    const costSaleRevenueCents = costOrdersList.reduce((sum, order) => sum + order.totalCents, 0);
     const revenueCents = orders.reduce((sum, order) => sum + order.totalCents, 0);
     const costCents = orders.reduce((sum, order) => sum + (order.costTotalCents ?? 0), 0);
     const taxCents = orders.reduce((sum, order) => sum + (order.taxAmountCents ?? 0), 0);
@@ -1120,6 +1159,8 @@ export const demoBusinessApi: BusinessApi = {
       units,
       giftOrders,
       giftCostCents,
+      costSaleOrders,
+      costSaleRevenueCents,
       series,
       topProducts: buildProductPerformance(orders)
     };

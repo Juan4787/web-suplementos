@@ -1,8 +1,10 @@
-import { Check, Gift } from 'lucide-react';
+import { Check, Gift, Tag } from 'lucide-react';
 import { StatusChip } from '@/components/ui/StatusChip';
 import type { Order } from '@/domain/types';
 
 export function OrderStatus({ order, compact = false }: { order: Order; compact?: boolean }) {
+  const isCost = order.isCostSale || order.saleType === 'cost';
+
   if (order.orderState === 'cancelled') {
     return (
       <div className="flex flex-wrap items-center gap-2">
@@ -32,11 +34,24 @@ export function OrderStatus({ order, compact = false }: { order: Order; compact?
         <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 border border-emerald-300 px-3 py-1 text-[13.5px] font-black text-emerald-800 select-none">
           <Check className="size-4" /> Completado
         </span>
+        {isCost && (
+          <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 border border-amber-300 px-2.5 py-0.5 text-xs font-black text-amber-800 select-none">
+            <Tag className="size-3 text-amber-600" /> Al costo
+          </span>
+        )}
       </div>
     );
   }
 
   const chips = [];
+
+  if (isCost) {
+    chips.push(
+      <span key="at-cost-tag" className="inline-flex items-center gap-1 rounded-full bg-amber-50 border border-amber-300 px-2.5 py-0.5 text-xs font-black text-amber-800 select-none">
+        <Tag className="size-3 text-amber-600" /> Al costo
+      </span>
+    );
+  }
 
   // 1. Estado de Entrega
   if (order.fulfillmentState === 'delivered') {
@@ -49,11 +64,11 @@ export function OrderStatus({ order, compact = false }: { order: Order; compact?
 
   // 2. Estado de Cobro
   if (order.paymentState === 'paid') {
-    chips.push(<StatusChip key="paid" label="Cobrado" tone="success" />);
+    chips.push(<StatusChip key="paid" label={isCost ? 'Cobrado al costo' : 'Cobrado'} tone="success" />);
   } else if (order.paymentState === 'refunded') {
     chips.push(<StatusChip key="ref" label="Reintegrado" tone="neutral" />);
   } else {
-    chips.push(<StatusChip key="pay" label="Pago pendiente" tone="warning" />);
+    chips.push(<StatusChip key="pay" label={isCost ? 'Pendiente (al costo)' : 'Pago pendiente'} tone="warning" />);
   }
 
   // 3. Estado de Stock / Reposición

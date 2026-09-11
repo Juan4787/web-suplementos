@@ -11,6 +11,7 @@ import {
   Plus,
   Search,
   ShoppingBasket,
+  Tag,
   X
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -36,10 +37,17 @@ import { cleanSearchTerm } from '@/lib/search';
 
 function OrderTimeline({ order }: { order: Order }) {
   const isGift = order.paymentState === 'gifted';
+  const isCost = Boolean(order.isCostSale || order.saleType === 'cost');
   const steps = [
     {
-      label: isGift ? 'Regalo' : 'Cobrado',
-      status: isGift ? 'Cortesía' : order.paymentState === 'paid' ? 'Cobrado' : 'Pendiente de cobro',
+      label: isGift ? 'Regalo' : isCost ? 'Al costo' : 'Cobrado',
+      status: isGift
+        ? 'Cortesía'
+        : isCost
+          ? (order.paymentState === 'paid' ? 'Cobrado al costo' : 'Pendiente (al costo)')
+          : order.paymentState === 'paid'
+            ? 'Cobrado'
+            : 'Pendiente de cobro',
       done: isGift || order.paymentState === 'paid'
     },
     {
@@ -152,11 +160,13 @@ export default function OrdersPage() {
       const state =
         variables.action === 'mark_paid'
           ? 'cobrado'
-          : variables.action === 'mark_gifted'
-            ? 'registrado como regalo / cortesía'
-            : variables.action === 'mark_delivered'
-              ? 'entregado'
-              : 'actualizado';
+          : variables.action === 'mark_at_cost'
+            ? 'cobrado a precio de costo'
+            : variables.action === 'mark_gifted'
+              ? 'registrado como regalo / cortesía'
+              : variables.action === 'mark_delivered'
+                ? 'entregado'
+                : 'actualizado';
       setSuccessNotice({
         order,
         completed,
@@ -405,11 +415,13 @@ export default function OrdersPage() {
                                 >
                                   {order.paymentState === 'gifted'
                                     ? 'Regalo / Cortesía'
-                                    : order.paymentState === 'paid'
-                                      ? 'Pagado'
-                                      : order.paymentState === 'refunded'
-                                        ? 'Reembolsado'
-                                        : 'Pendiente de cobro'}
+                                    : order.isCostSale || order.saleType === 'cost'
+                                      ? 'Pagado al costo'
+                                      : order.paymentState === 'paid'
+                                        ? 'Pagado'
+                                        : order.paymentState === 'refunded'
+                                          ? 'Reembolsado'
+                                          : 'Pendiente de cobro'}
                                 </span>
                               </p>
                               <p className="text-ink-700 font-medium">
@@ -493,13 +505,26 @@ export default function OrdersPage() {
                               >
                                 Marcar como cobrado
                               </Button>
+                              {actions.includes('mark_at_cost') ? (
+                                <Button
+                                  type="button"
+                                  variant="secondary"
+                                  size="md"
+                                  title="Cobrar a precio de costo (ganancia $0, recupero de mercadería)"
+                                  className="shrink-0 text-amber-800 border-amber-200 hover:bg-amber-50 hover:text-amber-900 hover:border-amber-300 font-bold px-3"
+                                  onClick={() => setConfirmAction({ order, action: 'mark_at_cost' })}
+                                >
+                                  <Tag className="size-4 mr-1 text-amber-600" />
+                                  Al costo
+                                </Button>
+                              ) : null}
                               {actions.includes('mark_gifted') ? (
                                 <Button
                                   type="button"
                                   variant="secondary"
                                   size="md"
                                   title="Marcar como cortesía / regalo (descuenta stock sin sumar facturación)"
-                                  className="shrink-0 text-purple-700 border-purple-200 hover:bg-purple-50 hover:text-purple-800 hover:border-purple-300 font-bold px-3.5"
+                                  className="shrink-0 text-purple-700 border-purple-200 hover:bg-purple-50 hover:text-purple-800 hover:border-purple-300 font-bold px-3"
                                   onClick={() => setConfirmAction({ order, action: 'mark_gifted' })}
                                 >
                                   <Gift className="size-4 mr-1 text-purple-600" />
@@ -565,7 +590,7 @@ export default function OrdersPage() {
                           ) : null}
 
                           {/* Acciones secundarias (cancelar, envío intermedio, reintegro) */}
-                          {actions.filter((a) => a !== 'mark_paid' && a !== 'mark_delivered' && a !== 'mark_gifted').length > 0 ? (
+                          {actions.filter((a) => a !== 'mark_paid' && a !== 'mark_delivered' && a !== 'mark_gifted' && a !== 'mark_at_cost').length > 0 ? (
                             <div>
                               <button
                                 type="button"
@@ -584,7 +609,7 @@ export default function OrdersPage() {
                               {showMore ? (
                                 <div className="mt-2 space-y-2 border-t border-ink-950/8 pt-2">
                                   {actions
-                                    .filter((a) => a !== 'mark_paid' && a !== 'mark_delivered' && a !== 'mark_gifted')
+                                    .filter((a) => a !== 'mark_paid' && a !== 'mark_delivered' && a !== 'mark_gifted' && a !== 'mark_at_cost')
                                     .map((secAction) => {
                                       const isDestructive = secAction === 'cancel' || secAction === 'mark_refunded';
                                       return (
@@ -643,13 +668,17 @@ export default function OrdersPage() {
                     'grid size-12 shrink-0 place-items-center rounded-2xl',
                     confirmAction.action === 'mark_gifted'
                       ? 'bg-purple-100 text-purple-700'
-                      : confirmAction.action === 'cancel'
-                        ? 'bg-rose-100 text-rose-700'
-                        : 'bg-amber-100 text-amber-800'
+                      : confirmAction.action === 'mark_at_cost'
+                        ? 'bg-amber-100 text-amber-800'
+                        : confirmAction.action === 'cancel'
+                          ? 'bg-rose-100 text-rose-700'
+                          : 'bg-amber-100 text-amber-800'
                   )}
                 >
                   {confirmAction.action === 'mark_gifted' ? (
                     <Gift className="size-6" />
+                  ) : confirmAction.action === 'mark_at_cost' ? (
+                    <Tag className="size-6 text-amber-700" />
                   ) : (
                     <AlertTriangle className="size-6" />
                   )}
@@ -658,13 +687,19 @@ export default function OrdersPage() {
                   <h3 id="confirm-order-action-title" className="font-display text-xl font-black text-ink-950">
                     {confirmAction.action === 'mark_gifted'
                       ? `¿Registrar pedido #${confirmAction.order.number} como regalo / cortesía?`
-                      : confirmAction.action === 'cancel'
-                        ? `¿Cancelar pedido #${confirmAction.order.number}?`
-                        : `¿Registrar reintegro para pedido #${confirmAction.order.number}?`}
+                      : confirmAction.action === 'mark_at_cost'
+                        ? `¿Cobrar pedido #${confirmAction.order.number} a precio de costo?`
+                        : confirmAction.action === 'cancel'
+                          ? `¿Cancelar pedido #${confirmAction.order.number}?`
+                          : `¿Registrar reintegro para pedido #${confirmAction.order.number}?`}
                   </h3>
                   <p className="text-sm font-semibold text-ink-800">
                     {confirmAction.action === 'mark_gifted' ? 'Beneficiario' : 'Cliente'}: {confirmAction.order.customerName}{' '}
-                    {confirmAction.action !== 'mark_gifted' ? `(${formatMoney(confirmAction.order.totalCents)})` : ''}
+                    {confirmAction.action === 'mark_at_cost'
+                      ? `(Total al costo: ${formatMoney((confirmAction.order.costTotalCents ?? 0) + (confirmAction.order.shippingFeeCents ?? 0))})`
+                      : confirmAction.action !== 'mark_gifted'
+                        ? `(${formatMoney(confirmAction.order.totalCents)})`
+                        : ''}
                   </p>
                 </div>
               </div>
@@ -683,6 +718,21 @@ export default function OrdersPage() {
                     </ul>
                     <p className="text-xs font-semibold text-purple-800 pt-1">
                       🎁 Ideal para suplementos regalados a familiares, embajadores o atenciones comerciales.
+                    </p>
+                  </>
+                ) : confirmAction.action === 'mark_at_cost' ? (
+                  <>
+                    <p>
+                      Este pedido se registrará como <strong>venta al costo</strong>:
+                    </p>
+                    <ul className="list-disc list-inside space-y-1.5 text-ink-800 text-xs">
+                      <li><strong>Ajustará los precios unitarios al costo</strong> de reposición real de cada producto.</li>
+                      <li><strong>Total a cobrar al cliente</strong>: <span className="font-bold text-ink-950">{formatMoney((confirmAction.order.costTotalCents ?? 0) + (confirmAction.order.shippingFeeCents ?? 0))}</span> (recupero exacto del costo + envío).</li>
+                      <li>En la sección de <strong>Ventas</strong> figurará con margen estrictamente <strong>neutral ($ 0)</strong>, sin pérdida ni ganancia contable.</li>
+                      <li>El pedido quedará marcado como pagado, y el stock se descontará normalmente al confirmar la entrega.</li>
+                    </ul>
+                    <p className="text-xs font-semibold text-amber-900 pt-1">
+                      🏷️ Ideal para ventas directas a costo de reposición para familiares, socios o personal.
                     </p>
                   </>
                 ) : confirmAction.action === 'cancel' ? (
@@ -725,9 +775,11 @@ export default function OrdersPage() {
                   className={
                     confirmAction.action === 'mark_gifted'
                       ? 'bg-purple-700 hover:bg-purple-800 text-white font-bold'
-                      : confirmAction.action === 'cancel'
-                        ? 'bg-rose-700 hover:bg-rose-800 text-white font-bold'
-                        : 'bg-amber-800 hover:bg-amber-900 text-white font-bold'
+                      : confirmAction.action === 'mark_at_cost'
+                        ? 'bg-amber-700 hover:bg-amber-800 text-white font-bold'
+                        : confirmAction.action === 'cancel'
+                          ? 'bg-rose-700 hover:bg-rose-800 text-white font-bold'
+                          : 'bg-amber-800 hover:bg-amber-900 text-white font-bold'
                   }
                   loading={transition.isPending}
                   onClick={async () => {
@@ -739,9 +791,11 @@ export default function OrdersPage() {
                 >
                   {confirmAction.action === 'mark_gifted'
                     ? 'Sí, registrar como regalo'
-                    : confirmAction.action === 'cancel'
-                      ? 'Sí, cancelar pedido'
-                      : 'Sí, confirmar reintegro'}
+                    : confirmAction.action === 'mark_at_cost'
+                      ? 'Sí, cobrar al costo'
+                      : confirmAction.action === 'cancel'
+                        ? 'Sí, cancelar pedido'
+                        : 'Sí, confirmar reintegro'}
                 </Button>
               </div>
             </Modal>

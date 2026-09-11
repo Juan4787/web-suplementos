@@ -39,6 +39,7 @@ export type AdminProduct = StorefrontProduct & {
   incoming: number;
   incomingReserved?: number;
   currentCostCents: number | null;
+  costCents?: number;
   updatedAt: string;
 };
 
@@ -66,6 +67,7 @@ export type InventoryItem = Pick<
 };
 
 export type PaymentMethod = 'cash' | 'transfer' | 'gift';
+export type SaleType = 'retail' | 'cost' | 'gift';
 export type DeliveryMethod = 'pickup' | 'shipping';
 export type ShippingType = 'standard' | 'express';
 export type OrderState = 'confirmed' | 'cancelled';
@@ -135,11 +137,14 @@ export type Order = {
   confirmedAt: string;
   paidAt: string | null;
   fulfilledAt: string | null;
+  saleType?: SaleType;
+  isCostSale?: boolean;
   items: OrderItem[];
 };
 
 export type OrderAction =
   | 'mark_paid'
+  | 'mark_at_cost'
   | 'mark_refunded'
   | 'start_preparing'
   | 'mark_ready'
@@ -289,6 +294,8 @@ export type AnalyticsSummary = {
   orders: number;
   giftOrders?: number;
   giftCostCents?: number;
+  costSaleOrders?: number;
+  costSaleRevenueCents?: number;
   units: number;
   series: PeriodPoint[];
   topProducts: ProductPerformance[];
@@ -308,6 +315,8 @@ export type ImportOrderInput = CheckoutData & {
   quotedTotalCents: number;
   protocolOrderId: string;
   protocolChecksum: string;
+  saleType?: SaleType;
+  isCostSale?: boolean;
 };
 
 export type AvailabilityCheck = {

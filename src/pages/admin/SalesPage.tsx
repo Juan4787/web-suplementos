@@ -7,6 +7,7 @@ import {
   Gift,
   Info,
   PackageCheck,
+  Tag,
   TrendingUp
 } from 'lucide-react';
 import { Fragment, useEffect, useMemo, useState } from 'react';
@@ -261,7 +262,9 @@ export default function SalesPage() {
                 detail={
                   analyticsQuery.data.giftOrders && analyticsQuery.data.giftOrders > 0
                     ? `Incluye -${formatMoney(analyticsQuery.data.giftCostCents ?? 0)} por ${analyticsQuery.data.giftOrders} ${analyticsQuery.data.giftOrders === 1 ? 'regalo' : 'regalos'}`
-                    : 'Ventas menos mercadería e impuestos'
+                    : analyticsQuery.data.costSaleOrders && analyticsQuery.data.costSaleOrders > 0
+                      ? `Incluye ${analyticsQuery.data.costSaleOrders} ${analyticsQuery.data.costSaleOrders === 1 ? 'venta al costo' : 'ventas al costo'} (margen neutral $0)`
+                      : 'Ventas menos mercadería e impuestos'
                 }
                 icon={TrendingUp}
                 accent="blue"
@@ -393,7 +396,8 @@ export default function SalesPage() {
                 <tbody className="divide-y divide-ink-950/8">
                   {(ordersQuery.data.items ?? []).map((order) => {
                     const isGift = order.paymentState === 'gifted' || order.paymentMethod === 'gift';
-                    const margin = order.totalCents - (order.costTotalCents ?? 0) - (order.taxAmountCents ?? 0);
+                    const isCost = order.isCostSale || order.saleType === 'cost';
+                    const margin = isCost ? 0 : order.totalCents - (order.costTotalCents ?? 0) - (order.taxAmountCents ?? 0);
                     const isExpanded = expandedOrderId === order.id;
 
                     return (
@@ -408,6 +412,10 @@ export default function SalesPage() {
                             {isGift ? (
                               <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-purple-50 border border-purple-200 px-2 py-0.5 text-[11px] font-black text-purple-700 select-none">
                                 <Gift className="size-3 text-purple-600" /> Regalo
+                              </span>
+                            ) : isCost ? (
+                              <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-amber-50 border border-amber-200 px-2 py-0.5 text-[11px] font-black text-amber-800 select-none">
+                                <Tag className="size-3 text-amber-600" /> Al costo
                               </span>
                             ) : null}
                           </td>
@@ -425,10 +433,10 @@ export default function SalesPage() {
                           <td
                             className={cn(
                               'px-6 py-4 text-right text-[16px] font-black',
-                              margin < 0 ? 'text-rose-600 font-black' : 'text-brand-700'
+                              margin < 0 ? 'text-rose-600 font-black' : isCost ? 'text-ink-600 font-bold' : 'text-brand-700'
                             )}
                           >
-                            {formatMoney(margin)}
+                            {isCost ? '$ 0' : formatMoney(margin)}
                           </td>
                           <td className="px-4 py-4 text-center text-ink-600">
                             <ChevronDown className={cn('size-5 transition-transform inline-block', isExpanded && 'rotate-180')} />
@@ -441,11 +449,15 @@ export default function SalesPage() {
                               <div className="rounded-2xl bg-white p-5 border border-ink-950/8 space-y-4">
                                 <div className="flex items-center justify-between">
                                   <p className="text-[13.5px] font-black uppercase tracking-wider text-ink-700">
-                                    Detalle del pedido {isGift ? '(Cortesía / Regalo)' : ''}
+                                    Detalle del pedido {isGift ? '(Cortesía / Regalo)' : isCost ? '(Venta al costo)' : ''}
                                   </p>
                                   {isGift ? (
                                     <span className="text-xs font-bold text-purple-700 bg-purple-50 border border-purple-200 rounded-full px-2.5 py-0.5">
                                       🎁 Pedido regalado · Cobrado $ 0
+                                    </span>
+                                  ) : isCost ? (
+                                    <span className="text-xs font-bold text-amber-800 bg-amber-50 border border-amber-200 rounded-full px-2.5 py-0.5">
+                                      🏷️ Venta al costo · Margen comercial neutral ($ 0)
                                     </span>
                                   ) : null}
                                 </div>
@@ -456,7 +468,7 @@ export default function SalesPage() {
                                       <div className="flex gap-4">
                                         <span className="text-ink-700">Costo: {formatMoney(item.costTotalCents ?? ((item.unitCostCents ?? 0) * item.quantity))}</span>
                                         <span className="text-ink-950 font-black">
-                                          {isGift ? '$ 0 (Regalo)' : `Venta: ${formatMoney(item.subtotalCents)}`}
+                                          {isGift ? '$ 0 (Regalo)' : isCost ? `Costo: ${formatMoney(item.subtotalCents)}` : `Venta: ${formatMoney(item.subtotalCents)}`}
                                         </span>
                                       </div>
                                     </div>
@@ -464,21 +476,23 @@ export default function SalesPage() {
                                 </div>
                                 <div className="mt-3 flex flex-wrap gap-4 border-t border-ink-950/8 pt-3 text-[14px]">
                                   <span className="font-bold text-ink-800">
-                                    Medio: {isGift ? '🎁 Regalo / Cortesía ($ 0 cobrado)' : order.paymentMethod === 'cash' ? 'Efectivo' : 'Transferencia'}
+                                    Medio: {isGift ? '🎁 Regalo / Cortesía ($ 0 cobrado)' : isCost ? `🏷️ Venta al costo (${order.paymentMethod === 'cash' ? 'Efectivo' : 'Transferencia'})` : order.paymentMethod === 'cash' ? 'Efectivo' : 'Transferencia'}
                                   </span>
                                   <span className="font-bold text-ink-800">Costo mercadería: {formatMoney(order.costTotalCents ?? 0)}</span>
-                                  {!isGift ? (
+                                  {!isGift && !isCost ? (
                                     <span className="font-bold text-ink-800">Impuestos: {formatMoney(order.taxAmountCents ?? 0)}</span>
                                   ) : null}
                                   <span
                                     className={cn(
                                       'font-black',
-                                      margin < 0 ? 'text-rose-600' : 'text-brand-700'
+                                      margin < 0 ? 'text-rose-600' : isCost ? 'text-ink-700' : 'text-brand-700'
                                     )}
                                   >
                                     {isGift
                                       ? `Pérdida neta por regalo / cortesía: ${formatMoney(margin)}`
-                                      : `Margen después de mercadería e impuestos: ${formatMoney(margin)}`}
+                                      : isCost
+                                        ? `Margen comercial: $ 0 (Venta al costo · Ganancia neutral)`
+                                        : `Margen después de mercadería e impuestos: ${formatMoney(margin)}`}
                                   </span>
                                 </div>
                               </div>
@@ -684,6 +698,16 @@ export default function SalesPage() {
                 <p className="text-[12px] text-purple-800/90 pt-3">
                   ℹ️ Este desglose asegura que la ganancia neta no esté sobreestimada ni se mezclen ventas comerciales cobradas con atenciones o regalos familiares.
                 </p>
+              </div>
+            ) : null}
+
+            {analyticsQuery.data.costSaleOrders && analyticsQuery.data.costSaleOrders > 0 ? (
+              <div className="rounded-2xl border border-amber-200 bg-amber-50/75 p-4 text-amber-950 shadow-sm flex items-center gap-3">
+                <Tag className="size-5 text-amber-700 shrink-0" />
+                <div className="text-sm font-semibold text-amber-900">
+                  <span>Se registraron <strong>{analyticsQuery.data.costSaleOrders} {analyticsQuery.data.costSaleOrders === 1 ? 'venta al costo' : 'ventas al costo'}</strong> ({formatMoney(analyticsQuery.data.costSaleRevenueCents ?? 0)} facturados al costo de reposición).</span>
+                  <span className="block text-xs text-amber-800 mt-0.5">Su aporte a la ganancia es neutral ($ 0), ya que el cobro iguala exactamente el costo de compra sin generar ganancia ni pérdida.</span>
+                </div>
               </div>
             ) : null}
 

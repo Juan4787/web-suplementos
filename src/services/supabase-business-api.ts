@@ -380,6 +380,8 @@ export const supabaseBusinessApi: BusinessApi = {
       units: res?.units ?? 0,
       giftOrders: res?.giftOrders ?? 0,
       giftCostCents: res?.giftCostCents ?? 0,
+      costSaleOrders: res?.costSaleOrders ?? 0,
+      costSaleRevenueCents: res?.costSaleRevenueCents ?? 0,
       series: res?.series ?? [],
       topProducts: res?.topProducts ?? []
     };

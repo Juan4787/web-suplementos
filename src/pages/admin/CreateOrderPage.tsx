@@ -16,6 +16,7 @@ import {
   Search,
   ShoppingBag,
   Store,
+  Tag,
   Trash2,
   Truck
 } from 'lucide-react';
@@ -35,6 +36,7 @@ import type {
   ImportOrderInput,
   Order,
   PaymentMethod,
+  SaleType,
   ShippingType
 } from '@/domain/types';
 import { buildWhatsAppProtocol, createOrderFingerprint } from '@/domain/whatsapp';
@@ -78,6 +80,7 @@ export default function CreateOrderPage() {
   const [address, setAddress] = useState('');
   const [addressNumber, setAddressNumber] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
+  const [saleType, setSaleType] = useState<SaleType>('retail');
 
   // Estado de finalización y errores
   const protocolDraft = useRef<{ orderId: string; fingerprint: string } | null>(null);
@@ -138,6 +141,21 @@ export default function CreateOrderPage() {
     return requiresIncoming ? 'waiting_incoming' : 'ready';
   }, [items]);
 
+  const handleSaleTypeChange = (nextType: SaleType) => {
+    setSaleType(nextType);
+    setItems((current) =>
+      current.map((item) => {
+        const product = products.find((p) => p.id === item.productId);
+        const cost = product?.costCents ?? (product as any)?.currentCostCents ?? item.unitPriceCents;
+        const unitPriceCents = nextType === 'cost' ? cost : (product?.priceCents ?? item.unitPriceCents);
+        return {
+          ...item,
+          unitPriceCents
+        };
+      })
+    );
+  };
+
   // Agregar producto al pedido
   const handleAddProduct = (product: AdminProduct) => {
     setValidationError(null);
@@ -157,6 +175,8 @@ export default function CreateOrderPage() {
           i.productId === product.id ? { ...i, quantity: i.quantity + 1 } : i
         );
       }
+      const cost = product.costCents ?? (product as any)?.currentCostCents ?? product.priceCents;
+      const unitPriceCents = saleType === 'cost' ? cost : product.priceCents;
       const newItem: SelectedItem = {
         productId: product.id,
         sku: product.sku,
@@ -164,7 +184,7 @@ export default function CreateOrderPage() {
         name: product.name,
         presentation: product.presentation,
         imageUrl: product.imageUrl,
-        unitPriceCents: product.priceCents,
+        unitPriceCents,
         quantity: 1,
         physAvail,
         incomingAvail,
@@ -288,9 +308,12 @@ export default function CreateOrderPage() {
     const protocol = buildWhatsAppProtocol(checkoutData, lines, settings, previousId);
     protocolDraft.current = { fingerprint, orderId: protocol.orderId };
 
+    const isCost = saleType === 'cost' && paymentMethod !== 'gift';
     const payload: ImportOrderInput = {
       ...checkoutData,
       lines,
+      saleType: paymentMethod === 'gift' ? 'gift' : saleType,
+      isCostSale: isCost,
       shippingFeeCents: totals.shipping,
       quotedSubtotalCents: totals.subtotal,
       quotedTotalCents: totals.total,
@@ -313,6 +336,7 @@ export default function CreateOrderPage() {
     setDeliveryMethod('pickup');
     setShippingType('standard');
     setPaymentMethod('cash');
+    setSaleType('retail');
     setValidationError(null);
   };
 
@@ -391,6 +415,16 @@ export default function CreateOrderPage() {
                   </span>
                 </div>
               ) : null}
+              <div className="flex justify-between font-medium">
+                <span className="text-ink-600">Modalidad:</span>
+                <span className="font-bold text-ink-950">
+                  {createdOrder.saleType === 'cost' || createdOrder.isCostSale
+                    ? 'Venta al costo (Margen $ 0)'
+                    : createdOrder.paymentMethod === 'gift' || createdOrder.saleType === 'gift'
+                      ? 'Regalo / Cortesía ($ 0)'
+                      : 'Venta regular (PVP)'}
+                </span>
+              </div>
               <div className="flex justify-between font-medium">
                 <span className="text-ink-600">Medio de pago:</span>
                 <span className="font-bold text-ink-950">
@@ -526,9 +560,16 @@ export default function CreateOrderPage() {
                         </div>
 
                         <div className="flex items-center justify-between gap-3 border-t border-ink-950/6 pt-2 sm:border-t-0 sm:pt-0 sm:justify-end shrink-0">
-                          <span className="font-display font-black text-sm text-ink-950">
-                            {formatMoney(p.priceCents)}
-                          </span>
+                          <div className="text-right">
+                            <span className="font-display font-black text-sm text-ink-950 block">
+                              {formatMoney(saleType === 'cost' ? (p.costCents ?? (p as any).currentCostCents ?? p.priceCents) : p.priceCents)}
+                            </span>
+                            {saleType === 'cost' ? (
+                              <span className="text-[10px] font-black text-amber-800 uppercase tracking-wider block">
+                                al costo
+                              </span>
+                            ) : null}
+                          </div>
                           <Button
                             size="sm"
                             variant={inCart ? 'secondary' : 'primary'}
@@ -820,10 +861,54 @@ export default function CreateOrderPage() {
               ) : null}
             </section>
 
+            {/* Modalidad de Venta */}
+            <section className="rounded-2xl sm:rounded-3xl border border-ink-950/8 bg-white p-4 sm:p-6 shadow-sm min-w-0">
+              <h2 className="font-display text-lg font-black text-ink-950 mb-2">
+                5. Modalidad de venta
+              </h2>
+              <p className="text-xs text-ink-600 font-semibold mb-4">
+                Elegí si la venta se realiza a precio de lista o a precio de costo de reposición.
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => handleSaleTypeChange('retail')}
+                  className={cn(
+                    'flex items-center gap-3 p-3.5 rounded-2xl border text-left transition',
+                    saleType === 'retail'
+                      ? 'border-brand-600 bg-brand-50/70 text-brand-950 ring-2 ring-brand-500/20'
+                      : 'border-ink-950/12 bg-white text-ink-700 hover:border-ink-950/25'
+                  )}
+                >
+                  <ShoppingBag className="size-5 text-brand-600 shrink-0" />
+                  <div className="min-w-0">
+                    <span className="block text-sm font-black">Venta PVP</span>
+                    <span className="text-[11px] text-ink-500">Precios de lista</span>
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSaleTypeChange('cost')}
+                  className={cn(
+                    'flex items-center gap-3 p-3.5 rounded-2xl border text-left transition',
+                    saleType === 'cost'
+                      ? 'border-amber-600 bg-amber-50/70 text-amber-950 ring-2 ring-amber-500/20'
+                      : 'border-ink-950/12 bg-white text-ink-700 hover:border-ink-950/25'
+                  )}
+                >
+                  <Tag className="size-5 text-amber-600 shrink-0" />
+                  <div className="min-w-0">
+                    <span className="block text-sm font-black">Venta al costo</span>
+                    <span className="text-[11px] text-amber-800">Margen $ 0 neutral</span>
+                  </div>
+                </button>
+              </div>
+            </section>
+
             {/* Medio de Pago */}
             <section className="rounded-2xl sm:rounded-3xl border border-ink-950/8 bg-white p-4 sm:p-6 shadow-sm min-w-0">
               <h2 className="font-display text-lg font-black text-ink-950 mb-4">
-                5. Medio de pago acordado
+                6. Medio de pago acordado
               </h2>
 
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -925,6 +1010,15 @@ export default function CreateOrderPage() {
                   {formatMoney(totals.total)}
                 </span>
               </div>
+
+              {saleType === 'cost' && paymentMethod !== 'gift' ? (
+                <div className="mb-4 rounded-xl bg-amber-50 p-3 border border-amber-200/60 text-xs font-semibold text-amber-900 flex items-start gap-2">
+                  <Tag className="size-4 shrink-0 text-amber-600 mt-0.5" />
+                  <span>
+                    Venta al costo activa: El cliente abona el valor de reposición de la mercadería ({formatMoney(totals.subtotal)}). El margen comercial registrado en Ventas será neutral (ganancia = $ 0).
+                  </span>
+                </div>
+              ) : null}
 
               {paymentMethod === 'gift' ? (
                 <div className="mb-4 rounded-xl bg-purple-50 p-3 border border-purple-200/60 text-xs font-semibold text-purple-900 flex items-start gap-2">

@@ -195,9 +195,16 @@ DCE085E3`;
         await db.connect();
         await db.query('begin read only');
 
-        // Migraciones (42 incluyendo soporte de regalos y pérdida contable)
+        // Migraciones (43 incluyendo venta al costo y soporte de regalos)
         const migrationsRes = await db.query('select count(*) as count from supabase_migrations.schema_migrations');
-        expect(Number(migrationsRes.rows[0].count)).toBe(42);
+        expect(Number(migrationsRes.rows[0].count)).toBe(43);
+
+        // Columna sale_type en orders
+        const saleTypeRes = await db.query(`
+          select column_name from information_schema.columns 
+          where table_schema = 'public' and table_name = 'orders' and column_name = 'sale_type'
+        `);
+        expect(saleTypeRes.rows.length).toBe(1);
 
         // Enums de regalo / cortesía presentes en base de datos
         const enumStateRes = await db.query(`
