@@ -603,11 +603,22 @@ export const demoBusinessApi: BusinessApi = {
   async transitionOrder(orderId, action) {
     const order = state.orders.find((candidate) => candidate.id === orderId);
     if (!order) throw new AppError('business', 'No encontramos el pedido.');
-    if (!availableOrderActions(order).includes(action)) {
+
+    if (action === 'mark_gifted') {
+      if (order.paymentState === 'gifted') {
+        return latency(order);
+      }
+      if (order.orderState === 'cancelled' || order.paymentState !== 'pending') {
+        throw new AppError('business', 'INVALID_TRANSITION', {
+          nextAction: 'Solo se pueden regalar pedidos con cobro pendiente que no hayan sido pagados ni cancelados.'
+        });
+      }
+    } else if (!availableOrderActions(order).includes(action)) {
       throw new AppError('business', 'Ese paso ya no está disponible para el pedido.', {
         nextAction: 'Actualizá la lista para ver su estado actual.'
       });
     }
+
     const now = new Date().toISOString();
     if (action === 'mark_paid') {
       order.paymentState = 'paid';
@@ -633,6 +644,8 @@ export const demoBusinessApi: BusinessApi = {
       }
     }
     if (action === 'mark_gifted') {
+
+      const wasPendingFulfillment = order.fulfillmentState === 'pending';
       order.paymentState = 'gifted';
       order.paymentMethod = 'gift';
       order.fulfillmentState = 'delivered';
@@ -645,25 +658,27 @@ export const demoBusinessApi: BusinessApi = {
       order.paidAt = now;
       order.fulfilledAt = now;
 
-      for (const item of order.items) {
-        const product = state.products.find((candidate) => candidate.id === item.productId)!;
-        if (product) {
-          product.onHand -= item.quantity;
-          product.reserved = Math.max(0, product.reserved - item.quantity);
-          refreshProductAvailability(product);
-          state.movements.unshift({
-            id: nextUuid(),
-            productId: product.id,
-            productName: product.name,
-            kind: 'adjustment',
-            physicalDelta: -item.quantity,
-            reservedDelta: -item.quantity,
-            reason: `Pedido #${order.number} regalado / cortesía`,
-            orderId: order.id,
-            purchaseId: null,
-            createdAt: now,
-            createdByName: demoStaff.displayName
-          });
+      if (wasPendingFulfillment) {
+        for (const item of order.items) {
+          const product = state.products.find((candidate) => candidate.id === item.productId)!;
+          if (product) {
+            product.onHand -= item.quantity;
+            product.reserved = Math.max(0, product.reserved - item.quantity);
+            refreshProductAvailability(product);
+            state.movements.unshift({
+              id: nextUuid(),
+              productId: product.id,
+              productName: product.name,
+              kind: 'adjustment',
+              physicalDelta: -item.quantity,
+              reservedDelta: -item.quantity,
+              reason: `Pedido #${order.number} regalado / cortesía`,
+              orderId: order.id,
+              purchaseId: null,
+              createdAt: now,
+              createdByName: demoStaff.displayName
+            });
+          }
         }
       }
     }
@@ -1101,7 +1116,7 @@ export const demoBusinessApi: BusinessApi = {
       taxCents,
       estimatedMarginCents: revenueCents - costCents - taxCents,
       averageTicketCents: paidOrders.length ? Math.round(revenueCents / paidOrders.length) : 0,
-      orders: orders.length,
+      orders: paidOrders.length,
       units,
       giftOrders,
       giftCostCents,

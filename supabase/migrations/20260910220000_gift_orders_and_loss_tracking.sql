@@ -122,7 +122,13 @@ begin
 
   elsif p_action = 'mark_gifted' then
     perform private.require_owner();
-    if v_order.order_state = 'cancelled' or v_order.payment_state = 'refunded' then
+    -- Idempotencia: si ya está regalado, devolver el payload sin volver a descontar stock
+    if v_order.payment_state = 'gifted' then
+      return private.order_payload(p_order_id, private.is_owner());
+    end if;
+
+    -- Solo se pueden regalar pedidos en estado pendiente de cobro no cancelados
+    if v_order.order_state = 'cancelled' or v_order.payment_state <> 'pending' then
       raise exception using errcode = 'P0001', message = 'INVALID_TRANSITION';
     end if;
 
