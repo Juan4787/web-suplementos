@@ -75,15 +75,22 @@ async function main() {
   // 2. Revisar si alguna función PL/pgSQL aún intenta escribir a line_subtotal_cents
   await check(
     'Búsqueda de escrituras ilegales a line_subtotal_cents en rutinas SQL',
-    `SELECT routine_name 
+    `SELECT routine_name, routine_definition 
      FROM information_schema.routines 
-     WHERE specific_schema IN ('public', 'private') 
-       AND routine_definition ILIKE '%line_subtotal_cents%'
-       AND (routine_definition ILIKE '%insert into%line_subtotal_cents%' 
-            OR routine_definition ILIKE '%set%line_subtotal_cents%=%')`,
+     WHERE specific_schema IN ('public', 'private')`,
     (rows) => {
-      if (rows.length === 0) return { ok: true, detail: '0 funciones intentando escribir en columna generada' };
-      return { ok: false, detail: `Funciones infractoras: ${rows.map(r => r.routine_name).join(', ')}` };
+      const violators = [];
+      for (const r of rows) {
+        const lines = (r.routine_definition || '').split('\n');
+        for (const line of lines) {
+          const clean = line.replace(/--.*$/, '').trim();
+          if (/insert\s+into\s+[^;]*line_subtotal_cents/i.test(clean) || /set\s+[^;]*line_subtotal_cents\s*=/i.test(clean)) {
+            violators.push(`${r.routine_name} (línea: "${clean}")`);
+          }
+        }
+      }
+      if (violators.length === 0) return { ok: true, detail: '0 funciones intentando escribir en columna generada' };
+      return { ok: false, detail: `Funciones infractoras: ${violators.join(', ')}` };
     }
   );
 

@@ -195,9 +195,9 @@ DCE085E3`;
         await db.connect();
         await db.query('begin read only');
 
-        // Migraciones (44 incluyendo corrección de columna generada, venta al costo y soporte de regalos)
+        // Migraciones (45 incluyendo corrección de enum gift y columna generada)
         const migrationsRes = await db.query('select count(*) as count from supabase_migrations.schema_migrations');
-        expect(Number(migrationsRes.rows[0].count)).toBe(44);
+        expect(Number(migrationsRes.rows[0].count)).toBe(45);
 
         // Columna sale_type en orders
         const saleTypeRes = await db.query(`
