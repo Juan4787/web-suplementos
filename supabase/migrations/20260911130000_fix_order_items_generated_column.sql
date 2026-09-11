@@ -1,112 +1,31 @@
--- Migration: 20260911120000_at_cost_sales.sql
--- Description: Soporte para ventas al costo con ganancia neutral ($0), preservando medio de pago real y trazabilidad en analítica comercial.
+-- Corrección de columna generada line_subtotal_cents en confirm_imported_order y transition_order
+-- line_subtotal_cents es GENERATED ALWAYS AS (quantity::bigint * unit_price_cents) STORED
+-- Por lo tanto, no debe ser incluida en sentencias INSERT ni UPDATE explícitas.
 
--- 1. Agregar columna sale_type a orders
-alter table public.orders
-add column if not exists sale_type text not null default 'retail';
-
-alter table public.orders
-drop constraint if exists orders_sale_type_check;
-
-alter table public.orders
-add constraint orders_sale_type_check check (sale_type in ('retail', 'cost', 'gift'));
-
--- Backfill de órdenes existentes
-update public.orders
-set sale_type = 'gift'
-where (payment_state = 'gifted' or payment_method = 'gift') and sale_type <> 'gift';
-
-create index if not exists idx_orders_sale_type on public.orders(sale_type);
-
--- 2. Actualizar private.order_payload para incluir saleType e isCostSale
-create or replace function private.order_payload(p_order_id uuid, p_include_financials boolean)
-returns jsonb
-language sql stable security definer set search_path = public, pg_temp as $$
-  select jsonb_build_object(
-    'id', o.id,
-    'number', o.order_number,
-    'customerId', o.customer_id,
-    'customerName', o.customer_name_snapshot,
-    'customerPhone', o.customer_phone_snapshot,
-    'paymentMethod', o.payment_method,
-    'deliveryMethod', o.delivery_method,
-    'shippingType', o.shipping_type,
-    'shippingAddress', o.shipping_address,
-    'orderState', o.order_state,
-    'paymentState', o.payment_state,
-    'preparationState', o.preparation_state,
-    'fulfillmentState', o.fulfillment_state,
-    'saleType', coalesce(o.sale_type, 'retail'),
-    'isCostSale', (coalesce(o.sale_type, 'retail') = 'cost'),
-    'stockReadiness', case
-      when exists (
-        select 1 from public.stock_reservations sr
-        where sr.order_id = o.id and sr.state = 'active' and sr.source_type = 'uncovered'
-      ) then 'uncovered'
-      when exists (
-        select 1 from public.stock_reservations sr
-        where sr.order_id = o.id and sr.state = 'active' and sr.source_type = 'incoming'
-      ) then 'waiting_incoming'
-      else 'ready'
-    end,
-    'expectedArrivalAt', (
-      select max(pu.expected_at)
-      from public.stock_reservations sr
-      join public.purchase_items pi on pi.id = sr.purchase_item_id
-      join public.purchases pu on pu.id = pi.purchase_id
-      where sr.order_id = o.id and sr.state = 'active' and sr.source_type = 'incoming'
-    ),
-    'subtotalCents', o.subtotal_cents,
-    'shippingFeeCents', o.shipping_fee_cents,
-    'totalCents', o.total_cents,
-    'taxRateBasisPoints', case when p_include_financials then o.tax_rate_basis_points else null end,
-    'taxAmountCents', case when p_include_financials then o.tax_amount_cents else null end,
-    'costTotalCents', case when p_include_financials then o.cost_total_cents else null end,
-    'createdAt', o.created_at,
-    'confirmedAt', o.confirmed_at,
-    'paidAt', o.paid_at,
-    'fulfilledAt', o.fulfilled_at,
-    'items', coalesce((
-      select jsonb_agg(jsonb_build_object(
-        'id', oi.id,
-        'productId', oi.product_id,
-        'sku', oi.sku_snapshot,
-        'productName', oi.product_name_snapshot,
-        'presentation', oi.presentation_snapshot,
-        'quantity', oi.quantity,
-        'unitPriceCents', oi.unit_price_cents,
-        'unitCostCents', case when p_include_financials then oi.unit_cost_cents else null end,
-        'costTotalCents', case when p_include_financials then oi.cost_total_cents else null end,
-        'subtotalCents', oi.line_subtotal_cents
-      ) order by oi.created_at, oi.id)
-      from public.order_items oi
-      where oi.order_id = o.id
-    ), '[]'::jsonb)
-  )
-  from public.orders o
-  where o.id = p_order_id;
-$$;
-
--- 3. Actualizar transition_order para incorporar acción mark_at_cost
+-- 1. Actualizar transition_order
 create or replace function public.transition_order(p_order_id uuid, p_action text)
 returns jsonb
-language plpgsql security definer set search_path = public, pg_temp as $$
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
 declare
   v_order public.orders%rowtype;
   v_item record;
-  v_inventory_leaves boolean := false;
   v_new_fulfillment public.fulfillment_state;
+  v_inventory_leaves boolean := false;
   v_res record;
+  v_balance record;
+  v_loss_reason text;
+  v_cost_total bigint := 0;
 begin
   perform private.require_active_user();
 
-  -- ANTI-DEADLOCK NIVEL 1: Bloqueo Canónico Unificado
-  perform 1
-  from public.products p
+  -- Lock jerárquico determinista
+  perform 1 from public.products p
+  join public.order_items oi on oi.product_id = p.id
   join public.stock_balances sb on sb.product_id = p.id
-  where p.id in (
-    select oi.product_id from public.order_items oi where oi.order_id = p_order_id
-  )
+  where oi.order_id = p_order_id
   order by p.id asc
   for update of p, sb;
 
@@ -138,7 +57,7 @@ begin
       raise exception using errcode = 'P0001', message = 'INVALID_TRANSITION';
     end if;
 
-    -- Recalcular líneas con su costo unitario
+    -- Recalcular líneas con su costo unitario (line_subtotal_cents se calcula automáticamente)
     update public.order_items
     set unit_price_cents = coalesce(unit_cost_cents, 0)
     where order_id = p_order_id;
@@ -271,91 +190,91 @@ begin
         set state = 'consumed', resolved_at = now()
         where order_id = p_order_id and product_id = v_item.product_id and state = 'active' and source_type = 'physical';
 
+        v_loss_reason := 'Salida por regalo/cortesía comercial (Pedido #' || v_order.order_number || ')';
         insert into public.stock_movements(
           product_id, product_name_snapshot, kind, physical_delta, reserved_delta, reason, order_id, created_by
         ) values (
           v_item.product_id,
           v_item.product_name_snapshot,
-          'adjustment',
+          'loss',
           -v_item.quantity,
           -v_item.quantity,
-          'Salida por regalo / cortesía (Pedido #' || v_order.order_number || ')',
+          v_loss_reason,
           p_order_id,
           auth.uid()
         );
       end loop;
+
+      update public.orders
+      set fulfillment_state = 'delivered',
+          preparation_state = 'ready',
+          fulfilled_at = now()
+      where id = p_order_id;
+    elsif v_order.fulfillment_state in ('shipped', 'delivered') then
+      update public.stock_movements
+      set kind = 'loss',
+          reason = 'Salida reclasificada a regalo/cortesía comercial (Pedido #' || v_order.order_number || ')'
+      where order_id = p_order_id and kind = 'sale';
     end if;
 
     update public.orders
     set payment_state = 'gifted',
+        payment_method = 'gift',
         sale_type = 'gift',
-        payment_method = case when payment_method in ('cash', 'transfer') and total_cents = 0 then 'gift'::public.payment_method else payment_method end,
-        fulfillment_state = 'delivered',
-        preparation_state = 'ready',
-        total_cents = 0,
         subtotal_cents = 0,
-        tax_amount_cents = 0,
         shipping_fee_cents = 0,
-        paid_at = coalesce(paid_at, now()),
-        fulfilled_at = coalesce(fulfilled_at, now())
+        total_cents = 0,
+        tax_amount_cents = 0,
+        paid_at = now()
     where id = p_order_id;
 
   elsif p_action = 'cancel' then
-    if v_order.fulfillment_state = 'delivered' then
-      raise exception using errcode = 'P0001', message = 'INVALID_TRANSITION';
+    if v_order.order_state = 'cancelled' then
+      return private.order_payload(p_order_id, private.is_owner());
     end if;
 
-    if v_order.fulfillment_state = 'shipped' then
-      for v_item in
-        select oi.product_id, oi.product_name_snapshot, oi.quantity
-        from public.order_items oi
-        where oi.order_id = p_order_id
-        order by oi.product_id
-      loop
+    if v_order.fulfillment_state in ('shipped', 'delivered') then
+      raise exception using errcode = 'P0001', message = 'CANNOT_CANCEL_SHIPPED_ORDER';
+    end if;
+
+    for v_res in
+      select * from public.stock_reservations
+      where order_id = p_order_id and state = 'active'
+      for update
+    loop
+      if v_res.source_type = 'physical' then
+        select * into v_balance from public.stock_balances where product_id = v_res.product_id for update;
         update public.stock_balances
-        set on_hand = on_hand + v_item.quantity
-        where product_id = v_item.product_id;
+        set reserved = reserved - v_res.quantity
+        where product_id = v_res.product_id;
 
         insert into public.stock_movements(
           product_id, product_name_snapshot, kind, physical_delta, reserved_delta, reason, order_id, created_by
         ) values (
-          v_item.product_id,
-          v_item.product_name_snapshot,
-          'return',
-          v_item.quantity,
+          v_res.product_id,
+          (select name from public.products where id = v_res.product_id),
+          'reservation',
           0,
-          'Reintegro de stock por pedido cancelado',
+          -v_res.quantity,
+          'Cancelación de reserva física por pedido cancelado',
           p_order_id,
           auth.uid()
         );
-      end loop;
-    elsif v_order.fulfillment_state = 'pending' then
-      for v_res in
-        select id, product_id, quantity, source_type
-        from public.stock_reservations
-        where order_id = p_order_id and state = 'active'
-        for update
-      loop
-        if v_res.source_type = 'physical' then
-          update public.stock_balances
-          set reserved = reserved - v_res.quantity
-          where product_id = v_res.product_id;
-        end if;
+      end if;
 
-        update public.stock_reservations
-        set state = 'released', resolved_at = now()
-        where id = v_res.id;
-      end loop;
-    end if;
+      update public.stock_reservations
+      set state = 'cancelled', resolved_at = now()
+      where id = v_res.id;
+    end loop;
 
     update public.orders
     set order_state = 'cancelled',
-        fulfillment_state = 'cancelled',
-        preparation_state = 'ready',
+        payment_state = case when payment_state = 'paid' then 'refunded'::public.payment_state else payment_state end,
         cancelled_at = now()
     where id = p_order_id;
+
   else
-    raise exception using errcode = 'P0001', message = 'UNKNOWN_ORDER_ACTION';
+    raise exception using errcode = 'P0001', message = 'INVALID_ACTION';
   end if;
 
   perform private.bump_revision();
@@ -363,7 +282,8 @@ begin
 end;
 $$;
 
--- 4. Actualizar confirm_imported_order para admitir saleType 'cost'
+
+-- 2. Actualizar confirm_imported_order
 create or replace function public.confirm_imported_order(p_order jsonb)
 returns jsonb
 language plpgsql
@@ -567,7 +487,7 @@ begin
     v_sale_type
   ) returning id into v_order_id;
 
-  -- Procesar Líneas
+  -- Procesar Líneas (sin insertar en line_subtotal_cents ya que es generada automáticamente)
   for v_line in
     select
       (line ->> 'productId')::uuid as product_id,
@@ -697,143 +617,5 @@ begin
 
   perform private.bump_revision();
   return private.order_payload(v_order_id, private.is_owner());
-end;
-$$;
-
--- 5. Actualizar get_sales_analytics para reportar ventas al costo con margen neutral ($0)
-create or replace function public.get_sales_analytics(p_from date, p_to date)
-returns jsonb
-language plpgsql
-stable
-security definer
-set search_path = public, pg_temp
-as $$
-declare
-  v_cutoff_day integer;
-  v_result jsonb;
-begin
-  perform private.require_owner();
-  if p_from is null or p_to is null or p_to < p_from or p_to - p_from > 3660 then
-    raise exception using errcode = 'P0001', message = 'INVALID_PERIOD';
-  end if;
-  if extract(day from p_from) = 1
-    and date_trunc('month', p_from) <> date_trunc('month', p_to)
-    and p_to < (date_trunc('month', p_to)::date + interval '1 month - 1 day')::date then
-    v_cutoff_day := extract(day from p_to)::integer;
-  else
-    v_cutoff_day := null;
-  end if;
-
-  with active_orders as materialized (
-    select
-      o.*,
-      (coalesce(o.paid_at, o.created_at) at time zone 'America/Argentina/Buenos_Aires')::date as local_effective_date
-    from public.orders o
-    where o.payment_state in ('paid', 'gifted')
-      and (coalesce(o.paid_at, o.created_at) at time zone 'America/Argentina/Buenos_Aires')::date between p_from and p_to
-      and (
-        v_cutoff_day is null
-        or extract(day from (coalesce(o.paid_at, o.created_at) at time zone 'America/Argentina/Buenos_Aires')::date) <= v_cutoff_day
-      )
-  ), summary as (
-    select
-      coalesce(sum(total_cents), 0)::bigint as revenue_cents,
-      coalesce(sum(cost_total_cents), 0)::bigint as cost_cents,
-      coalesce(sum(tax_amount_cents), 0)::bigint as tax_cents,
-      count(*) filter (where payment_state = 'paid' and coalesce(sale_type, 'retail') <> 'cost')::integer as paid_order_count,
-      count(*) filter (where payment_state = 'gifted' or coalesce(sale_type, 'retail') = 'gift')::integer as gift_order_count,
-      coalesce(sum(cost_total_cents) filter (where payment_state = 'gifted' or coalesce(sale_type, 'retail') = 'gift'), 0)::bigint as gift_cost_cents,
-      count(*) filter (where coalesce(sale_type, 'retail') = 'cost')::integer as cost_sale_order_count,
-      coalesce(sum(total_cents) filter (where coalesce(sale_type, 'retail') = 'cost'), 0)::bigint as cost_sale_revenue_cents,
-      count(*)::integer as total_order_count
-    from active_orders
-  ), unit_summary as (
-    select coalesce(sum(oi.quantity), 0)::integer as units
-    from active_orders ao
-    join public.order_items oi on oi.order_id = ao.id
-  ), ranked_products as (
-    select
-      oi.product_id,
-      oi.product_name_snapshot as name,
-      sum(oi.quantity)::integer as units,
-      sum(oi.line_subtotal_cents)::bigint as revenue_cents,
-      sum(oi.unit_cost_cents * oi.quantity)::bigint as cost_cents,
-      sum(
-        oi.line_subtotal_cents
-        - oi.unit_cost_cents * oi.quantity
-        - case
-            when ao.total_cents > 0
-              then round(ao.tax_amount_cents * oi.line_subtotal_cents::numeric / ao.total_cents)::bigint
-            else 0
-          end
-      )::bigint as estimated_margin_cents
-    from active_orders ao
-    join public.order_items oi on oi.order_id = ao.id
-    group by oi.product_id, oi.product_name_snapshot
-    order by units desc, revenue_cents desc, name
-    limit 10
-  ), top_products as (
-    select coalesce(jsonb_agg(jsonb_build_object(
-      'productId', product_id,
-      'name', name,
-      'units', units,
-      'revenueCents', revenue_cents,
-      'costCents', cost_cents,
-      'estimatedMarginCents', estimated_margin_cents
-    ) order by units desc, revenue_cents desc, name), '[]'::jsonb) as payload
-    from ranked_products
-  ), months as (
-    select generate_series(
-      date_trunc('month', p_from::timestamp),
-      date_trunc('month', p_to::timestamp),
-      interval '1 month'
-    )::date as month_start
-  ), series as (
-    select coalesce(jsonb_agg(jsonb_build_object(
-      'period', to_char(m.month_start, 'YYYY-MM'),
-      'revenueCents', coalesce(m_orders.revenue_cents, 0),
-      'adjustedRevenueCents', null,
-      'orderCount', coalesce(m_orders.order_count, 0),
-      'units', coalesce(m_orders.units, 0),
-      'ipcPublished', false
-    ) order by m.month_start), '[]'::jsonb) as payload
-    from months m
-    left join lateral (
-      select
-        sum(ao.total_cents)::bigint as revenue_cents,
-        count(*) filter (where ao.payment_state = 'paid' and coalesce(ao.sale_type, 'retail') <> 'cost')::integer as order_count,
-        sum(coalesce(u.units, 0))::integer as units
-      from active_orders ao
-      left join lateral (
-        select sum(oi.quantity)::integer as units
-        from public.order_items oi where oi.order_id = ao.id
-      ) u on true
-      where date_trunc('month', ao.local_effective_date) = m.month_start
-    ) m_orders on true
-  )
-  select jsonb_build_object(
-    'from', p_from,
-    'to', p_to,
-    'comparisonCutoffDay', v_cutoff_day,
-    'revenueCents', s.revenue_cents,
-    'costCents', s.cost_cents,
-    'taxCents', s.tax_cents,
-    'estimatedMarginCents', (s.revenue_cents - s.cost_cents - s.tax_cents),
-    'averageTicketCents', case when s.paid_order_count > 0 then round((s.revenue_cents - s.cost_sale_revenue_cents)::numeric / s.paid_order_count)::bigint else 0 end,
-    'orders', s.paid_order_count,
-    'giftOrders', s.gift_order_count,
-    'giftCostCents', s.gift_cost_cents,
-    'costSaleOrders', s.cost_sale_order_count,
-    'costSaleRevenueCents', s.cost_sale_revenue_cents,
-    'units', coalesce(u.units, 0),
-    'series', sr.payload,
-    'topProducts', tp.payload
-  ) into v_result
-  from summary s
-  cross join unit_summary u
-  cross join top_products tp
-  cross join series sr;
-
-  return v_result;
 end;
 $$;

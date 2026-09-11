@@ -79,7 +79,7 @@ describe('order actions state machine', () => {
       fulfillmentState: 'delivered'
     };
     const actions = availableOrderActions(order);
-    expect(actions).toEqual(['mark_paid', 'mark_gifted']);
+    expect(actions).toEqual(['mark_paid', 'mark_at_cost', 'mark_gifted']);
   });
 
   it('allows mark_delivered when shipping order has been shipped', () => {
