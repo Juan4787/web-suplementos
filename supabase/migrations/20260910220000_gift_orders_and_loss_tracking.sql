@@ -562,6 +562,7 @@ begin
     'paidOrdersMonth', v_paid_orders,
     'estimatedMarginMonthCents', v_margin,
     'recentOrders', v_recent_orders,
+    'priorityInventory', v_priority,
     'priorities', v_priority
   );
 end;

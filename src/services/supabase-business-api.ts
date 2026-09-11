@@ -206,7 +206,14 @@ export const supabaseBusinessApi: BusinessApi = {
     rpc<AvailabilityCheck>('check_cart_availability', { p_lines: lines }),
   quoteCartEta: (lines) =>
     rpc<QuoteCartEtaResult>('quote_cart_eta', { p_lines: lines }),
-  getDashboard: () => rpc<DashboardSummary>('get_dashboard_summary'),
+  getDashboard: async () => {
+    const data = await rpc<DashboardSummary & { priorities?: DashboardSummary['priorityInventory'] }>('get_dashboard_summary');
+    return {
+      ...data,
+      priorityInventory: data.priorityInventory ?? data.priorities ?? [],
+      recentOrders: data.recentOrders ?? []
+    };
+  },
   listAdminProducts: () => rpc<AdminProduct[]>('list_admin_products'),
   saveProduct: (input) => rpc<AdminProduct>('save_product', { p_product: input }),
   deleteProduct: async (productId) => {

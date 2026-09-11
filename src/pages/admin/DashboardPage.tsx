@@ -19,6 +19,7 @@ import { StatusChip } from '@/components/ui/StatusChip';
 import { formatMoney } from '@/domain/money';
 import { can } from '@/domain/permissions';
 import { formatUnits } from '@/domain/quantity';
+import type { InventoryItem, Order } from '@/domain/types';
 import { useAuth } from '@/features/auth/AuthProvider';
 import { cn } from '@/lib/cn';
 
@@ -36,6 +37,11 @@ export default function DashboardPage() {
     queryFn: (api) => api.getDashboard()
   });
   const financial = can(user, 'view_financials');
+  const recentOrders: Order[] = summaryQuery.data?.recentOrders ?? [];
+  const priorityInventory: InventoryItem[] =
+    summaryQuery.data?.priorityInventory ??
+    (summaryQuery.data as { priorities?: InventoryItem[] } | undefined)?.priorities ??
+    [];
 
   return (
     <div className="page-enter">
@@ -147,12 +153,12 @@ export default function DashboardPage() {
               </div>
 
               <div className="mt-5 divide-y divide-ink-950/8">
-                {summaryQuery.data.recentOrders.length === 0 ? (
+                {recentOrders.length === 0 ? (
                   <p className="py-6 text-center text-sm font-semibold text-ink-600">
                     No hay pedidos pendientes de acción. ¡Todo al día!
                   </p>
                 ) : (
-                  summaryQuery.data.recentOrders.map((order) => (
+                  recentOrders.map((order) => (
                     <article
                       key={order.id}
                       className="grid gap-3 py-3.5 first:pt-0 sm:grid-cols-[auto_1fr_auto] sm:items-center"
@@ -192,12 +198,12 @@ export default function DashboardPage() {
               </div>
 
               <div className="mt-5 space-y-3">
-                {summaryQuery.data.priorityInventory.length === 0 ? (
+                {priorityInventory.length === 0 ? (
                   <p className="py-6 text-center text-sm font-semibold text-ink-600">
                     Todos los productos cuentan con reposición cubierta o stock en orden.
                   </p>
                 ) : (
-                  summaryQuery.data.priorityInventory.map((item) => {
+                  priorityInventory.map((item) => {
                     const isIncoming = item.available <= 0 && item.incoming > 0;
                     return (
                       <article
