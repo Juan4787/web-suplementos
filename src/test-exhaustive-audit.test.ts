@@ -34,9 +34,10 @@ describe('Auditoría Exhaustiva de Todos los Cambios Recientes', () => {
       }
     ];
 
-    it('genera el mensaje comenzando exactamente con *PEDIDO DE TIENDA DE SUPLEMENTOS*', () => {
+    it('genera el mensaje comenzando exactamente con PEDIDO DE TIENDA DE SUPLEMENTOS (sin negrita)', () => {
       const protocol = buildWhatsAppProtocol(sampleCheckout, sampleLines, demoSettings);
-      expect(protocol.message.startsWith('*PEDIDO DE TIENDA DE SUPLEMENTOS*')).toBe(true);
+      expect(protocol.message.startsWith('PEDIDO DE TIENDA DE SUPLEMENTOS')).toBe(true);
+      expect(protocol.message).not.toContain('*');
       expect(protocol.orderId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
       expect(protocol.message.trim()).toMatch(/[0-9A-F]{8}$/);
     });
@@ -119,9 +120,9 @@ DCE085E3`;
       }
     ];
 
-    it('emite "*Envío*\\nA coordinar" en el mensaje cuando el costo es cero', () => {
+    it('emite "Envío\\nA coordinar" en el mensaje cuando el costo es cero', () => {
       const protocol = buildWhatsAppProtocol(sampleCheckout, sampleLines, demoSettings);
-      expect(protocol.message).toContain('*Envío*\nA coordinar');
+      expect(protocol.message).toContain('Envío\nA coordinar');
     });
 
     it('el parser interpreta "A coordinar" con shippingFeeCents = 0 sin discrepancias', () => {

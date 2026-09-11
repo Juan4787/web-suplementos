@@ -106,7 +106,7 @@ export default function ImportOrderPage() {
               {
                 cause: error,
                 nextAction:
-                  'Copiá el mensaje completo desde WhatsApp, desde "*PEDIDO DE TIENDA DE SUPLEMENTOS*" hasta el final.'
+                  'Copiá el mensaje completo desde WhatsApp, desde "PEDIDO DE TIENDA DE SUPLEMENTOS" hasta el final.'
               }
             )
       );
@@ -240,7 +240,7 @@ export default function ImportOrderPage() {
               <Textarea
                 id="order-message"
                 className="min-h-[18rem] font-mono text-sm leading-6"
-                placeholder="*PEDIDO DE TIENDA DE SUPLEMENTOS*&#10;&#10;*Código de pedido*&#10;...&#10;*Nombre*&#10;Juan Pérez&#10;..."
+                placeholder="PEDIDO DE TIENDA DE SUPLEMENTOS&#10;&#10;Código de pedido&#10;...&#10;Nombre&#10;Juan Pérez&#10;..."
                 value={message}
                 onChange={(event) => setMessage(event.target.value)}
               />

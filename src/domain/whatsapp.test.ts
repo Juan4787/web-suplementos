@@ -47,7 +47,8 @@ describe('WhatsApp order protocol', () => {
   });
   it('round-trips a generated order without guessing fields', () => {
     const protocol = buildWhatsAppProtocol(checkout, lines, settings);
-    expect(protocol.message.startsWith('*PEDIDO DE TIENDA DE SUPLEMENTOS*')).toBe(true);
+    expect(protocol.message.startsWith('PEDIDO DE TIENDA DE SUPLEMENTOS')).toBe(true);
+    expect(protocol.message).not.toContain('*');
     const parsed = parseWhatsAppProtocol(protocol.message);
 
     expect(parsed).toMatchObject({
@@ -159,7 +160,8 @@ F5C7B6B3`;
       expressShippingCents: 0
     };
     const protocol = buildWhatsAppProtocol(checkout, lines, zeroSettings);
-    expect(protocol.message).toContain('*Envío*\nA coordinar');
+    expect(protocol.message).toContain('Envío\nA coordinar');
+    expect(protocol.message).not.toContain('*');
     expect(protocol.shippingFeeCents).toBe(0);
     expect(protocol.totalCents).toBe(protocol.subtotalCents);
 
@@ -219,8 +221,8 @@ F5C7B6B3`;
   it('rejects an altered checksum or tampered prices', () => {
     const protocol = buildWhatsAppProtocol(checkout, lines, settings);
     const tamperedChecksum = protocol.message.replace(
-      /\*Código de control\*\n([0-9A-F]{8})/,
-      '*Código de control*\nDEADBEEF'
+      /Código de control\n([0-9A-F]{8})/,
+      'Código de control\nDEADBEEF'
     );
     expect(() => parseWhatsAppProtocol(tamperedChecksum)).toThrow('modificado');
 
@@ -330,5 +332,73 @@ DCE085E3`;
     const parsed = parseWhatsAppProtocol(standardSpaceMessage);
     expect(parsed.customerName).toBe('Juan Pablo');
     expect(parsed.lines).toHaveLength(2);
+  });
+
+  it('genera pedidos completamente en texto plano sin asteriscos (* *) en ningún campo ni encabezado', () => {
+    const protocol = buildWhatsAppProtocol(checkout, lines, settings);
+    expect(protocol.message).not.toContain('*');
+    expect(protocol.message.startsWith('PEDIDO DE TIENDA DE SUPLEMENTOS')).toBe(true);
+    expect(protocol.message).toContain('Código de pedido\n');
+    expect(protocol.message).toContain('Nombre\nJuan Pérez');
+    expect(protocol.message).toContain('Productos\n- [CREA300]');
+    expect(protocol.message).toContain('Subtotal\n');
+    expect(protocol.message).toContain('Medio de pago\nTransferencia');
+    expect(protocol.message).toContain('Entrega\nEnvío a domicilio');
+    expect(protocol.message).toContain('Tipo de envío\nExpress');
+    expect(protocol.message).toContain('Envío\n');
+    expect(protocol.message).toContain('Dirección\nAv. Siempre Viva');
+    expect(protocol.message).toContain('Altura\n742');
+    expect(protocol.message).toContain('Teléfono\n11 5555 5555');
+    expect(protocol.message).toContain('Total\n');
+    expect(protocol.message).toContain('Código de control\n');
+
+    // Debe parsearse de vuelta perfectamente
+    const parsed = parseWhatsAppProtocol(protocol.message);
+    expect(parsed.customerName).toBe('Juan Pérez');
+    expect(parsed.lines[0]?.sku).toBe('CREA300');
+  });
+
+  it('interpreta mensajes legados generados originalmente con asteriscos donde el portapapeles eliminó los asteriscos', () => {
+    const legacyMessageWithAsterisks = `*PEDIDO IMPULSO*
+
+*Código de pedido*
+95abcf6b-0560-43a0-9862-e8318be10672
+
+*Nombre*
+Juan Pablo
+
+*Productos*
+- [CREATINA] CREATINA | 300 GRS | 1 x $ 30.000 = $ 30.000
+- [OMEGA_3] OMEGA 3 | 120 CAPS | 1 x $ 102.000 = $ 102.000
+
+*Subtotal*
+$ 132.000
+
+*Medio de pago*
+Transferencia
+
+*Entrega*
+Retiro
+
+*Envío*
+$ 0
+
+*Total*
+$ 132.000
+
+*Código de control*
+DCE085E3`;
+
+    // Simulamos el dispositivo móvil/navegador que copia el texto plano barriendo los asteriscos de negrita
+    const strippedMessage = legacyMessageWithAsterisks.replace(/\*/g, '');
+
+    expect(strippedMessage).not.toContain('*');
+    const parsed = parseWhatsAppProtocol(strippedMessage);
+    expect(parsed.customerName).toBe('Juan Pablo');
+    expect(parsed.protocolOrderId).toBe('95abcf6b-0560-43a0-9862-e8318be10672');
+    expect(parsed.lines).toHaveLength(2);
+    expect(parsed.quotedTotalCents).toBe(13_200_000);
+    expect(parsed.deliveryMethod).toBe('pickup');
+    expect(parsed.paymentMethod).toBe('transfer');
   });
 });

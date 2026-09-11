@@ -2,9 +2,9 @@ import { z } from 'zod';
 import { formatMoney } from './money';
 import type { CartLine, CheckoutData, ImportOrderInput, StoreSettings } from './types';
 
-export const WHATSAPP_PROTOCOL_HEADER = '*PEDIDO DE TIENDA DE SUPLEMENTOS*';
+export const WHATSAPP_PROTOCOL_HEADER = 'PEDIDO DE TIENDA DE SUPLEMENTOS';
 
-const field = (label: string, value: string): string => `*${label}*\n${value}`;
+const field = (label: string, value: string): string => `${label}\n${value}`;
 
 /**
  * Checksum de integridad de texto no criptográfico (FNV-1a 32-bit).
@@ -60,7 +60,7 @@ const buildProtocolBody = (
   const sections = [
     WHATSAPP_PROTOCOL_HEADER,
     field('Nombre', checkout.customerName.trim()),
-    `*Productos*\n${lines.map(productLine).join('\n')}`,
+    `Productos\n${lines.map(productLine).join('\n')}`,
     field('Subtotal', formatMoney(subtotalCents)),
     field('Medio de pago', paymentLabel(checkout.paymentMethod)),
     field('Entrega', deliveryLabel(checkout.deliveryMethod))
@@ -161,25 +161,67 @@ const parseArs = (value: string): number => {
 };
 
 const VALID_HEADERS = new Set([
+  'PEDIDO DE TIENDA DE SUPLEMENTOS',
   '*PEDIDO DE TIENDA DE SUPLEMENTOS*',
+  'PEDIDO IMPULSO',
   '*PEDIDO IMPULSO*',
+  'PEDIDO IMPULSO · V1',
   '*PEDIDO IMPULSO · V1*'
 ]);
 
+const KNOWN_LEGACY_HEADERS = [
+  'PEDIDO DE TIENDA DE SUPLEMENTOS',
+  'PEDIDO IMPULSO',
+  'PEDIDO IMPULSO · V1',
+  'Código de pedido',
+  'Nombre',
+  'Productos',
+  'Subtotal',
+  'Medio de pago',
+  'Entrega',
+  'Tipo de envío',
+  'Envío',
+  'Dirección',
+  'Altura',
+  'Teléfono',
+  'Total'
+];
+
+/**
+ * Reconstruye asteriscos en encabezados conocidos para validar checksums
+ * de mensajes históricos generados con *negrita* que fueron copiados en
+ * dispositivos que limpian los asteriscos del portapapeles.
+ */
+const reconstructLegacyAsterisks = (body: string): string => {
+  let reconstructed = body;
+  for (const header of KNOWN_LEGACY_HEADERS) {
+    const regex = new RegExp(`(^|\\n)${header.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(\\n|$)`, 'g');
+    reconstructed = reconstructed.replace(regex, `$1*${header}*$2`);
+  }
+  return reconstructed;
+};
+
 const splitSections = (message: string): Map<string, string> => {
   const chunks = normalizeProtocolText(message).split(/\n\n+/);
-  const header = chunks[0] ?? '';
-  if (!VALID_HEADERS.has(header)) {
+  const rawHeader = chunks[0] ?? '';
+  const cleanHeader = rawHeader.replace(/^\*+|\*+$/g, '').trim();
+  if (!VALID_HEADERS.has(cleanHeader) && !VALID_HEADERS.has(rawHeader)) {
     throw new Error('Encabezado inválido.');
   }
   const sections = new Map<string, string>();
-  sections.set('Encabezado', header);
+  sections.set('Encabezado', rawHeader);
   for (const chunk of chunks.slice(1)) {
-    const match = chunk.match(/^\*([^*]+)\*\n([\s\S]*)$/);
-    if (!match?.[1] || match[2] === undefined || sections.has(match[1])) {
+    const newlineIndex = chunk.indexOf('\n');
+    if (newlineIndex === -1) {
       throw new Error('Sección inválida.');
     }
-    sections.set(match[1], match[2].trim());
+    const rawLabel = chunk.slice(0, newlineIndex).trim();
+    const content = chunk.slice(newlineIndex + 1).trim();
+    const label = rawLabel.replace(/^\*+|\*+$/g, '').trim();
+    if (!label || sections.has(label)) {
+      throw new Error('Sección inválida.');
+    }
+    sections.set(label, content);
   }
   return sections;
 };
@@ -222,12 +264,42 @@ export type ParsedWhatsAppOrder = Omit<ImportOrderInput, 'lines'> & {
 
 export const parseWhatsAppProtocol = (message: string): ParsedWhatsAppOrder => {
   const normalized = normalizeProtocolText(message);
-  const checksumMarker = '\n\n*Código de control*\n';
-  const checksumIndex = normalized.lastIndexOf(checksumMarker);
+
+  // Detectar marcador del código de control (sin asteriscos o legado con asteriscos)
+  let checksumIndex = normalized.lastIndexOf('\n\nCódigo de control\n');
+  let markerLength = '\n\nCódigo de control\n'.length;
+  if (checksumIndex < 0) {
+    checksumIndex = normalized.lastIndexOf('\n\n*Código de control*\n');
+    markerLength = '\n\n*Código de control*\n'.length;
+  }
+  if (checksumIndex < 0) {
+    const match = normalized.match(/\n\n\*?\s*Código de control\s*\*?\n([0-9A-Fa-f]{8})\s*$/);
+    if (match && match.index !== undefined && match[1]) {
+      checksumIndex = match.index;
+      markerLength = match[0].length - match[1].length;
+    }
+  }
   if (checksumIndex < 0) throw new Error('Falta el código de control.');
+
   const body = normalized.slice(0, checksumIndex);
-  const suppliedChecksum = normalized.slice(checksumIndex + checksumMarker.length).trim();
-  if (!/^[0-9A-F]{8}$/.test(suppliedChecksum) || fnv1a(body) !== suppliedChecksum) {
+  const suppliedChecksum = normalized.slice(checksumIndex + markerLength).trim().toUpperCase();
+
+  if (!/^[0-9A-F]{8}$/.test(suppliedChecksum)) {
+    throw new Error('El mensaje fue modificado o está incompleto.');
+  }
+
+  // Verificación primaria de integridad
+  let isValid = fnv1a(body) === suppliedChecksum;
+
+  // Fallback de retrocompatibilidad: mensajes legados generados con asteriscos pero copiados en clientes que los barren
+  if (!isValid) {
+    const legacyBody = reconstructLegacyAsterisks(body);
+    if (fnv1a(legacyBody) === suppliedChecksum) {
+      isValid = true;
+    }
+  }
+
+  if (!isValid) {
     throw new Error('El mensaje fue modificado o está incompleto.');
   }
 
