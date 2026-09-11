@@ -196,10 +196,20 @@ const invokeAi = async (
 
 export const supabaseBusinessApi: BusinessApi = {
   getSettings: () => rpc<StoreSettings>('get_public_store_settings'),
-  listCustomerOrders: (customerId, page = 1, pageSize = 20) =>
-    rpc<Page<Order>>('list_customer_orders', { p_customer_id: customerId, p_page: page, p_page_size: pageSize }),
+  listCustomerOrders: async (customerId, page = 1, pageSize = 20) => {
+    const data = await rpc<Page<Order>>('list_customer_orders', { p_customer_id: customerId, p_page: page, p_page_size: pageSize });
+    return {
+      page: data?.page ?? 1,
+      pageSize: data?.pageSize ?? pageSize,
+      total: data?.total ?? 0,
+      items: (data?.items ?? []).map((o) => ({ ...o, items: o.items ?? [] }))
+    };
+  },
   updateSettings: (settings) => rpc<StoreSettings>('update_store_settings', { p_settings: settings }),
-  listStorefrontProducts: () => rpc<StorefrontProduct[]>('get_storefront_products'),
+  listStorefrontProducts: async () => {
+    const data = await rpc<StorefrontProduct[]>('get_storefront_products');
+    return data ?? [];
+  },
   getStorefrontProduct: (slug) =>
     rpc<StorefrontProduct | null>('get_storefront_product', { p_slug: slug }),
   validateAvailability: (lines) =>
@@ -211,10 +221,13 @@ export const supabaseBusinessApi: BusinessApi = {
     return {
       ...data,
       priorityInventory: data.priorityInventory ?? data.priorities ?? [],
-      recentOrders: data.recentOrders ?? []
+      recentOrders: (data.recentOrders ?? []).map((o) => ({ ...o, items: o.items ?? [] }))
     };
   },
-  listAdminProducts: () => rpc<AdminProduct[]>('list_admin_products'),
+  listAdminProducts: async () => {
+    const data = await rpc<AdminProduct[]>('list_admin_products');
+    return data ?? [];
+  },
   saveProduct: (input) => rpc<AdminProduct>('save_product', { p_product: input }),
   deleteProduct: async (productId) => {
     await rpc('delete_product', { p_product_id: productId });
@@ -226,7 +239,10 @@ export const supabaseBusinessApi: BusinessApi = {
     if (!match) throw new AppError('business', 'No se pudo verificar la actualización del producto.');
     return match;
   },
-  listInventory: () => rpc('list_inventory_status'),
+  listInventory: async () => {
+    const data = await rpc<DashboardSummary['priorityInventory']>('list_inventory_status');
+    return data ?? [];
+  },
   adjustStock: async (productId, delta, reason, expectedOnHand) => {
     await rpc(expectedOnHand === undefined ? 'adjust_product_stock' : 'adjust_product_stock_checked', {
       p_product_id: productId,
@@ -241,23 +257,62 @@ export const supabaseBusinessApi: BusinessApi = {
       p_safety_stock: safetyStock, p_lead_time_days: leadTimeDays ?? null
     });
   },
-  listOrders: (page = 1, pageSize = 20, search = '', state = 'all') =>
-    rpc<OrdersPage>('search_orders', { p_page: page, p_page_size: pageSize, p_search: search, p_state: state }),
-  listPaidOrders: (page = 1, pageSize = 20, from, to) =>
-    rpc<Page<Order>>('search_paid_orders', { p_page: page, p_page_size: pageSize, p_from: from || null, p_to: to || null }),
-  confirmImportedOrder: (input) =>
-    rpc<Order>('confirm_imported_order', { p_order: input }),
-  transitionOrder: (orderId, action) =>
-    rpc<Order>('transition_order', { p_order_id: orderId, p_action: action }),
-  listPurchases: (page = 1, pageSize = 20, state = 'all') =>
-    rpc<PurchasesPage>('list_purchases', {
+  listOrders: async (page = 1, pageSize = 20, search = '', state = 'all') => {
+    const res = await rpc<OrdersPage>('search_orders', { p_page: page, p_page_size: pageSize, p_search: search, p_state: state });
+    return {
+      page: res?.page ?? 1,
+      pageSize: res?.pageSize ?? pageSize,
+      total: res?.total ?? 0,
+      pendingTotal: res?.pendingTotal ?? 0,
+      completedTotal: res?.completedTotal ?? 0,
+      items: (res?.items ?? []).map((o) => ({ ...o, items: o.items ?? [] }))
+    };
+  },
+  listPaidOrders: async (page = 1, pageSize = 20, from, to) => {
+    const res = await rpc<Page<Order>>('search_paid_orders', { p_page: page, p_page_size: pageSize, p_from: from || null, p_to: to || null });
+    return {
+      page: res?.page ?? 1,
+      pageSize: res?.pageSize ?? pageSize,
+      total: res?.total ?? 0,
+      items: (res?.items ?? []).map((o) => ({ ...o, items: o.items ?? [] }))
+    };
+  },
+  confirmImportedOrder: async (input) => {
+    const order = await rpc<Order>('confirm_imported_order', { p_order: input });
+    return { ...order, items: order?.items ?? [] };
+  },
+  transitionOrder: async (orderId, action) => {
+    const order = await rpc<Order>('transition_order', { p_order_id: orderId, p_action: action });
+    return { ...order, items: order?.items ?? [] };
+  },
+  listPurchases: async (page = 1, pageSize = 20, state = 'all') => {
+    const res = await rpc<PurchasesPage>('list_purchases', {
       p_page: page,
       p_page_size: pageSize,
       p_state: state === 'all' ? null : state
-    }),
-  createPurchase: (input) => rpc<Purchase>('create_purchase', { p_purchase: input }),
-  updatePurchase: (input) => rpc<Purchase>('update_purchase', { p_purchase: input }),
-  listOpeningReservations: () => rpc('list_opening_reservations'),
+    });
+    return {
+      page: res?.page ?? 1,
+      pageSize: res?.pageSize ?? pageSize,
+      total: res?.total ?? 0,
+      pendingTotal: res?.pendingTotal ?? 0,
+      receivedTotal: res?.receivedTotal ?? 0,
+      filteredTotal: res?.filteredTotal ?? 0,
+      items: (res?.items ?? []).map((p) => ({ ...p, items: p.items ?? [] }))
+    };
+  },
+  createPurchase: async (input) => {
+    const purchase = await rpc<Purchase>('create_purchase', { p_purchase: input });
+    return { ...purchase, items: purchase?.items ?? [] };
+  },
+  updatePurchase: async (input) => {
+    const purchase = await rpc<Purchase>('update_purchase', { p_purchase: input });
+    return { ...purchase, items: purchase?.items ?? [] };
+  },
+  listOpeningReservations: async () => {
+    const res = await rpc<any[]>('list_opening_reservations');
+    return res ?? [];
+  },
   resolveOpeningReservation: (purchaseItemId, quantity, action, operationId) => rpc('resolve_opening_reservation', {
     p_purchase_item_id: purchaseItemId, p_quantity: quantity, p_action: action, p_operation_id: operationId
   }),
@@ -265,9 +320,9 @@ export const supabaseBusinessApi: BusinessApi = {
     let itemsPayload = items;
     if (!itemsPayload || itemsPayload.length === 0) {
       const purchasePage = await rpc<PurchasesPage>('list_purchases', { p_page: 1, p_page_size: 100 });
-      const current = purchasePage.items.find((p) => p.id === purchaseId);
+      const current = purchasePage?.items?.find((p) => p.id === purchaseId);
       if (current) {
-        itemsPayload = current.items.map((pi) => ({
+        itemsPayload = (current.items ?? []).map((pi) => ({
           purchaseItemId: pi.id,
           receivedQuantity: Math.max(0, pi.quantity - (pi.receivedQuantity ?? 0) - (pi.shortageQuantity ?? 0))
         }));
@@ -286,21 +341,59 @@ export const supabaseBusinessApi: BusinessApi = {
       p_purchase_id: purchaseId,
       p_notes: notes ?? 'Cerrado con faltante definitivo de distribuidor'
     }),
-  listMovements: (page = 1, pageSize = 30, search = '', filter = 'all') =>
-    rpc<Page<StockMovement>>('list_stock_movements', {
+  listMovements: async (page = 1, pageSize = 30, search = '', filter = 'all') => {
+    const res = await rpc<Page<StockMovement>>('list_stock_movements', {
       p_page: page,
       p_page_size: pageSize,
       p_search: search || null,
       p_filter: filter === 'all' ? null : filter
-    }),
-  listCustomers: (page = 1, pageSize = 30, search?: string) =>
-    rpc('list_customers', { p_page: page, p_page_size: pageSize, p_search: search || null }),
-  getAnalytics: (from, to) =>
-    rpc<AnalyticsSummary>('get_sales_analytics', { p_from: from, p_to: to }),
-  listInflationIndices: () => rpc('list_inflation_indices'),
+    });
+    return {
+      page: res?.page ?? 1,
+      pageSize: res?.pageSize ?? pageSize,
+      total: res?.total ?? 0,
+      items: res?.items ?? []
+    };
+  },
+  listCustomers: async (page = 1, pageSize = 30, search?: string) => {
+    const res = await rpc<Page<any>>('list_customers', { p_page: page, p_page_size: pageSize, p_search: search || null });
+    return {
+      page: res?.page ?? 1,
+      pageSize: res?.pageSize ?? pageSize,
+      total: res?.total ?? 0,
+      items: res?.items ?? []
+    };
+  },
+  getAnalytics: async (from, to) => {
+    const res = await rpc<AnalyticsSummary>('get_sales_analytics', { p_from: from, p_to: to });
+    return {
+      ...res,
+      from: res?.from ?? from,
+      to: res?.to ?? to,
+      comparisonCutoffDay: res?.comparisonCutoffDay ?? null,
+      revenueCents: res?.revenueCents ?? 0,
+      costCents: res?.costCents ?? 0,
+      taxCents: res?.taxCents ?? 0,
+      estimatedMarginCents: res?.estimatedMarginCents ?? 0,
+      averageTicketCents: res?.averageTicketCents ?? 0,
+      orders: res?.orders ?? 0,
+      units: res?.units ?? 0,
+      giftOrders: res?.giftOrders ?? 0,
+      giftCostCents: res?.giftCostCents ?? 0,
+      series: res?.series ?? [],
+      topProducts: res?.topProducts ?? []
+    };
+  },
+  listInflationIndices: async () => {
+    const res = await rpc<any[]>('list_inflation_indices');
+    return res ?? [];
+  },
   saveInflationIndex: (input) => rpc('save_inflation_index', { p_index: input }),
   getExportDataset: () => rpc<ExportDataset>('get_business_export_dataset'),
-  listUsers: () => rpc('list_store_users'),
+  listUsers: async () => {
+    const res = await rpc<any[]>('list_store_users');
+    return res ?? [];
+  },
   updateUserAccess: (userId, role, active) =>
     rpc('update_store_user_access', { p_user_id: userId, p_role: role, p_active: active }),
   askBusinessAi: invokeAi

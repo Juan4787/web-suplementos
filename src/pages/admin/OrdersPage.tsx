@@ -365,7 +365,7 @@ export default function OrdersPage() {
                               Productos pedidos
                             </p>
                             <div className="mt-2 space-y-2">
-                              {order.items.map((item) => (
+                              {(order.items ?? []).map((item) => (
                                 <div
                                   key={item.id}
                                   className="flex items-center justify-between gap-4 rounded-xl bg-white p-3.5 text-sm border border-ink-950/6"
@@ -391,10 +391,34 @@ export default function OrdersPage() {
                             <div className="rounded-xl bg-white p-4 border border-ink-950/6 text-[14px] space-y-1.5">
                               <p className="text-[13px] font-black uppercase tracking-wider text-ink-700">Pago</p>
                               <p className="font-bold text-ink-950">
-                                Estado: <span className={order.paymentState === 'paid' ? 'text-emerald-800 font-black' : 'text-amber-900 font-black'}>{order.paymentState === 'paid' ? 'Pagado' : 'Pendiente de cobro'}</span>
+                                Estado:{' '}
+                                <span
+                                  className={
+                                    order.paymentState === 'gifted'
+                                      ? 'text-purple-800 font-black'
+                                      : order.paymentState === 'paid'
+                                        ? 'text-emerald-800 font-black'
+                                        : order.paymentState === 'refunded'
+                                          ? 'text-ink-600 font-black'
+                                          : 'text-amber-900 font-black'
+                                  }
+                                >
+                                  {order.paymentState === 'gifted'
+                                    ? 'Regalo / Cortesía'
+                                    : order.paymentState === 'paid'
+                                      ? 'Pagado'
+                                      : order.paymentState === 'refunded'
+                                        ? 'Reembolsado'
+                                        : 'Pendiente de cobro'}
+                                </span>
                               </p>
                               <p className="text-ink-700 font-medium">
-                                Medio: {order.paymentMethod === 'cash' ? 'Efectivo' : 'Transferencia bancaria'}
+                                Medio:{' '}
+                                {order.paymentMethod === 'gift'
+                                  ? 'Regalo / Cortesía'
+                                  : order.paymentMethod === 'cash'
+                                    ? 'Efectivo'
+                                    : 'Transferencia bancaria'}
                               </p>
                             </div>
 

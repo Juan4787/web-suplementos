@@ -26,8 +26,10 @@
     "db:test": "node scripts/run-supabase-linked.mjs test",
     "test": "vitest run --maxWorkers=1 --no-file-parallelism",
     "test:watch": "vitest",
+    "test:contract": "node scripts/test-rpc-contract-parity.mjs",
     "test:e2e": "playwright test",
-    "test:all": "pnpm test && playwright test",
+    "test:all": "pnpm test && pnpm test:contract && playwright test",
+    "audit:all": "pnpm test && pnpm test:contract && tsc -b && pnpm build",
     "audit": "pnpm audit --audit-level=high"
   },
   "dependencies": {

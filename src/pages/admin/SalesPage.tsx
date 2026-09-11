@@ -126,7 +126,7 @@ export default function SalesPage() {
 
   const chartData = useMemo(() => {
     return (
-      analyticsQuery.data?.series.map((point) => ({
+      (analyticsQuery.data?.series ?? []).map((point) => ({
         period: monthLabel(point.period),
         rawPeriod: point.period,
         nominal: point.revenueCents / 100,
@@ -377,7 +377,7 @@ export default function SalesPage() {
               <h2 className="font-display text-2xl font-black text-ink-950">Ventas cobradas</h2>
               <p className="mt-1 text-[14.5px] font-semibold text-ink-700">Pedidos cobrados dentro del período seleccionado.</p>
             </div>
-            {ordersQuery.data.items.length === 0 ? <p className="p-6 text-sm text-ink-700">No hay ventas cobradas en este período. Elegí otro rango de fechas para consultar ventas anteriores.</p> : null}
+            {(ordersQuery.data.items?.length ?? 0) === 0 ? <p className="p-6 text-sm text-ink-700">No hay ventas cobradas en este período. Elegí otro rango de fechas para consultar ventas anteriores.</p> : null}
             <div className="overflow-x-auto">
               <table className="w-full min-w-[44rem] text-left text-sm">
                 <thead className="bg-cream-100 text-[13.5px] uppercase tracking-wider text-ink-700 font-black">
@@ -391,7 +391,7 @@ export default function SalesPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-ink-950/8">
-                  {ordersQuery.data.items.map((order) => {
+                  {(ordersQuery.data.items ?? []).map((order) => {
                     const isGift = order.paymentState === 'gifted' || order.paymentMethod === 'gift';
                     const margin = order.totalCents - (order.costTotalCents ?? 0) - (order.taxAmountCents ?? 0);
                     const isExpanded = expandedOrderId === order.id;
@@ -450,7 +450,7 @@ export default function SalesPage() {
                                   ) : null}
                                 </div>
                                 <div className="space-y-2">
-                                  {order.items.map((item) => (
+                                  {(order.items ?? []).map((item) => (
                                     <div key={item.id} className="flex justify-between items-center text-[14.5px] font-semibold">
                                       <span className="text-ink-950 font-bold">{item.productName} · {item.presentation} × {item.quantity}</span>
                                       <div className="flex gap-4">

@@ -86,8 +86,8 @@ export function PurchaseFormModal({
   const [expectedAt, setExpectedAt] = useState(() => (purchase?.expectedAt ? purchase.expectedAt.slice(0, 10) : ''));
   const [notes, setNotes] = useState(() => purchase?.notes ?? '');
   const [lines, setLines] = useState<DraftLine[]>(() => {
-    if (purchase && purchase.items.length > 0) {
-      return purchase.items.map((item) => ({
+    if (purchase && (purchase.items?.length ?? 0) > 0) {
+      return (purchase.items ?? []).map((item) => ({
         productId: item.productId,
         quantity: item.quantity,
         unitCostPesos: String(item.unitCostCents / 100)
@@ -370,7 +370,7 @@ function ReceivePurchaseModal({
   const queryClient = useQueryClient();
   const [quantities, setQuantities] = useState<Record<string, number>>(() => {
     const initial: Record<string, number> = {};
-    for (const item of purchase.items) {
+    for (const item of (purchase.items ?? [])) {
       initial[item.id] = Math.max(0, item.quantity - (item.receivedQuantity ?? 0) - (item.shortageQuantity ?? 0));
     }
     return initial;
@@ -383,7 +383,7 @@ function ReceivePurchaseModal({
   const receive = useMutation({
     mutationFn: async () => {
       const api = await getBusinessApi();
-      const itemsPayload = purchase.items.map((item) => ({
+      const itemsPayload = (purchase.items ?? []).map((item) => ({
         purchaseItemId: item.id,
         receivedQuantity: quantities[item.id] ?? 0
       }));
@@ -439,7 +439,7 @@ function ReceivePurchaseModal({
   });
 
   const totalToReceive = Object.values(quantities).reduce((sum, q) => sum + (q || 0), 0);
-  const totalRemaining = purchase.items.reduce(
+  const totalRemaining = (purchase.items ?? []).reduce(
     (sum, item) => sum + Math.max(0, item.quantity - (item.receivedQuantity ?? 0) - (item.shortageQuantity ?? 0)),
     0
   );
@@ -490,7 +490,7 @@ function ReceivePurchaseModal({
           <p className="text-xs font-black uppercase tracking-wider text-ink-500">
             Productos a ingresar
           </p>
-          {purchase.items.map((item) => {
+          {(purchase.items ?? []).map((item) => {
             const pending = Math.max(0, item.quantity - (item.receivedQuantity ?? 0) - (item.shortageQuantity ?? 0));
             const currentVal = quantities[item.id] ?? pending;
 
@@ -1571,7 +1571,7 @@ export default function InventoryPage() {
               <div className="overflow-hidden rounded-2xl border border-ink-950/8 bg-white shadow-sm">
                 <div className="divide-y divide-ink-950/6">
                   {filteredPurchases.map((purchase) => {
-                    const totalUnits = purchase.items.reduce((sum, line) => sum + line.quantity, 0);
+                    const totalUnits = (purchase.items ?? []).reduce((sum, line) => sum + line.quantity, 0);
                     const isOpen = expandedPurchases[purchase.id] ?? false;
 
                     let deliveryLabel: ReactNode = <span className="text-ink-500 font-medium">Sin fecha estimada</span>;
@@ -1678,13 +1678,13 @@ export default function InventoryPage() {
                             onClick={() => setExpandedPurchases((prev) => ({ ...prev, [purchase.id]: !isOpen }))}
                             className="w-full flex items-center justify-between py-1.5 text-[13.5px] font-bold text-ink-700 hover:text-brand-600 transition"
                           >
-                            <span>Productos ({purchase.items.length})</span>
+                            <span>Productos ({purchase.items?.length ?? 0})</span>
                             {isOpen ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
                           </button>
 
                           {isOpen && (
                             <div className="mt-2.5 rounded-2xl bg-cream-50/70 p-4 space-y-2.5 border border-ink-950/6">
-                              {purchase.items.map((item, idx) => (
+                              {(purchase.items ?? []).map((item, idx) => (
                                 <div key={idx} className="flex items-center justify-between gap-4 text-[13.5px]">
                                   <div>
                                     <p className="font-bold text-ink-950">{item.productName}</p>
