@@ -65,11 +65,11 @@ export type InventoryItem = Pick<
   status: 'ok' | 'low' | 'critical' | 'out';
 };
 
-export type PaymentMethod = 'cash' | 'transfer';
+export type PaymentMethod = 'cash' | 'transfer' | 'gift';
 export type DeliveryMethod = 'pickup' | 'shipping';
 export type ShippingType = 'standard' | 'express';
 export type OrderState = 'confirmed' | 'cancelled';
-export type PaymentState = 'pending' | 'paid' | 'refunded';
+export type PaymentState = 'pending' | 'paid' | 'refunded' | 'gifted';
 export type PreparationState = 'pending' | 'preparing' | 'ready';
 export type FulfillmentState = 'pending' | 'shipped' | 'delivered' | 'cancelled';
 
@@ -145,6 +145,7 @@ export type OrderAction =
   | 'mark_ready'
   | 'mark_shipped'
   | 'mark_delivered'
+  | 'mark_gifted'
   | 'cancel';
 
 export type PurchaseState = 'draft' | 'ordered' | 'received' | 'cancelled';
@@ -286,6 +287,8 @@ export type AnalyticsSummary = {
   estimatedMarginCents: number;
   averageTicketCents: number;
   orders: number;
+  giftOrders?: number;
+  giftCostCents?: number;
   units: number;
   series: PeriodPoint[];
   topProducts: ProductPerformance[];

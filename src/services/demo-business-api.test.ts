@@ -444,6 +444,115 @@ describe('demoBusinessApi lifecycle and domain guarantees', () => {
     }
   });
 
+  it('supports gifting orders, deducting physical stock, and tracking loss in analytics', async () => {
+    const productsBefore = await demoBusinessApi.listAdminProducts();
+    const product = productsBefore.find((p) => p.onHand >= 5)!;
+    const initialOnHand = product.onHand;
+    const initialReserved = product.reserved;
+
+    const orderInput: ImportOrderInput = {
+      protocolOrderId: crypto.randomUUID(),
+      protocolChecksum: 'ABCD1234',
+      customerName: 'Papá de la Dueña',
+      phone: '3426123456',
+      paymentMethod: 'cash',
+      deliveryMethod: 'pickup',
+      shippingType: null,
+      shippingFeeCents: 0,
+      address: null,
+      addressNumber: null,
+      quotedSubtotalCents: product.priceCents * 2,
+      quotedTotalCents: product.priceCents * 2,
+      lines: [
+        {
+          productId: product.id,
+          sku: product.sku,
+          slug: product.slug,
+          name: product.name,
+          presentation: product.presentation,
+          quantity: 2,
+          unitPriceCents: product.priceCents,
+          imageUrl: product.imageUrl
+        }
+      ]
+    };
+
+    const order = await demoBusinessApi.confirmImportedOrder(orderInput);
+    expect(order.paymentState).toBe('pending');
+    expect(order.totalCents).toBe(product.priceCents * 2);
+
+    let prodsAfterConfirm = await demoBusinessApi.listAdminProducts();
+    let productInv = prodsAfterConfirm.find((p) => p.id === product.id)!;
+    expect(productInv.reserved).toBe(initialReserved + 2);
+
+    const gifted = await demoBusinessApi.transitionOrder(order.id, 'mark_gifted');
+    expect(gifted.paymentState).toBe('gifted');
+    expect(gifted.paymentMethod).toBe('gift');
+    expect(gifted.fulfillmentState).toBe('delivered');
+    expect(gifted.totalCents).toBe(0);
+    expect(gifted.subtotalCents).toBe(0);
+
+    let prodsAfterGift = await demoBusinessApi.listAdminProducts();
+    productInv = prodsAfterGift.find((p) => p.id === product.id)!;
+    expect(productInv.onHand).toBe(initialOnHand - 2);
+
+    const paidOrdersPage = await demoBusinessApi.listPaidOrders(1, 50);
+    const inPaid = paidOrdersPage.items.find((o) => o.id === order.id);
+    expect(inPaid).toBeDefined();
+    expect(inPaid?.paymentState).toBe('gifted');
+
+    const ordersPage = await demoBusinessApi.listOrders(1, 50, '', 'completed');
+    const inCompleted = ordersPage.items.find((o) => o.id === order.id);
+    expect(inCompleted).toBeDefined();
+
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' }).format(new Date());
+    const analytics = await demoBusinessApi.getAnalytics(today, today);
+    expect(analytics.giftOrders).toBeGreaterThanOrEqual(1);
+    expect(analytics.giftCostCents).toBeGreaterThan(0);
+  });
+
+  it('allows creating a manual gift order directly with paymentMethod: gift', async () => {
+    const productsBefore = await demoBusinessApi.listAdminProducts();
+    const product = productsBefore.find((p) => p.onHand >= 3)!;
+    const initialOnHand = product.onHand;
+
+    const manualGiftOrder: ImportOrderInput = {
+      protocolOrderId: crypto.randomUUID(),
+      protocolChecksum: '',
+      customerName: 'Mamá de la Dueña',
+      phone: '3426789012',
+      paymentMethod: 'gift',
+      deliveryMethod: 'pickup',
+      shippingType: null,
+      shippingFeeCents: 0,
+      address: null,
+      addressNumber: null,
+      quotedSubtotalCents: 0,
+      quotedTotalCents: 0,
+      lines: [
+        {
+          productId: product.id,
+          sku: product.sku,
+          slug: product.slug,
+          name: product.name,
+          presentation: product.presentation,
+          quantity: 1,
+          unitPriceCents: product.priceCents,
+          imageUrl: product.imageUrl
+        }
+      ]
+    };
+
+    const order = await demoBusinessApi.confirmImportedOrder(manualGiftOrder);
+    expect(order.paymentState).toBe('gifted');
+    expect(order.fulfillmentState).toBe('delivered');
+    expect(order.totalCents).toBe(0);
+
+    const invAfter = await demoBusinessApi.listInventory();
+    const productInv = invAfter.find((p) => p.id === product.id)!;
+    expect(productInv.onHand).toBe(initialOnHand - 1);
+  });
+
   it('generates a complete authorized export dataset with all 13 tables', async () => {
     const dataset = await demoBusinessApi.getExportDataset();
     expect(dataset.products.length).toBeGreaterThan(0);

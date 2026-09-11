@@ -79,7 +79,7 @@ describe('order actions state machine', () => {
       fulfillmentState: 'delivered'
     };
     const actions = availableOrderActions(order);
-    expect(actions).toEqual(['mark_paid']);
+    expect(actions).toEqual(['mark_paid', 'mark_gifted']);
   });
 
   it('allows mark_delivered when shipping order has been shipped', () => {
@@ -103,6 +103,21 @@ describe('order actions state machine', () => {
       fulfillmentState: 'delivered'
     };
     expect(availableOrderActions(order)).toEqual([]);
+  });
+
+  it('returns no actions when order has been gifted and delivered', () => {
+    const order: Order = {
+      ...baseOrder,
+      paymentState: 'gifted',
+      fulfillmentState: 'delivered',
+      orderState: 'confirmed'
+    };
+    expect(availableOrderActions(order)).toEqual([]);
+  });
+
+  it('allows mark_gifted whenever payment is pending', () => {
+    const order: Order = { ...baseOrder, paymentState: 'pending' };
+    expect(availableOrderActions(order)).toContain('mark_gifted');
   });
 
   it('allows cancel if order payment was refunded while fulfillment was pending', () => {
@@ -140,6 +155,7 @@ describe('order actions state machine', () => {
 
   it('has human-friendly Spanish labels for all actions', () => {
     expect(ORDER_ACTION_LABELS.mark_paid).toBe('Marcar como cobrado');
+    expect(ORDER_ACTION_LABELS.mark_gifted).toBe('Regalar');
     expect(ORDER_ACTION_LABELS.mark_refunded).toBe('Marcar reintegro realizado');
     expect(ORDER_ACTION_LABELS.start_preparing).toBe('Empezar a preparar');
     expect(ORDER_ACTION_LABELS.mark_ready).toBe('Marcar como listo');

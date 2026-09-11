@@ -1,4 +1,4 @@
-import { Check } from 'lucide-react';
+import { Check, Gift } from 'lucide-react';
 import { StatusChip } from '@/components/ui/StatusChip';
 import type { Order } from '@/domain/types';
 
@@ -7,6 +7,20 @@ export function OrderStatus({ order, compact = false }: { order: Order; compact?
     return (
       <div className="flex flex-wrap items-center gap-2">
         <StatusChip label="Cancelado" tone="danger" />
+      </div>
+    );
+  }
+
+  // Estado regalo / cortesía
+  if (order.paymentState === 'gifted') {
+    return (
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-purple-50 border border-purple-300 px-3 py-1 text-[13.5px] font-black text-purple-800 select-none">
+          <Gift className="size-4 text-purple-600" /> Regalo / Cortesía
+        </span>
+        {order.fulfillmentState !== 'delivered' && (
+          <StatusChip key="deliv-pend" label="Falta entregar" tone="warning" />
+        )}
       </div>
     );
   }

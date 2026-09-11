@@ -94,7 +94,11 @@ const paidOrdersInRange = (from: string, to: string): Order[] => {
   const toTime = new Date(`${to}T23:59:59.999-03:00`).getTime();
   return state.orders.filter((order) => {
     const paidTime = order.paidAt ? new Date(order.paidAt).getTime() : Number.NaN;
-    return order.paymentState === 'paid' && paidTime >= fromTime && paidTime <= toTime;
+    return (
+      (order.paymentState === 'paid' || order.paymentState === 'gifted') &&
+      paidTime >= fromTime &&
+      paidTime <= toTime
+    );
   });
 };
 
@@ -247,12 +251,15 @@ export const demoBusinessApi: BusinessApi = {
   async getDashboard() {
     const inventory = toDemoInventory(state.products);
     const currentMonth = startOfMonth(new Date('2026-08-28T15:30:00-03:00'));
-    const paidThisMonth = state.orders.filter(
-      (order) => order.paidAt && new Date(order.paidAt) >= currentMonth
+    const activeThisMonth = state.orders.filter(
+      (order) =>
+        order.paidAt &&
+        new Date(order.paidAt) >= currentMonth &&
+        (order.paymentState === 'paid' || order.paymentState === 'gifted')
     );
-    const revenue = paidThisMonth.reduce((sum, order) => sum + order.totalCents, 0);
-    const costs = paidThisMonth.reduce((sum, order) => sum + (order.costTotalCents ?? 0), 0);
-    const taxes = paidThisMonth.reduce((sum, order) => sum + (order.taxAmountCents ?? 0), 0);
+    const revenue = activeThisMonth.reduce((sum, order) => sum + order.totalCents, 0);
+    const costs = activeThisMonth.reduce((sum, order) => sum + (order.costTotalCents ?? 0), 0);
+    const taxes = activeThisMonth.reduce((sum, order) => sum + (order.taxAmountCents ?? 0), 0);
     return latency({
       pendingPreparation: state.orders.filter(
         (order) => order.orderState === 'confirmed' && order.preparationState !== 'ready'
@@ -263,13 +270,14 @@ export const demoBusinessApi: BusinessApi = {
       lowStockProducts: inventory.filter((item) => item.status !== 'ok').length,
       incomingPurchases: state.purchases.filter((purchase) => purchase.state === 'ordered').length,
       paidRevenueMonthCents: revenue,
-      paidOrdersMonth: paidThisMonth.length,
+      paidOrdersMonth: activeThisMonth.filter((o) => o.paymentState === 'paid').length,
       estimatedMarginMonthCents: revenue - costs - taxes,
       recentOrders: state.orders
         .filter((order) => {
           if (order.orderState === 'cancelled') return false;
           const isCompleted =
-            order.fulfillmentState === 'delivered' && order.paymentState === 'paid';
+            order.fulfillmentState === 'delivered' &&
+            (order.paymentState === 'paid' || order.paymentState === 'gifted');
           const isNormalShipped =
             order.fulfillmentState === 'shipped' && order.paymentState === 'paid';
           if (isCompleted || isNormalShipped) return false;
@@ -418,7 +426,9 @@ export const demoBusinessApi: BusinessApi = {
   async listOrders(page = 1, pageSize = 20, search = '', filter = 'all') {
     const term = search.trim().toLowerCase();
     const digits = term.replace(/\D/g, '');
-    const completed = (o: Order) => o.orderState === 'cancelled' || (o.fulfillmentState === 'delivered' && o.paymentState === 'paid');
+    const completed = (o: Order) =>
+      o.orderState === 'cancelled' ||
+      (o.fulfillmentState === 'delivered' && (o.paymentState === 'paid' || o.paymentState === 'gifted'));
     const matched = state.orders.filter(o => !term || o.customerName.toLowerCase().includes(term) || String(o.number).includes(term) || (digits.length >= 3 && (o.customerPhone ?? '').replace(/\D/g, '').includes(digits)));
     const selected = matched.filter(o => filter === 'all' || (filter === 'completed') === completed(o));
     return latency({ ...paginate(selected, page, pageSize), pendingTotal: matched.filter(o => !completed(o)).length, completedTotal: matched.filter(completed).length });
@@ -427,7 +437,7 @@ export const demoBusinessApi: BusinessApi = {
   async listPaidOrders(page = 1, pageSize = 20, from, to) {
     const filtered = state.orders.filter(order => {
       const date = order.paidAt ? new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' }).format(new Date(order.paidAt)) : '';
-      return order.paymentState === 'paid' && (!from || date >= from) && (!to || date <= to);
+      return (order.paymentState === 'paid' || order.paymentState === 'gifted') && (!from || date >= from) && (!to || date <= to);
     }).sort((a, b) => (b.paidAt ?? '').localeCompare(a.paidAt ?? ''));
     return latency(paginate(filtered, page, pageSize));
   },
@@ -459,7 +469,7 @@ export const demoBusinessApi: BusinessApi = {
       };
     });
     const subtotalCents = items.reduce((sum, item) => sum + item.subtotalCents, 0);
-    if (subtotalCents !== input.quotedSubtotalCents) {
+    if (input.paymentMethod !== 'gift' && subtotalCents !== input.quotedSubtotalCents) {
       throw new AppError('business', 'Los precios revisados ya no coinciden con el mensaje.', {
         nextAction: 'Volvé a revisar los productos y confirmá el total correcto.'
       });
@@ -493,6 +503,7 @@ export const demoBusinessApi: BusinessApi = {
       }
     }
 
+    const isGift = input.paymentMethod === 'gift';
     const order: Order = {
       id: nextUuid(),
       number,
@@ -507,43 +518,64 @@ export const demoBusinessApi: BusinessApi = {
           ? `${input.address ?? ''}${input.addressNumber ? ` ${input.addressNumber}` : ''}`.trim()
           : null,
       orderState: 'confirmed',
-      paymentState: 'pending',
+      paymentState: isGift ? 'gifted' : 'pending',
       preparationState: 'ready',
-      fulfillmentState: 'pending',
+      fulfillmentState: isGift ? 'delivered' : 'pending',
       stockReadiness: requiresIncoming ? 'waiting_incoming' : 'ready',
       expectedArrivalAt,
-      subtotalCents,
-      shippingFeeCents: input.shippingFeeCents,
-      totalCents: subtotalCents + input.shippingFeeCents,
+      subtotalCents: isGift ? 0 : subtotalCents,
+      shippingFeeCents: isGift ? 0 : input.shippingFeeCents,
+      totalCents: isGift ? 0 : subtotalCents + input.shippingFeeCents,
       taxRateBasisPoints: state.settings.taxRateBasisPoints,
-      taxAmountCents: calculateBasisPoints(
+      taxAmountCents: isGift ? 0 : calculateBasisPoints(
         subtotalCents + input.shippingFeeCents,
         state.settings.taxRateBasisPoints ?? 0
       ),
       costTotalCents,
       createdAt: now,
       confirmedAt: now,
-      paidAt: null,
-      fulfilledAt: null,
+      paidAt: isGift ? now : null,
+      fulfilledAt: isGift ? now : null,
       items
     };
-    for (const item of items) {
-      const product = state.products.find((candidate) => candidate.id === item.productId)!;
-      product.reserved += item.quantity;
-      refreshProductAvailability(product);
-      state.movements.unshift({
-        id: nextUuid(),
-        productId: product.id,
-        productName: product.name,
-        kind: 'reservation',
-        physicalDelta: 0,
-        reservedDelta: item.quantity,
-        reason: `Pedido #${number} confirmado`,
-        orderId: order.id,
-        purchaseId: null,
-        createdAt: now,
-        createdByName: demoStaff.displayName
-      });
+    if (isGift) {
+      for (const item of items) {
+        const product = state.products.find((candidate) => candidate.id === item.productId)!;
+        product.onHand -= item.quantity;
+        refreshProductAvailability(product);
+        state.movements.unshift({
+          id: nextUuid(),
+          productId: product.id,
+          productName: product.name,
+          kind: 'adjustment',
+          physicalDelta: -item.quantity,
+          reservedDelta: 0,
+          reason: `Pedido #${number} regalado / cortesía`,
+          orderId: order.id,
+          purchaseId: null,
+          createdAt: now,
+          createdByName: demoStaff.displayName
+        });
+      }
+    } else {
+      for (const item of items) {
+        const product = state.products.find((candidate) => candidate.id === item.productId)!;
+        product.reserved += item.quantity;
+        refreshProductAvailability(product);
+        state.movements.unshift({
+          id: nextUuid(),
+          productId: product.id,
+          productName: product.name,
+          kind: 'reservation',
+          physicalDelta: 0,
+          reservedDelta: item.quantity,
+          reason: `Pedido #${number} confirmado`,
+          orderId: order.id,
+          purchaseId: null,
+          createdAt: now,
+          createdByName: demoStaff.displayName
+        });
+      }
     }
     state.orders.unshift(order);
     state.importedProtocolIds.add(input.protocolOrderId);
@@ -598,6 +630,41 @@ export const demoBusinessApi: BusinessApi = {
       );
       if (customer && customer.totalPaidCents !== null) {
         customer.totalPaidCents = Math.max(0, customer.totalPaidCents - order.totalCents);
+      }
+    }
+    if (action === 'mark_gifted') {
+      order.paymentState = 'gifted';
+      order.paymentMethod = 'gift';
+      order.fulfillmentState = 'delivered';
+      order.preparationState = 'ready';
+      order.orderState = 'confirmed';
+      order.totalCents = 0;
+      order.subtotalCents = 0;
+      order.taxAmountCents = 0;
+      order.shippingFeeCents = 0;
+      order.paidAt = now;
+      order.fulfilledAt = now;
+
+      for (const item of order.items) {
+        const product = state.products.find((candidate) => candidate.id === item.productId)!;
+        if (product) {
+          product.onHand -= item.quantity;
+          product.reserved = Math.max(0, product.reserved - item.quantity);
+          refreshProductAvailability(product);
+          state.movements.unshift({
+            id: nextUuid(),
+            productId: product.id,
+            productName: product.name,
+            kind: 'adjustment',
+            physicalDelta: -item.quantity,
+            reservedDelta: -item.quantity,
+            reason: `Pedido #${order.number} regalado / cortesía`,
+            orderId: order.id,
+            purchaseId: null,
+            createdAt: now,
+            createdByName: demoStaff.displayName
+          });
+        }
       }
     }
     if (action === 'start_preparing') order.preparationState = 'preparing';
@@ -996,6 +1063,10 @@ export const demoBusinessApi: BusinessApi = {
     const orders = paidOrdersInRange(from, to).filter(
       (order) => cutoffDay === null || new Date(order.paidAt ?? order.createdAt).getDate() <= cutoffDay
     );
+    const paidOrders = orders.filter((order) => order.paymentState === 'paid');
+    const giftOrdersList = orders.filter((order) => order.paymentState === 'gifted');
+    const giftOrders = giftOrdersList.length;
+    const giftCostCents = giftOrdersList.reduce((sum, order) => sum + (order.costTotalCents ?? 0), 0);
     const revenueCents = orders.reduce((sum, order) => sum + order.totalCents, 0);
     const costCents = orders.reduce((sum, order) => sum + (order.costTotalCents ?? 0), 0);
     const taxCents = orders.reduce((sum, order) => sum + (order.taxAmountCents ?? 0), 0);
@@ -1029,9 +1100,11 @@ export const demoBusinessApi: BusinessApi = {
       costCents,
       taxCents,
       estimatedMarginCents: revenueCents - costCents - taxCents,
-      averageTicketCents: orders.length ? Math.round(revenueCents / orders.length) : 0,
+      averageTicketCents: paidOrders.length ? Math.round(revenueCents / paidOrders.length) : 0,
       orders: orders.length,
       units,
+      giftOrders,
+      giftCostCents,
       series,
       topProducts: buildProductPerformance(orders)
     };

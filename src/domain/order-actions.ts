@@ -12,6 +12,7 @@ export const availableOrderActions = (order: Order): OrderAction[] => {
   // 1. Acciones principales operativas: Cobro y Entrega directos
   if (order.paymentState === 'pending') {
     actions.push('mark_paid');
+    actions.push('mark_gifted');
   }
 
   const canFulfill = !order.stockReadiness || order.stockReadiness === 'ready';
@@ -39,6 +40,7 @@ export const availableOrderActions = (order: Order): OrderAction[] => {
 
 export const ORDER_ACTION_LABELS: Record<OrderAction, string> = {
   mark_paid: 'Marcar como cobrado',
+  mark_gifted: 'Regalar',
   mark_refunded: 'Marcar reintegro realizado',
   start_preparing: 'Empezar a preparar',
   mark_ready: 'Marcar como listo',

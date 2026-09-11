@@ -4,6 +4,7 @@ import { demoSettings, demoProducts } from './data/demo-data';
 import { demoBusinessApi } from './services/demo-business-api';
 import { Client } from 'pg';
 import { loadEnv } from 'vite';
+// @ts-expect-error project-targets.mjs has no ts declarations
 import { SUPABASE_PROJECT_REF, SUPABASE_PROJECT_REGION, WORKER_ORIGIN } from '../scripts/project-targets.mjs';
 
 describe('Auditoría Exhaustiva de Todos los Cambios Recientes', () => {
@@ -24,11 +25,12 @@ describe('Auditoría Exhaustiva de Todos los Cambios Recientes', () => {
       {
         productId: demoProducts[0]!.id,
         sku: demoProducts[0]!.sku,
+        slug: demoProducts[0]!.slug,
         name: demoProducts[0]!.name,
         presentation: demoProducts[0]!.presentation,
         quantity: 2,
         unitPriceCents: 3300000,
-        imageUrl: null
+        imageUrl: demoProducts[0]!.imageUrl
       }
     ];
 
@@ -108,11 +110,12 @@ DCE085E3`;
       {
         productId: demoProducts[0]!.id,
         sku: demoProducts[0]!.sku,
+        slug: demoProducts[0]!.slug,
         name: demoProducts[0]!.name,
         presentation: demoProducts[0]!.presentation,
         quantity: 1,
         unitPriceCents: 3300000,
-        imageUrl: null
+        imageUrl: demoProducts[0]!.imageUrl
       }
     ];
 
@@ -191,9 +194,22 @@ DCE085E3`;
         await db.connect();
         await db.query('begin read only');
 
-        // Migraciones
+        // Migraciones (42 incluyendo soporte de regalos y pérdida contable)
         const migrationsRes = await db.query('select count(*) as count from supabase_migrations.schema_migrations');
-        expect(Number(migrationsRes.rows[0].count)).toBe(41);
+        expect(Number(migrationsRes.rows[0].count)).toBe(42);
+
+        // Enums de regalo / cortesía presentes en base de datos
+        const enumStateRes = await db.query(`
+          select enumlabel from pg_enum 
+          where enumtypid = 'public.payment_state'::regtype and enumlabel = 'gifted'
+        `);
+        expect(enumStateRes.rows.length).toBe(1);
+
+        const enumMethodRes = await db.query(`
+          select enumlabel from pg_enum 
+          where enumtypid = 'public.payment_method'::regtype and enumlabel = 'gift'
+        `);
+        expect(enumMethodRes.rows.length).toBe(1);
 
         // RPC update_purchase presente
         const rpcRes = await db.query(`

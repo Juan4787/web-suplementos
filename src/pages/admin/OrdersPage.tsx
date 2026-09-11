@@ -5,6 +5,7 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  Gift,
   MessageCircle,
   MoreHorizontal,
   Plus,
@@ -34,11 +35,12 @@ import { getBusinessApi } from '@/services/business-api';
 import { cleanSearchTerm } from '@/lib/search';
 
 function OrderTimeline({ order }: { order: Order }) {
+  const isGift = order.paymentState === 'gifted';
   const steps = [
     {
-      label: 'Cobrado',
-      status: order.paymentState === 'paid' ? 'Cobrado' : 'Pendiente de cobro',
-      done: order.paymentState === 'paid'
+      label: isGift ? 'Regalo' : 'Cobrado',
+      status: isGift ? 'Cortesía' : order.paymentState === 'paid' ? 'Cobrado' : 'Pendiente de cobro',
+      done: isGift || order.paymentState === 'paid'
     },
     {
       label: 'Entregado',
@@ -130,6 +132,10 @@ export default function OrdersPage() {
     const timer = setTimeout(() => { setPage(1); setDebouncedSearch(cleanSearchTerm(search)); }, 250);
     return () => clearTimeout(timer);
   }, [search]);
+  const settingsQuery = useBusinessQuery({
+    queryKey: queryKeys.settings,
+    queryFn: (api) => api.getSettings()
+  });
   const ordersQuery = useBusinessQuery({
     queryKey: [...queryKeys.orders(page), debouncedSearch, filter],
     queryFn: (api) => api.listOrders(page, 50, debouncedSearch, filter)
@@ -141,11 +147,23 @@ export default function OrdersPage() {
     onSuccess: async (order, variables) => {
       setMutationError(null);
       const cancelled = order.orderState === 'cancelled';
-      const completed = cancelled || (order.paymentState === 'paid' && order.fulfillmentState === 'delivered');
-      const state = variables.action === 'mark_paid' ? 'cobrado' : variables.action === 'mark_delivered' ? 'entregado' : 'actualizado';
-      setSuccessNotice({ order, completed, message: completed
-        ? `Pedido #${order.number} ${cancelled ? 'cancelado' : 'completado'}. Lo encontrás en Completados.`
-        : `Pedido #${order.number} ${state}.` });
+      const isGift = order.paymentState === 'gifted';
+      const completed = cancelled || isGift || (order.paymentState === 'paid' && order.fulfillmentState === 'delivered');
+      const state =
+        variables.action === 'mark_paid'
+          ? 'cobrado'
+          : variables.action === 'mark_gifted'
+            ? 'registrado como regalo / cortesía'
+            : variables.action === 'mark_delivered'
+              ? 'entregado'
+              : 'actualizado';
+      setSuccessNotice({
+        order,
+        completed,
+        message: completed
+          ? `Pedido #${order.number} ${cancelled ? 'cancelado' : isGift ? 'registrado como regalo / cortesía' : 'completado'}. Lo encontrás en Completados.`
+          : `Pedido #${order.number} ${state}.`
+      });
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['orders'] }),
         queryClient.invalidateQueries({ queryKey: queryKeys.dashboard }),
@@ -406,7 +424,7 @@ export default function OrdersPage() {
                               <a
                                 href={buildWhatsAppUrl(
                                   order.customerPhone,
-                                  `Hola ${order.customerName}, te escribimos de Impulso Suplementos sobre tu pedido #${order.number}.`
+                                  `Hola ${order.customerName}, te escribimos de ${settingsQuery.data?.storeName || 'Tienda de Suplementos'} sobre tu pedido #${order.number}.`
                                 )}
                                 target="_blank"
                                 rel="noreferrer"
@@ -418,33 +436,53 @@ export default function OrdersPage() {
                           </div>
                         </div>
 
-                        {/* Botones de acción contextuales simplificados: Cobrado y Entregado */}
+                        {/* Botones de acción contextuales simplificados: Cobrado / Regalar y Entregado */}
                         <div className="flex flex-col justify-center gap-3 rounded-2xl bg-white p-6 border border-ink-950/8 shadow-sm h-fit">
                           <p className="text-[13.5px] font-black uppercase tracking-wider text-ink-700 mb-1">
                             Acción operativa
                           </p>
 
-                          {/* 1. Paso Cobrado */}
-                          {order.paymentState === 'paid' ? (
+                          {/* 1. Paso Cobrado / Regalo */}
+                          {order.paymentState === 'gifted' ? (
+                            <div className="flex items-center gap-2 rounded-xl bg-purple-50 border border-purple-200 px-3.5 py-2.5 text-[14px] font-black text-purple-800">
+                              <Gift className="size-4 shrink-0 text-purple-600" />
+                              <span>Regalo / Cortesía</span>
+                            </div>
+                          ) : order.paymentState === 'paid' ? (
                             <div className="flex items-center gap-2 rounded-xl bg-emerald-50 border border-emerald-200 px-3.5 py-2.5 text-[14px] font-black text-emerald-800">
                               <Check className="size-4 shrink-0 text-emerald-600" />
                               <span>Cobrado</span>
                             </div>
                           ) : actions.includes('mark_paid') ? (
-                            <Button
-                              variant="dark"
-                              size="md"
-                              className="w-full"
-                              loading={
-                                transition.isPending &&
-                                transition.variables?.action === 'mark_paid'
-                              }
-                              onClick={() =>
-                                transition.mutate({ orderId: order.id, action: 'mark_paid' })
-                              }
-                            >
-                              Marcar como cobrado
-                            </Button>
+                            <div className="flex items-center gap-2">
+                              <Button
+                                variant="dark"
+                                size="md"
+                                className="flex-1"
+                                loading={
+                                  transition.isPending &&
+                                  transition.variables?.action === 'mark_paid'
+                                }
+                                onClick={() =>
+                                  transition.mutate({ orderId: order.id, action: 'mark_paid' })
+                                }
+                              >
+                                Marcar como cobrado
+                              </Button>
+                              {actions.includes('mark_gifted') ? (
+                                <Button
+                                  type="button"
+                                  variant="secondary"
+                                  size="md"
+                                  title="Marcar como cortesía / regalo (descuenta stock sin sumar facturación)"
+                                  className="shrink-0 text-purple-700 border-purple-200 hover:bg-purple-50 hover:text-purple-800 hover:border-purple-300 font-bold px-3.5"
+                                  onClick={() => setConfirmAction({ order, action: 'mark_gifted' })}
+                                >
+                                  <Gift className="size-4 mr-1 text-purple-600" />
+                                  Regalar
+                                </Button>
+                              ) : null}
+                            </div>
                           ) : null}
 
                           {/* 2. Paso Entregado */}
@@ -492,14 +530,18 @@ export default function OrdersPage() {
                           ) : null}
 
                           {/* Estado si ya fue completado */}
-                          {order.paymentState === 'paid' && order.fulfillmentState === 'delivered' ? (
+                          {order.paymentState === 'gifted' ? (
+                            <p className="text-[13.5px] font-semibold text-purple-700 py-1 text-center">
+                              Pedido regalo / cortesía registrado. Stock descontado.
+                            </p>
+                          ) : order.paymentState === 'paid' && order.fulfillmentState === 'delivered' ? (
                             <p className="text-[13.5px] font-semibold text-emerald-700 py-1 text-center">
                               Pedido completado y stock actualizado.
                             </p>
                           ) : null}
 
                           {/* Acciones secundarias (cancelar, envío intermedio, reintegro) */}
-                          {actions.filter((a) => a !== 'mark_paid' && a !== 'mark_delivered').length > 0 ? (
+                          {actions.filter((a) => a !== 'mark_paid' && a !== 'mark_delivered' && a !== 'mark_gifted').length > 0 ? (
                             <div>
                               <button
                                 type="button"
@@ -518,7 +560,7 @@ export default function OrdersPage() {
                               {showMore ? (
                                 <div className="mt-2 space-y-2 border-t border-ink-950/8 pt-2">
                                   {actions
-                                    .filter((a) => a !== 'mark_paid' && a !== 'mark_delivered')
+                                    .filter((a) => a !== 'mark_paid' && a !== 'mark_delivered' && a !== 'mark_gifted')
                                     .map((secAction) => {
                                       const isDestructive = secAction === 'cancel' || secAction === 'mark_refunded';
                                       return (
@@ -575,27 +617,51 @@ export default function OrdersPage() {
                 <div
                   className={cn(
                     'grid size-12 shrink-0 place-items-center rounded-2xl',
-                    confirmAction.action === 'cancel'
-                      ? 'bg-rose-100 text-rose-700'
-                      : 'bg-amber-100 text-amber-800'
+                    confirmAction.action === 'mark_gifted'
+                      ? 'bg-purple-100 text-purple-700'
+                      : confirmAction.action === 'cancel'
+                        ? 'bg-rose-100 text-rose-700'
+                        : 'bg-amber-100 text-amber-800'
                   )}
                 >
-                  <AlertTriangle className="size-6" />
+                  {confirmAction.action === 'mark_gifted' ? (
+                    <Gift className="size-6" />
+                  ) : (
+                    <AlertTriangle className="size-6" />
+                  )}
                 </div>
                 <div className="space-y-1">
                   <h3 id="confirm-order-action-title" className="font-display text-xl font-black text-ink-950">
-                    {confirmAction.action === 'cancel'
-                      ? `¿Cancelar pedido #${confirmAction.order.number}?`
-                      : `¿Registrar reintegro para pedido #${confirmAction.order.number}?`}
+                    {confirmAction.action === 'mark_gifted'
+                      ? `¿Registrar pedido #${confirmAction.order.number} como regalo / cortesía?`
+                      : confirmAction.action === 'cancel'
+                        ? `¿Cancelar pedido #${confirmAction.order.number}?`
+                        : `¿Registrar reintegro para pedido #${confirmAction.order.number}?`}
                   </h3>
                   <p className="text-sm font-semibold text-ink-800">
-                    Cliente: {confirmAction.order.customerName} ({formatMoney(confirmAction.order.totalCents)})
+                    {confirmAction.action === 'mark_gifted' ? 'Beneficiario' : 'Cliente'}: {confirmAction.order.customerName}{' '}
+                    {confirmAction.action !== 'mark_gifted' ? `(${formatMoney(confirmAction.order.totalCents)})` : ''}
                   </p>
                 </div>
               </div>
 
               <div className="mt-4 rounded-2xl bg-cream-50 p-4 text-sm text-ink-700 space-y-2">
-                {confirmAction.action === 'cancel' ? (
+                {confirmAction.action === 'mark_gifted' ? (
+                  <>
+                    <p>
+                      Este pedido se registrará como <strong>regalo / atención de cortesía</strong>:
+                    </p>
+                    <ul className="list-disc list-inside space-y-1.5 text-ink-800 text-xs">
+                      <li><strong>Descontará el stock físico real</strong> del inventario automáticamente.</li>
+                      <li><strong>No sumará facturación</strong> (se registrará cobro $ 0).</li>
+                      <li>En la sección de <strong>Ventas</strong> figurará el costo asumido como <strong>pérdida en rojo</strong> y se deducirá del margen neto.</li>
+                      <li>El pedido quedará completado sin generar cobros pendientes.</li>
+                    </ul>
+                    <p className="text-xs font-semibold text-purple-800 pt-1">
+                      🎁 Ideal para suplementos regalados a familiares, embajadores o atenciones comerciales.
+                    </p>
+                  </>
+                ) : confirmAction.action === 'cancel' ? (
                   <>
                     <p>
                       Al cancelar el pedido, <strong>se liberarán inmediatamente las unidades reservadas en inventario</strong> para que otros clientes puedan comprarlas.
@@ -633,9 +699,11 @@ export default function OrdersPage() {
                 <Button
                   variant="dark"
                   className={
-                    confirmAction.action === 'cancel'
-                      ? 'bg-rose-700 hover:bg-rose-800 text-white font-bold'
-                      : 'bg-amber-800 hover:bg-amber-900 text-white font-bold'
+                    confirmAction.action === 'mark_gifted'
+                      ? 'bg-purple-700 hover:bg-purple-800 text-white font-bold'
+                      : confirmAction.action === 'cancel'
+                        ? 'bg-rose-700 hover:bg-rose-800 text-white font-bold'
+                        : 'bg-amber-800 hover:bg-amber-900 text-white font-bold'
                   }
                   loading={transition.isPending}
                   onClick={async () => {
@@ -645,7 +713,11 @@ export default function OrdersPage() {
                     }, { onSuccess: () => setConfirmAction(null) });
                   }}
                 >
-                  {confirmAction.action === 'cancel' ? 'Sí, cancelar pedido' : 'Sí, confirmar reintegro'}
+                  {confirmAction.action === 'mark_gifted'
+                    ? 'Sí, registrar como regalo'
+                    : confirmAction.action === 'cancel'
+                      ? 'Sí, cancelar pedido'
+                      : 'Sí, confirmar reintegro'}
                 </Button>
               </div>
             </Modal>

@@ -40,7 +40,7 @@ const productLine = (line: CartLine): string =>
   `- [${line.sku}] ${line.name} | ${line.presentation} | ${line.quantity} x ${formatMoney(line.unitPriceCents)} = ${formatMoney(line.unitPriceCents * line.quantity)}`;
 
 const paymentLabel = (method: CheckoutData['paymentMethod']): string =>
-  method === 'cash' ? 'Efectivo' : 'Transferencia';
+  method === 'cash' ? 'Efectivo' : method === 'gift' ? 'Regalo' : 'Transferencia';
 
 const deliveryLabel = (method: CheckoutData['deliveryMethod']): string =>
   method === 'pickup' ? 'Retiro' : 'Envío a domicilio';
@@ -193,6 +193,7 @@ const parsedRequired = (sections: Map<string, string>, label: string): string =>
 const parsedPayment = (value: string): CheckoutData['paymentMethod'] => {
   if (value === 'Efectivo') return 'cash';
   if (value === 'Transferencia') return 'transfer';
+  if (value === 'Regalo' || value === 'Regalo / Cortesía') return 'gift';
   throw new Error('Medio de pago inválido.');
 };
 
@@ -301,7 +302,7 @@ export const parseWhatsAppProtocol = (message: string): ParsedWhatsAppOrder => {
 export const whatsappCheckoutSchema = z
   .object({
     customerName: z.string().trim().min(2, 'Ingresá el nombre de quien hace el pedido.').max(100, 'El nombre admite hasta 100 caracteres. Acortalo para continuar.'),
-    paymentMethod: z.enum(['cash', 'transfer']),
+    paymentMethod: z.enum(['cash', 'transfer', 'gift']),
     deliveryMethod: z.enum(['pickup', 'shipping']),
     shippingType: z.enum(['standard', 'express']).nullable(),
     address: z.string().trim().max(160, 'La dirección admite hasta 160 caracteres. Quitá las indicaciones adicionales.').nullable(),

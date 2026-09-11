@@ -7,6 +7,7 @@ import {
   CheckCircle2,
   ChevronRight,
   CreditCard,
+  Gift,
   MapPin,
   Minus,
   Package,
@@ -113,15 +114,17 @@ export default function CreateOrderPage() {
 
   // Cálculos de totales y stock
   const totals = useMemo(() => {
-    const subtotal = items.reduce((sum, item) => sum + item.unitPriceCents * item.quantity, 0);
+    const rawSubtotal = items.reduce((sum, item) => sum + item.unitPriceCents * item.quantity, 0);
+    const subtotal = paymentMethod === 'gift' ? 0 : rawSubtotal;
     const shipping = 0;
     return {
       subtotal,
+      rawSubtotal,
       shipping,
       total: subtotal,
       units: items.reduce((sum, item) => sum + item.quantity, 0)
     };
-  }, [items]);
+  }, [items, paymentMethod]);
 
   // Análisis de disponibilidad de stock para los items seleccionados
   const stockReadiness = useMemo(() => {
@@ -391,7 +394,7 @@ export default function CreateOrderPage() {
               <div className="flex justify-between font-medium">
                 <span className="text-ink-600">Medio de pago:</span>
                 <span className="font-bold text-ink-950">
-                  {createdOrder.paymentMethod === 'cash' ? 'Efectivo' : 'Transferencia'}
+                  {createdOrder.paymentMethod === 'cash' ? 'Efectivo' : createdOrder.paymentMethod === 'gift' ? 'Regalo / Cortesía' : 'Transferencia'}
                 </span>
               </div>
               <div className="border-t border-ink-950/8 pt-3 flex justify-between font-black text-base text-ink-950">
@@ -823,7 +826,7 @@ export default function CreateOrderPage() {
                 5. Medio de pago acordado
               </h2>
 
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                 <button
                   type="button"
                   onClick={() => setPaymentMethod('cash')}
@@ -857,6 +860,23 @@ export default function CreateOrderPage() {
                     <span className="text-[11px] text-ink-500">Alias o CBU</span>
                   </div>
                 </button>
+
+                <button
+                  type="button"
+                  onClick={() => setPaymentMethod('gift')}
+                  className={cn(
+                    'flex items-center gap-3 p-3.5 rounded-2xl border text-left transition',
+                    paymentMethod === 'gift'
+                      ? 'border-purple-600 bg-purple-50/70 text-purple-950 ring-2 ring-purple-500/20'
+                      : 'border-ink-950/12 bg-white text-ink-700 hover:border-ink-950/25'
+                  )}
+                >
+                  <Gift className="size-5 text-purple-600 shrink-0" />
+                  <div className="min-w-0">
+                    <span className="block text-sm font-black">Regalo / Cortesía</span>
+                    <span className="text-[11px] text-ink-500">Costo $ 0 cobrado</span>
+                  </div>
+                </button>
               </div>
             </section>
 
@@ -869,7 +889,9 @@ export default function CreateOrderPage() {
               <div className="space-y-2.5 text-sm">
                 <div className="flex justify-between font-semibold text-ink-700">
                   <span>Productos ({totals.units} unidades)</span>
-                  <span className="font-bold text-ink-950">{formatMoney(totals.subtotal)}</span>
+                  <span className="font-bold text-ink-950">
+                    {paymentMethod === 'gift' ? '$0 (Cortesía)' : formatMoney(totals.subtotal)}
+                  </span>
                 </div>
                 <div className="flex justify-between font-semibold text-ink-700">
                   <span>
@@ -892,12 +914,26 @@ export default function CreateOrderPage() {
 
               <div className="flex items-baseline justify-between mb-4">
                 <span className="text-xs font-black uppercase tracking-wider text-ink-700">
-                  Total a cobrar
+                  {paymentMethod === 'gift' ? 'Total cortesía' : 'Total a cobrar'}
                 </span>
-                <span className="font-display text-3xl font-black text-ink-950">
+                <span
+                  className={cn(
+                    'font-display text-3xl font-black',
+                    paymentMethod === 'gift' ? 'text-purple-700' : 'text-ink-950'
+                  )}
+                >
                   {formatMoney(totals.total)}
                 </span>
               </div>
+
+              {paymentMethod === 'gift' ? (
+                <div className="mb-4 rounded-xl bg-purple-50 p-3 border border-purple-200/60 text-xs font-semibold text-purple-900 flex items-start gap-2">
+                  <Gift className="size-4 shrink-0 text-purple-600 mt-0.5" />
+                  <span>
+                    El pedido se registrará como regalo. Descontará stock físico, no sumará facturación ($0) y en Ventas se reflejará el costo como pérdida en rojo.
+                  </span>
+                </div>
+              ) : null}
 
               {stockReadiness === 'waiting_incoming' ? (
                 <div className="mb-4 rounded-xl bg-amber-50 p-3 border border-amber-200/60 text-xs font-semibold text-amber-800 flex items-start gap-2">
