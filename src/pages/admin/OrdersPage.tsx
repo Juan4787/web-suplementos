@@ -8,6 +8,8 @@ import {
   Gift,
   MessageCircle,
   MoreHorizontal,
+  Package,
+  PackageCheck,
   Plus,
   Search,
   ShoppingBasket,
@@ -38,7 +40,20 @@ import { cleanSearchTerm } from '@/lib/search';
 function OrderTimeline({ order }: { order: Order }) {
   const isGift = order.paymentState === 'gifted';
   const isCost = Boolean(order.isCostSale || order.saleType === 'cost');
+  const isReady =
+    order.preparationState === 'ready' ||
+    order.fulfillmentState === 'delivered' ||
+    order.fulfillmentState === 'shipped';
   const steps = [
+    {
+      label: 'Listo para entregar',
+      status: isReady
+        ? 'Listo'
+        : order.stockReadiness === 'waiting_incoming'
+          ? 'En camino'
+          : 'Por preparar',
+      done: isReady
+    },
     {
       label: isGift ? 'Regalo' : isCost ? 'Al costo' : 'Cobrado',
       status: isGift
@@ -158,15 +173,17 @@ export default function OrdersPage() {
       const isGift = order.paymentState === 'gifted';
       const completed = cancelled || isGift || (order.paymentState === 'paid' && order.fulfillmentState === 'delivered');
       const state =
-        variables.action === 'mark_paid'
-          ? 'cobrado'
-          : variables.action === 'mark_at_cost'
-            ? 'cobrado a precio de costo'
-            : variables.action === 'mark_gifted'
-              ? 'registrado como regalo / cortesía'
-              : variables.action === 'mark_delivered'
-                ? 'entregado'
-                : 'actualizado';
+        variables.action === 'mark_ready'
+          ? 'marcado como listo para entrega'
+          : variables.action === 'mark_paid'
+            ? 'cobrado'
+            : variables.action === 'mark_at_cost'
+              ? 'cobrado a precio de costo'
+              : variables.action === 'mark_gifted'
+                ? 'registrado como regalo / cortesía'
+                : variables.action === 'mark_delivered'
+                  ? 'entregado'
+                  : 'actualizado';
       setSuccessNotice({
         order,
         completed,
@@ -489,7 +506,52 @@ export default function OrdersPage() {
                             ) : null}
                           </div>
 
-                          {/* 1. Paso Cobrado / Regalo / Al costo */}
+                          {/* 1. Paso Preparación (Listo para entregar) */}
+                          {order.preparationState === 'ready' || order.fulfillmentState === 'delivered' || order.fulfillmentState === 'shipped' ? (
+                            <div className="flex items-center gap-2 rounded-xl bg-brand-50 border border-brand-200 px-3.5 py-2.5 text-[13.5px] font-black text-brand-900">
+                              <PackageCheck className="size-4 shrink-0 text-brand-600" />
+                              <span>Listo para entrega</span>
+                            </div>
+                          ) : order.stockReadiness === 'waiting_incoming' ? (
+                            <div className="rounded-xl bg-brand-50 border border-brand-200 p-3 text-xs font-semibold text-brand-950 space-y-1">
+                              <p className="font-black flex items-center gap-1.5 text-brand-900">
+                                <Package className="size-4 shrink-0 text-brand-600" /> Mercadería en camino
+                              </p>
+                              <p className="text-brand-800">
+                                {order.expectedArrivalAt
+                                  ? `Llegada estimada: ${new Intl.DateTimeFormat('es-AR', { dateStyle: 'medium' }).format(new Date(order.expectedArrivalAt))}.`
+                                  : 'Stock asignado a compras en camino.'}{' '}
+                                Recibí la compra en Inventario para preparar el pedido.
+                              </p>
+                            </div>
+                          ) : order.stockReadiness === 'uncovered' ? (
+                            <div className="rounded-xl bg-rose-50 border border-rose-200 p-3 text-xs font-semibold text-rose-950 space-y-1">
+                              <p className="font-black flex items-center gap-1.5 text-rose-900">
+                                <span>🔴</span> Faltante de proveedor
+                              </p>
+                              <p className="text-rose-800">
+                                La compra del proveedor cerró con faltante definitivo. Contactá al cliente para acordar un reemplazo o cancelar el pedido.
+                              </p>
+                            </div>
+                          ) : actions.includes('mark_ready') ? (
+                            <Button
+                              variant="dark"
+                              size="md"
+                              className="w-full justify-center text-[14px] font-black shadow-sm"
+                              loading={
+                                transition.isPending &&
+                                transition.variables?.action === 'mark_ready'
+                              }
+                              onClick={() =>
+                                transition.mutate({ orderId: order.id, action: 'mark_ready' })
+                              }
+                            >
+                              <PackageCheck className="size-4 mr-1.5 shrink-0" />
+                              Marcar listo para entregar
+                            </Button>
+                          ) : null}
+
+                          {/* 2. Paso Cobrado / Regalo / Al costo */}
                           {order.paymentState === 'gifted' ? (
                             <div className="flex items-center gap-2 rounded-xl bg-purple-50 border border-purple-200 px-3.5 py-2.5 text-[13.5px] font-black text-purple-800">
                               <Gift className="size-4 shrink-0 text-purple-600" />
@@ -510,7 +572,7 @@ export default function OrdersPage() {
                           ) : actions.includes('mark_paid') ? (
                             <div className="space-y-2">
                               <Button
-                                variant="dark"
+                                variant={order.preparationState === 'ready' ? 'dark' : 'secondary'}
                                 size="md"
                                 className="w-full justify-center text-[14px] font-black shadow-sm"
                                 loading={
@@ -563,7 +625,7 @@ export default function OrdersPage() {
                             </div>
                           ) : null}
 
-                          {/* 2. Paso Entregado */}
+                          {/* 3. Paso Entregado */}
                           {order.fulfillmentState === 'delivered' ? (
                             <div className="flex items-center gap-2 rounded-xl bg-emerald-50 border border-emerald-200 px-3.5 py-2.5 text-[14px] font-black text-emerald-800">
                               <Check className="size-4 shrink-0 text-emerald-600" />
@@ -592,7 +654,7 @@ export default function OrdersPage() {
                             </div>
                           ) : actions.includes('mark_delivered') ? (
                             <Button
-                              variant={order.paymentState === 'paid' ? 'dark' : 'secondary'}
+                              variant={order.paymentState === 'paid' && order.preparationState === 'ready' ? 'dark' : 'secondary'}
                               size="md"
                               className="w-full"
                               loading={
@@ -619,7 +681,7 @@ export default function OrdersPage() {
                           ) : null}
 
                           {/* Acciones secundarias (cancelar, envío intermedio, reintegro) */}
-                          {actions.filter((a) => a !== 'mark_paid' && a !== 'mark_delivered' && a !== 'mark_gifted' && a !== 'mark_at_cost').length > 0 ? (
+                          {actions.filter((a) => a !== 'mark_ready' && a !== 'mark_paid' && a !== 'mark_delivered' && a !== 'mark_gifted' && a !== 'mark_at_cost').length > 0 ? (
                             <div>
                               <button
                                 type="button"
@@ -638,7 +700,7 @@ export default function OrdersPage() {
                               {showMore ? (
                                 <div className="mt-2 space-y-2 border-t border-ink-950/8 pt-2">
                                   {actions
-                                    .filter((a) => a !== 'mark_paid' && a !== 'mark_delivered' && a !== 'mark_gifted' && a !== 'mark_at_cost')
+                                    .filter((a) => a !== 'mark_ready' && a !== 'mark_paid' && a !== 'mark_delivered' && a !== 'mark_gifted' && a !== 'mark_at_cost')
                                     .map((secAction) => {
                                       const isDestructive = secAction === 'cancel' || secAction === 'mark_refunded';
                                       return (

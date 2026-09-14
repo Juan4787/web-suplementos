@@ -272,54 +272,138 @@ export default function SalesPage() {
             </section>
 
             {analyticsQuery.data.giftOrders && analyticsQuery.data.giftOrders > 0 ? (
-              <div className="mb-6 rounded-2xl bg-purple-50/80 border border-purple-200/90 p-4 text-sm text-purple-950 shadow-sm transition-all">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex items-center gap-2 font-bold text-[14px]">
-                    <Gift className="size-4 text-purple-600 shrink-0" />
-                    <span>
-                      Aclaración comercial: Este período incluye <strong>{analyticsQuery.data.giftOrders} {analyticsQuery.data.giftOrders === 1 ? 'pedido regalado' : 'pedidos regalados'}</strong> (costo asumido: <span className="font-black text-rose-700">-{formatMoney(analyticsQuery.data.giftCostCents ?? 0)}</span>).
-                    </span>
+              <div className="mb-6 overflow-hidden rounded-2xl border border-purple-200/90 bg-gradient-to-br from-purple-50/90 via-purple-50/40 to-white p-4 sm:p-5 shadow-xs transition-all">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex items-start sm:items-center gap-3">
+                    <div className="flex size-10 items-center justify-center rounded-xl bg-purple-100/90 text-purple-700 shadow-2xs border border-purple-200/80 shrink-0">
+                      <Gift className="size-5" />
+                    </div>
+                    <div className="space-y-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="inline-flex items-center gap-1 rounded-md border border-purple-200/80 bg-purple-100/80 px-2 py-0.5 text-[11px] font-black uppercase tracking-wider text-purple-800">
+                          Aclaración Comercial
+                        </span>
+                        <span className="text-xs text-purple-700 font-medium">Impacto en ganancia neta</span>
+                      </div>
+                      <p className="text-sm font-semibold text-purple-950 leading-snug">
+                        Este período incluye{' '}
+                        <strong className="font-black text-purple-900">
+                          {analyticsQuery.data.giftOrders}{' '}
+                          {analyticsQuery.data.giftOrders === 1 ? 'pedido regalado' : 'pedidos regalados'}
+                        </strong>{' '}
+                        (costo asumido:{' '}
+                        <span className="inline-flex items-center rounded-md border border-rose-200 bg-rose-50 px-2 py-0.5 text-xs font-black text-rose-700">
+                          -{formatMoney(analyticsQuery.data.giftCostCents ?? 0)}
+                        </span>
+                        )
+                        {analyticsQuery.data.costSaleOrders && analyticsQuery.data.costSaleOrders > 0 ? (
+                          <>
+                            {' '}y{' '}
+                            <strong className="font-black text-amber-900">
+                              {analyticsQuery.data.costSaleOrders}{' '}
+                              {analyticsQuery.data.costSaleOrders === 1 ? 'venta al costo' : 'ventas al costo'}
+                            </strong>{' '}
+                            (margen neutral $0)
+                          </>
+                        ) : null}
+                        .
+                      </p>
+                    </div>
                   </div>
+
                   <button
                     type="button"
                     onClick={() => setShowGiftDetails((prev) => !prev)}
-                    className="inline-flex items-center gap-1 text-xs font-black text-purple-800 underline hover:text-purple-950 cursor-pointer select-none"
+                    className="group inline-flex items-center justify-center gap-2 rounded-xl border border-purple-200/90 bg-white px-3.5 py-2 text-xs font-bold text-purple-900 shadow-2xs transition-all hover:bg-purple-100/60 hover:border-purple-300 hover:text-purple-950 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-400 select-none cursor-pointer w-full sm:w-auto shrink-0"
                   >
-                    {showGiftDetails ? 'Ocultar desglose' : 'Ver detalle contable'}
-                    <ChevronDown className={cn('size-3.5 transition-transform', showGiftDetails && 'rotate-180')} />
+                    <span>{showGiftDetails ? 'Ocultar desglose' : 'Ver detalle contable'}</span>
+                    <ChevronDown
+                      className={cn(
+                        'size-4 text-purple-700 transition-transform duration-200 group-hover:text-purple-900',
+                        showGiftDetails && 'rotate-180'
+                      )}
+                    />
                   </button>
                 </div>
+
                 {showGiftDetails ? (
-                  <div className="mt-3 pt-3 border-t border-purple-200 text-xs space-y-1.5 text-purple-900">
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 py-1">
-                      <div className="rounded-xl bg-white/90 p-2.5 border border-purple-100">
-                        <span className="block text-[11px] font-bold text-ink-600 uppercase">Margen bruto ventas</span>
-                        <span className="font-black text-sm text-ink-950">
+                  <div className="mt-4 pt-4 border-t border-purple-200/70 space-y-3 animate-in fade-in slide-in-from-top-1 duration-200">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div className="rounded-xl bg-white/95 p-3.5 border border-purple-100 shadow-2xs">
+                        <span className="block text-[11px] font-black uppercase tracking-wider text-ink-500">
+                          Margen ventas cobradas
+                        </span>
+                        <span className="mt-1 block text-lg font-black text-ink-950">
                           {formatMoney(
                             analyticsQuery.data.revenueCents -
-                            (analyticsQuery.data.costCents - (analyticsQuery.data.giftCostCents ?? 0)) -
-                            analyticsQuery.data.taxCents
+                              (analyticsQuery.data.costCents - (analyticsQuery.data.giftCostCents ?? 0)) -
+                              analyticsQuery.data.taxCents
                           )}
                         </span>
-                      </div>
-                      <div className="rounded-xl bg-rose-50/90 p-2.5 border border-rose-200">
-                        <span className="block text-[11px] font-bold text-rose-700 uppercase">Costo mercadería regalada</span>
-                        <span className="font-black text-sm text-rose-700">
-                          -{formatMoney(analyticsQuery.data.giftCostCents ?? 0)}
+                        <span className="mt-0.5 block text-[11px] text-ink-600">
+                          Cobrado menos costo de reposición
                         </span>
                       </div>
-                      <div className="rounded-xl bg-purple-100/80 p-2.5 border border-purple-200">
-                        <span className="block text-[11px] font-bold text-purple-800 uppercase">Ganancia neta real</span>
-                        <span className="font-black text-sm text-purple-950">
+
+                      <div className="rounded-xl bg-rose-50/90 p-3.5 border border-rose-200/90 shadow-2xs">
+                        <span className="block text-[11px] font-black uppercase tracking-wider text-rose-700">
+                          Costo absorbido (Regalos)
+                        </span>
+                        <span className="mt-1 block text-lg font-black text-rose-700">
+                          -{formatMoney(analyticsQuery.data.giftCostCents ?? 0)}
+                        </span>
+                        <span className="mt-0.5 block text-[11px] text-rose-800/80">
+                          Costo de reposición asumido por la tienda
+                        </span>
+                      </div>
+
+                      <div className="rounded-xl bg-purple-100/70 p-3.5 border border-purple-200 shadow-2xs">
+                        <span className="block text-[11px] font-black uppercase tracking-wider text-purple-800">
+                          Ganancia neta real final
+                        </span>
+                        <span className="mt-1 block text-lg font-black text-purple-950">
                           {formatMoney(analyticsQuery.data.estimatedMarginCents)}
+                        </span>
+                        <span className="mt-0.5 block text-[11px] text-purple-800/80">
+                          Rentabilidad final exacta del período
                         </span>
                       </div>
                     </div>
-                    <p className="text-[12px] text-purple-800/90 pt-1">
-                      💡 La mercadería regalada no suma facturación ($0 cobrado) y se descuenta su costo de reposición para reflejar la ganancia neta real del negocio con exactitud matemática.
-                    </p>
+
+                    <div className="flex items-start gap-2.5 rounded-xl bg-purple-100/40 border border-purple-200/50 p-3 text-xs text-purple-950 leading-relaxed shadow-2xs">
+                      <span className="text-base leading-none shrink-0 select-none">💡</span>
+                      <span>
+                        La mercadería entregada como cortesía o regalo no suma facturación ($0 cobrado) y se descuenta su costo de reposición para reflejar la ganancia neta real del negocio con exactitud matemática.
+                      </span>
+                    </div>
                   </div>
                 ) : null}
+              </div>
+            ) : analyticsQuery.data.costSaleOrders && analyticsQuery.data.costSaleOrders > 0 ? (
+              <div className="mb-6 overflow-hidden rounded-2xl border border-amber-200/90 bg-gradient-to-br from-amber-50/90 via-amber-50/40 to-white p-4 sm:p-5 shadow-xs transition-all">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex items-start sm:items-center gap-3">
+                    <div className="flex size-10 items-center justify-center rounded-xl bg-amber-100 text-amber-700 shadow-2xs border border-amber-200/80 shrink-0">
+                      <Tag className="size-5" />
+                    </div>
+                    <div className="space-y-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="inline-flex items-center gap-1 rounded-md border border-amber-200/80 bg-amber-100/80 px-2 py-0.5 text-[11px] font-black uppercase tracking-wider text-amber-800">
+                          Aclaración Comercial
+                        </span>
+                        <span className="text-xs text-amber-700 font-medium">Margen neutral $0</span>
+                      </div>
+                      <p className="text-sm font-semibold text-amber-950 leading-snug">
+                        Este período incluye{' '}
+                        <strong className="font-black text-amber-900">
+                          {analyticsQuery.data.costSaleOrders}{' '}
+                          {analyticsQuery.data.costSaleOrders === 1 ? 'venta al costo' : 'ventas al costo'}
+                        </strong>{' '}
+                        ({formatMoney(analyticsQuery.data.costSaleRevenueCents ?? 0)} facturados al costo de reposición). No genera ganancia ni pérdida comercial.
+                      </p>
+                    </div>
+                  </div>
+                </div>
               </div>
             ) : null}
           </>
@@ -663,50 +747,77 @@ export default function SalesPage() {
             </div>
 
             {analyticsQuery.data.giftOrders && analyticsQuery.data.giftOrders > 0 ? (
-              <div className="rounded-2xl border border-purple-200 bg-purple-50/75 p-5 text-purple-950 shadow-sm">
-                <div className="flex items-center gap-2 mb-2 font-display text-base font-black text-purple-900">
-                  <Gift className="size-5 text-purple-700 shrink-0" />
-                  <span>Desglose contable de pedidos de regalo / cortesía</span>
+              <div className="overflow-hidden rounded-2xl border border-purple-200/90 bg-gradient-to-br from-purple-50/90 via-purple-50/40 to-white p-5 text-purple-950 shadow-xs">
+                <div className="flex items-start sm:items-center gap-3 mb-3">
+                  <div className="flex size-10 items-center justify-center rounded-xl bg-purple-100/90 text-purple-700 shadow-2xs border border-purple-200/80 shrink-0">
+                    <Gift className="size-5" />
+                  </div>
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="inline-flex items-center gap-1 rounded-md border border-purple-200/80 bg-purple-100/80 px-2 py-0.5 text-[11px] font-black uppercase tracking-wider text-purple-800">
+                        Desglose Contable
+                      </span>
+                      <span className="text-xs text-purple-700 font-medium">Pedidos de cortesía / regalo</span>
+                    </div>
+                    <p className="mt-1 text-sm font-semibold text-purple-950">
+                      Se entregaron <strong className="font-black text-purple-900">{analyticsQuery.data.giftOrders} {analyticsQuery.data.giftOrders === 1 ? 'pedido de cortesía' : 'pedidos de cortesía'}</strong> con un costo asumido de <span className="inline-flex items-center rounded-md border border-rose-200 bg-rose-50 px-2 py-0.5 text-xs font-black text-rose-700">-{formatMoney(analyticsQuery.data.giftCostCents ?? 0)}</span>.
+                    </p>
+                  </div>
                 </div>
-                <p className="text-sm font-semibold text-purple-900 mb-3">
-                  Se entregaron <strong>{analyticsQuery.data.giftOrders} {analyticsQuery.data.giftOrders === 1 ? 'pedido de cortesía' : 'pedidos de cortesía'}</strong> con un costo asumido de <span className="text-rose-700 font-black">-{formatMoney(analyticsQuery.data.giftCostCents ?? 0)}</span>.
-                </p>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
-                  <div className="rounded-xl bg-white/90 p-3 border border-purple-100 shadow-xs">
-                    <span className="text-xs font-bold text-ink-600 block uppercase">Margen comercial de ventas</span>
-                    <span className="font-black text-ink-950 text-base">
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm mt-3">
+                  <div className="rounded-xl bg-white/95 p-3.5 border border-purple-100 shadow-2xs">
+                    <span className="text-[11px] font-black uppercase tracking-wider text-ink-500 block">Margen ventas cobradas</span>
+                    <span className="mt-1 block text-lg font-black text-ink-950">
                       {formatMoney(
                         analyticsQuery.data.revenueCents -
                         (analyticsQuery.data.costCents - (analyticsQuery.data.giftCostCents ?? 0)) -
                         analyticsQuery.data.taxCents
                       )}
                     </span>
+                    <span className="mt-0.5 block text-[11px] text-ink-600">Cobrado menos costos comerciales</span>
                   </div>
-                  <div className="rounded-xl bg-rose-50/90 p-3 border border-rose-200 shadow-xs">
-                    <span className="text-xs font-bold text-rose-700 block uppercase">Costo absorbido (Regalos)</span>
-                    <span className="font-black text-rose-700 text-base">
+
+                  <div className="rounded-xl bg-rose-50/90 p-3.5 border border-rose-200/90 shadow-2xs">
+                    <span className="text-[11px] font-black uppercase tracking-wider text-rose-700 block">Costo absorbido (Regalos)</span>
+                    <span className="mt-1 block text-lg font-black text-rose-700">
                       -{formatMoney(analyticsQuery.data.giftCostCents ?? 0)}
                     </span>
+                    <span className="mt-0.5 block text-[11px] text-rose-800/80">Costo asumido por la tienda</span>
                   </div>
-                  <div className="rounded-xl bg-purple-100/80 p-3 border border-purple-200 shadow-xs">
-                    <span className="text-xs font-bold text-purple-800 block uppercase">Ganancia neta real final</span>
-                    <span className="font-black text-purple-950 text-base">
+
+                  <div className="rounded-xl bg-purple-100/70 p-3.5 border border-purple-200 shadow-2xs">
+                    <span className="text-[11px] font-black uppercase tracking-wider text-purple-800 block">Ganancia neta real final</span>
+                    <span className="mt-1 block text-lg font-black text-purple-950">
                       {formatMoney(analyticsQuery.data.estimatedMarginCents)}
                     </span>
+                    <span className="mt-0.5 block text-[11px] text-purple-800/80">Resultado contable definitivo</span>
                   </div>
                 </div>
-                <p className="text-[12px] text-purple-800/90 pt-3">
-                  ℹ️ Este desglose asegura que la ganancia neta no esté sobreestimada ni se mezclen ventas comerciales cobradas con atenciones o regalos familiares.
-                </p>
+
+                <div className="mt-3 flex items-start gap-2.5 rounded-xl bg-purple-100/40 border border-purple-200/50 p-3 text-xs text-purple-950 leading-relaxed shadow-2xs">
+                  <span className="text-base leading-none shrink-0 select-none">💡</span>
+                  <span>Este desglose asegura que la ganancia neta no esté sobreestimada ni se mezclen ventas comerciales cobradas con atenciones o regalos personales.</span>
+                </div>
               </div>
             ) : null}
 
             {analyticsQuery.data.costSaleOrders && analyticsQuery.data.costSaleOrders > 0 ? (
-              <div className="rounded-2xl border border-amber-200 bg-amber-50/75 p-4 text-amber-950 shadow-sm flex items-center gap-3">
-                <Tag className="size-5 text-amber-700 shrink-0" />
-                <div className="text-sm font-semibold text-amber-900">
-                  <span>Se registraron <strong>{analyticsQuery.data.costSaleOrders} {analyticsQuery.data.costSaleOrders === 1 ? 'venta al costo' : 'ventas al costo'}</strong> ({formatMoney(analyticsQuery.data.costSaleRevenueCents ?? 0)} facturados al costo de reposición).</span>
-                  <span className="block text-xs text-amber-800 mt-0.5">Su aporte a la ganancia es neutral ($ 0), ya que el cobro iguala exactamente el costo de compra sin generar ganancia ni pérdida.</span>
+              <div className="overflow-hidden rounded-2xl border border-amber-200/90 bg-gradient-to-br from-amber-50/90 via-amber-50/40 to-white p-4 sm:p-5 text-amber-950 shadow-xs flex items-start sm:items-center gap-3">
+                <div className="flex size-10 items-center justify-center rounded-xl bg-amber-100 text-amber-700 shadow-2xs border border-amber-200/80 shrink-0">
+                  <Tag className="size-5" />
+                </div>
+                <div className="space-y-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="inline-flex items-center gap-1 rounded-md border border-amber-200/80 bg-amber-100/80 px-2 py-0.5 text-[11px] font-black uppercase tracking-wider text-amber-800">
+                      Aclaración Comercial
+                    </span>
+                    <span className="text-xs text-amber-700 font-medium">Margen neutral $0</span>
+                  </div>
+                  <p className="text-sm font-semibold text-amber-950 leading-snug">
+                    Se registraron <strong className="font-black text-amber-900">{analyticsQuery.data.costSaleOrders} {analyticsQuery.data.costSaleOrders === 1 ? 'venta al costo' : 'ventas al costo'}</strong> ({formatMoney(analyticsQuery.data.costSaleRevenueCents ?? 0)} facturados al costo de reposición).
+                  </p>
+                  <span className="block text-xs text-amber-800/90">Su aporte a la ganancia es neutral ($ 0), ya que el cobro iguala exactamente el costo de compra sin generar ganancia ni pérdida.</span>
                 </div>
               </div>
             ) : null}

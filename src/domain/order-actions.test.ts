@@ -35,15 +35,22 @@ describe('order actions state machine', () => {
     expect(availableOrderActions(order)).toEqual([]);
   });
 
-  it('allows mark_paid, mark_delivered, and cancel for a new pending pickup order', () => {
+  it('allows mark_ready, mark_paid, mark_delivered, and cancel for a new pending pickup order', () => {
     const order: Order = { ...baseOrder };
     const actions = availableOrderActions(order);
+    expect(actions).toContain('mark_ready');
     expect(actions).toContain('mark_paid');
     expect(actions).toContain('mark_delivered');
     expect(actions).toContain('cancel');
   });
 
-  it('allows mark_delivered, mark_shipped, mark_paid, and cancel for a new shipping order', () => {
+  it('does not allow mark_ready when order is already ready', () => {
+    const order: Order = { ...baseOrder, preparationState: 'ready' };
+    const actions = availableOrderActions(order);
+    expect(actions).not.toContain('mark_ready');
+  });
+
+  it('allows mark_delivered, mark_shipped, mark_ready, mark_paid, and cancel for a new shipping order', () => {
     const order: Order = {
       ...baseOrder,
       deliveryMethod: 'shipping',
@@ -51,6 +58,7 @@ describe('order actions state machine', () => {
       shippingAddress: 'Av. Corrientes 1234'
     };
     const actions = availableOrderActions(order);
+    expect(actions).toContain('mark_ready');
     expect(actions).toContain('mark_paid');
     expect(actions).toContain('mark_delivered');
     expect(actions).toContain('mark_shipped');
@@ -62,11 +70,13 @@ describe('order actions state machine', () => {
       ...baseOrder,
       deliveryMethod: 'pickup',
       paymentState: 'paid',
+      preparationState: 'ready',
       fulfillmentState: 'pending'
     };
     const actions = availableOrderActions(order);
     expect(actions).toContain('mark_delivered');
     expect(actions).toContain('mark_refunded');
+    expect(actions).not.toContain('mark_ready');
     expect(actions).not.toContain('mark_paid');
     expect(actions).not.toContain('cancel');
   });
@@ -76,6 +86,7 @@ describe('order actions state machine', () => {
       ...baseOrder,
       deliveryMethod: 'pickup',
       paymentState: 'pending',
+      preparationState: 'ready',
       fulfillmentState: 'delivered'
     };
     const actions = availableOrderActions(order);
@@ -89,6 +100,7 @@ describe('order actions state machine', () => {
       shippingType: 'express',
       shippingAddress: 'Av. Corrientes 1234',
       paymentState: 'paid',
+      preparationState: 'ready',
       fulfillmentState: 'shipped'
     };
     const actions = availableOrderActions(order);
@@ -100,6 +112,7 @@ describe('order actions state machine', () => {
     const order: Order = {
       ...baseOrder,
       paymentState: 'paid',
+      preparationState: 'ready',
       fulfillmentState: 'delivered'
     };
     expect(availableOrderActions(order)).toEqual([]);
@@ -109,6 +122,7 @@ describe('order actions state machine', () => {
     const order: Order = {
       ...baseOrder,
       paymentState: 'gifted',
+      preparationState: 'ready',
       fulfillmentState: 'delivered',
       orderState: 'confirmed'
     };
@@ -124,13 +138,14 @@ describe('order actions state machine', () => {
     const order: Order = {
       ...baseOrder,
       paymentState: 'refunded',
+      preparationState: 'ready',
       fulfillmentState: 'pending'
     };
     const actions = availableOrderActions(order);
     expect(actions).toEqual(['cancel']);
   });
 
-  it('blocks fulfillment actions when stockReadiness is waiting_incoming', () => {
+  it('blocks fulfillment actions and mark_ready when stockReadiness is waiting_incoming', () => {
     const order: Order = {
       ...baseOrder,
       deliveryMethod: 'shipping',
@@ -138,27 +153,29 @@ describe('order actions state machine', () => {
     };
     const actions = availableOrderActions(order);
     expect(actions).toContain('mark_paid');
+    expect(actions).not.toContain('mark_ready');
     expect(actions).not.toContain('mark_delivered');
     expect(actions).not.toContain('mark_shipped');
   });
 
-  it('blocks fulfillment actions when stockReadiness is uncovered', () => {
+  it('blocks fulfillment actions and mark_ready when stockReadiness is uncovered', () => {
     const order: Order = {
       ...baseOrder,
       deliveryMethod: 'pickup',
       stockReadiness: 'uncovered'
     };
     const actions = availableOrderActions(order);
+    expect(actions).not.toContain('mark_ready');
     expect(actions).not.toContain('mark_delivered');
     expect(actions).toContain('cancel');
   });
 
   it('has human-friendly Spanish labels for all actions', () => {
+    expect(ORDER_ACTION_LABELS.mark_ready).toBe('Listo para entregar');
     expect(ORDER_ACTION_LABELS.mark_paid).toBe('Marcar como cobrado');
     expect(ORDER_ACTION_LABELS.mark_gifted).toBe('Regalar');
     expect(ORDER_ACTION_LABELS.mark_refunded).toBe('Marcar reintegro realizado');
     expect(ORDER_ACTION_LABELS.start_preparing).toBe('Empezar a preparar');
-    expect(ORDER_ACTION_LABELS.mark_ready).toBe('Marcar como listo');
     expect(ORDER_ACTION_LABELS.mark_shipped).toBe('Marcar como enviado');
     expect(ORDER_ACTION_LABELS.mark_delivered).toBe('Marcar como entregado');
     expect(ORDER_ACTION_LABELS.cancel).toBe('Cancelar pedido');

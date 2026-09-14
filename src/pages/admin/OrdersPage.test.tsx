@@ -51,3 +51,48 @@ it.each(['entrega', 'cancelación', 'regalo'])('confirma %s fuera de la tarjeta 
   expect(await screen.findByText('Productos pedidos')).toBeInTheDocument();
   client.clear();
 });
+
+it('permite marcar un pedido como listo para entregar desde las acciones operativas', async () => {
+  let order: Order = {
+    ...demoOrders[0]!,
+    orderState: 'confirmed',
+    paymentState: 'pending',
+    preparationState: 'pending',
+    fulfillmentState: 'pending',
+    stockReadiness: 'ready'
+  };
+
+  api.listOrders.mockImplementation(async () => ({
+    items: [order],
+    total: 1,
+    page: 1,
+    pageSize: 50,
+    pendingTotal: 1,
+    completedTotal: 0
+  }));
+
+  api.transitionOrder.mockImplementation(async (_id, action) => {
+    if (action === 'mark_ready') {
+      order = { ...order, preparationState: 'ready' };
+    }
+    return order;
+  });
+
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+  render(
+    <QueryClientProvider client={client}>
+      <OrdersPage />
+    </QueryClientProvider>
+  );
+
+  fireEvent.click(await screen.findByRole('button', { name: /Ver pedido y acciones/ }));
+  const readyButton = screen.getByRole('button', { name: /Marcar listo para entregar/i });
+  expect(readyButton).toBeInTheDocument();
+  fireEvent.click(readyButton);
+
+  await waitFor(() => expect(api.transitionOrder).toHaveBeenCalledWith(order.id, 'mark_ready'));
+  expect(
+    await screen.findByText(`Pedido #${order.number} marcado como listo para entrega.`)
+  ).toBeInTheDocument();
+  client.clear();
+});

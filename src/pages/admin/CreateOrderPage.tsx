@@ -118,7 +118,7 @@ export default function CreateOrderPage() {
   // Cálculos de totales y stock
   const totals = useMemo(() => {
     const rawSubtotal = items.reduce((sum, item) => sum + item.unitPriceCents * item.quantity, 0);
-    const subtotal = paymentMethod === 'gift' ? 0 : rawSubtotal;
+    const subtotal = saleType === 'gift' || paymentMethod === 'gift' ? 0 : rawSubtotal;
     const shipping = 0;
     return {
       subtotal,
@@ -127,7 +127,7 @@ export default function CreateOrderPage() {
       total: subtotal,
       units: items.reduce((sum, item) => sum + item.quantity, 0)
     };
-  }, [items, paymentMethod]);
+  }, [items, paymentMethod, saleType]);
 
   // Análisis de disponibilidad de stock para los items seleccionados
   const stockReadiness = useMemo(() => {
@@ -143,6 +143,11 @@ export default function CreateOrderPage() {
 
   const handleSaleTypeChange = (nextType: SaleType) => {
     setSaleType(nextType);
+    if (nextType === 'gift') {
+      setPaymentMethod('gift');
+    } else if (paymentMethod === 'gift') {
+      setPaymentMethod('transfer');
+    }
     setItems((current) =>
       current.map((item) => {
         const product = products.find((p) => p.id === item.productId);
@@ -292,6 +297,9 @@ export default function CreateOrderPage() {
       quantity: i.quantity
     }));
 
+    const isGift = saleType === 'gift' || paymentMethod === 'gift';
+    const isCost = saleType === 'cost' && !isGift;
+    const finalPaymentMethod: PaymentMethod = isGift ? 'gift' : paymentMethod;
     const checkoutData = {
       customerName: trimmedName,
       phone: trimmedPhone || null,
@@ -299,7 +307,7 @@ export default function CreateOrderPage() {
       shippingType: deliveryMethod === 'shipping' ? shippingType : null,
       address: deliveryMethod === 'shipping' ? address.trim() : null,
       addressNumber: deliveryMethod === 'shipping' ? addressNumber.trim() : null,
-      paymentMethod
+      paymentMethod: finalPaymentMethod
     };
 
     // Generar protocolo determinista válido para la API
@@ -308,11 +316,10 @@ export default function CreateOrderPage() {
     const protocol = buildWhatsAppProtocol(checkoutData, lines, settings, previousId);
     protocolDraft.current = { fingerprint, orderId: protocol.orderId };
 
-    const isCost = saleType === 'cost' && paymentMethod !== 'gift';
     const payload: ImportOrderInput = {
       ...checkoutData,
       lines,
-      saleType: paymentMethod === 'gift' ? 'gift' : saleType,
+      saleType: isGift ? 'gift' : saleType,
       isCostSale: isCost,
       shippingFeeCents: totals.shipping,
       quotedSubtotalCents: totals.subtotal,
@@ -404,7 +411,7 @@ export default function CreateOrderPage() {
                 <span className="font-bold text-ink-950">
                   {createdOrder.deliveryMethod === 'pickup'
                     ? 'Retiro en el local'
-                    : `Envío a domicilio (${createdOrder.shippingType === 'express' ? 'Express' : 'Estándar'})`}
+                    : 'Envío a domicilio'}
                 </span>
               </div>
               {createdOrder.shippingAddress ? (
@@ -419,16 +426,20 @@ export default function CreateOrderPage() {
                 <span className="text-ink-600">Modalidad:</span>
                 <span className="font-bold text-ink-950">
                   {createdOrder.saleType === 'cost' || createdOrder.isCostSale
-                    ? 'Venta al costo (Margen $ 0)'
+                    ? 'Venta al costo'
                     : createdOrder.paymentMethod === 'gift' || createdOrder.saleType === 'gift'
-                      ? 'Regalo / Cortesía ($ 0)'
-                      : 'Venta regular (PVP)'}
+                      ? 'Regalo / Cortesía'
+                      : 'Precio regular'}
                 </span>
               </div>
               <div className="flex justify-between font-medium">
                 <span className="text-ink-600">Medio de pago:</span>
                 <span className="font-bold text-ink-950">
-                  {createdOrder.paymentMethod === 'cash' ? 'Efectivo' : createdOrder.paymentMethod === 'gift' ? 'Regalo / Cortesía' : 'Transferencia'}
+                  {createdOrder.paymentMethod === 'cash'
+                    ? 'Efectivo'
+                    : createdOrder.paymentMethod === 'gift' || createdOrder.saleType === 'gift'
+                      ? 'Sin cargo (Cortesía)'
+                      : 'Transferencia'}
                 </span>
               </div>
               <div className="border-t border-ink-950/8 pt-3 flex justify-between font-black text-base text-ink-950">
@@ -562,11 +573,17 @@ export default function CreateOrderPage() {
                         <div className="flex items-center justify-between gap-3 border-t border-ink-950/6 pt-2 sm:border-t-0 sm:pt-0 sm:justify-end shrink-0">
                           <div className="text-right">
                             <span className="font-display font-black text-sm text-ink-950 block">
-                              {formatMoney(saleType === 'cost' ? (p.costCents ?? (p as any).currentCostCents ?? p.priceCents) : p.priceCents)}
+                              {saleType === 'gift'
+                                ? '$ 0'
+                                : formatMoney(saleType === 'cost' ? (p.costCents ?? (p as any).currentCostCents ?? p.priceCents) : p.priceCents)}
                             </span>
                             {saleType === 'cost' ? (
                               <span className="text-[10px] font-black text-amber-800 uppercase tracking-wider block">
                                 al costo
+                              </span>
+                            ) : saleType === 'gift' ? (
+                              <span className="text-[10px] font-black text-purple-800 uppercase tracking-wider block">
+                                cortesía
                               </span>
                             ) : null}
                           </div>
@@ -644,7 +661,7 @@ export default function CreateOrderPage() {
                           <div className="min-w-0 flex-1">
                             <h4 className="font-bold text-sm text-ink-950 truncate">{item.name}</h4>
                             <p className="text-xs text-ink-600 truncate">
-                              {item.presentation} • {formatMoney(item.unitPriceCents)} c/u
+                              {item.presentation} • {saleType === 'gift' ? 'Obsequio' : `${formatMoney(item.unitPriceCents)} c/u`}
                             </p>
                             {willUseIncoming ? (
                               <p className="mt-1 text-[11px] font-bold text-amber-700">
@@ -681,7 +698,7 @@ export default function CreateOrderPage() {
 
                           <div className="text-right min-w-16 sm:min-w-20">
                             <span className="block font-display font-black text-sm text-ink-950">
-                              {formatMoney(item.unitPriceCents * item.quantity)}
+                              {saleType === 'gift' ? '$ 0' : formatMoney(item.unitPriceCents * item.quantity)}
                             </span>
                           </div>
 
@@ -795,40 +812,6 @@ export default function CreateOrderPage() {
 
               {deliveryMethod === 'shipping' ? (
                 <div className="space-y-4 pt-2 border-t border-ink-950/8">
-                  <div className="space-y-2">
-                    <label className="block text-xs font-bold text-ink-800 uppercase tracking-wider">
-                      Tipo de envío
-                    </label>
-                    <div className="grid grid-cols-2 gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setShippingType('standard')}
-                        className={cn(
-                          'p-2.5 rounded-xl border text-left text-xs transition',
-                          shippingType === 'standard'
-                            ? 'border-brand-600 bg-brand-50 text-brand-950 font-bold'
-                            : 'border-ink-950/15 bg-white text-ink-700 font-semibold'
-                        )}
-                      >
-                        <span className="block font-black">Estándar</span>
-                        <span className="text-ink-600">A coordinar</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setShippingType('express')}
-                        className={cn(
-                          'p-2.5 rounded-xl border text-left text-xs transition',
-                          shippingType === 'express'
-                            ? 'border-brand-600 bg-brand-50 text-brand-950 font-bold'
-                            : 'border-ink-950/15 bg-white text-ink-700 font-semibold'
-                        )}
-                      >
-                        <span className="block font-black">Express</span>
-                        <span className="text-ink-600">A coordinar</span>
-                      </button>
-                    </div>
-                  </div>
-
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:gap-2">
                     <div className="sm:col-span-2">
                       <Field label="Calle / Dirección *" htmlFor="address">
@@ -863,13 +846,13 @@ export default function CreateOrderPage() {
 
             {/* Modalidad de Venta */}
             <section className="rounded-2xl sm:rounded-3xl border border-ink-950/8 bg-white p-4 sm:p-6 shadow-sm min-w-0">
-              <h2 className="font-display text-lg font-black text-ink-950 mb-2">
+              <h2 className="font-display text-lg font-black text-ink-950 mb-1">
                 5. Modalidad de venta
               </h2>
-              <p className="text-xs text-ink-600 font-semibold mb-4">
-                Elegí si la venta se realiza a precio de lista o a precio de costo de reposición.
+              <p className="text-xs text-ink-600 font-medium mb-4">
+                Elegí si el pedido es a precio regular, a precio de costo o un regalo de cortesía.
               </p>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <button
                   type="button"
                   onClick={() => handleSaleTypeChange('retail')}
@@ -882,10 +865,11 @@ export default function CreateOrderPage() {
                 >
                   <ShoppingBag className="size-5 text-brand-600 shrink-0" />
                   <div className="min-w-0">
-                    <span className="block text-sm font-black">Venta PVP</span>
-                    <span className="text-[11px] text-ink-500">Precios de lista</span>
+                    <span className="block text-sm font-black">Precio regular</span>
+                    <span className="text-[11px] text-ink-500">Precio habitual de lista</span>
                   </div>
                 </button>
+
                 <button
                   type="button"
                   onClick={() => handleSaleTypeChange('cost')}
@@ -899,59 +883,16 @@ export default function CreateOrderPage() {
                   <Tag className="size-5 text-amber-600 shrink-0" />
                   <div className="min-w-0">
                     <span className="block text-sm font-black">Venta al costo</span>
-                    <span className="text-[11px] text-amber-800">Margen $ 0 neutral</span>
-                  </div>
-                </button>
-              </div>
-            </section>
-
-            {/* Medio de Pago */}
-            <section className="rounded-2xl sm:rounded-3xl border border-ink-950/8 bg-white p-4 sm:p-6 shadow-sm min-w-0">
-              <h2 className="font-display text-lg font-black text-ink-950 mb-4">
-                6. Medio de pago acordado
-              </h2>
-
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                <button
-                  type="button"
-                  onClick={() => setPaymentMethod('cash')}
-                  className={cn(
-                    'flex items-center gap-3 p-3.5 rounded-2xl border text-left transition',
-                    paymentMethod === 'cash'
-                      ? 'border-brand-600 bg-brand-50/70 text-brand-950 ring-2 ring-brand-500/20'
-                      : 'border-ink-950/12 bg-white text-ink-700 hover:border-ink-950/25'
-                  )}
-                >
-                  <Banknote className="size-5 text-emerald-600 shrink-0" />
-                  <div className="min-w-0">
-                    <span className="block text-sm font-black">Efectivo</span>
-                    <span className="text-[11px] text-ink-500">Cobro en entrega</span>
+                    <span className="text-[11px] text-amber-800">A precio de reposición</span>
                   </div>
                 </button>
 
                 <button
                   type="button"
-                  onClick={() => setPaymentMethod('transfer')}
+                  onClick={() => handleSaleTypeChange('gift')}
                   className={cn(
                     'flex items-center gap-3 p-3.5 rounded-2xl border text-left transition',
-                    paymentMethod === 'transfer'
-                      ? 'border-brand-600 bg-brand-50/70 text-brand-950 ring-2 ring-brand-500/20'
-                      : 'border-ink-950/12 bg-white text-ink-700 hover:border-ink-950/25'
-                  )}
-                >
-                  <CreditCard className="size-5 text-blue-600 shrink-0" />
-                  <div className="min-w-0">
-                    <span className="block text-sm font-black">Transferencia</span>
-                    <span className="text-[11px] text-ink-500">Alias o CBU</span>
-                  </div>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setPaymentMethod('gift')}
-                  className={cn(
-                    'flex items-center gap-3 p-3.5 rounded-2xl border text-left transition',
-                    paymentMethod === 'gift'
+                    saleType === 'gift'
                       ? 'border-purple-600 bg-purple-50/70 text-purple-950 ring-2 ring-purple-500/20'
                       : 'border-ink-950/12 bg-white text-ink-700 hover:border-ink-950/25'
                   )}
@@ -959,10 +900,74 @@ export default function CreateOrderPage() {
                   <Gift className="size-5 text-purple-600 shrink-0" />
                   <div className="min-w-0">
                     <span className="block text-sm font-black">Regalo / Cortesía</span>
-                    <span className="text-[11px] text-ink-500">Costo $ 0 cobrado</span>
+                    <span className="text-[11px] text-purple-800">Obsequio sin cargo ($ 0)</span>
                   </div>
                 </button>
               </div>
+            </section>
+
+            {/* Medio de Pago */}
+            <section className="rounded-2xl sm:rounded-3xl border border-ink-950/8 bg-white p-4 sm:p-6 shadow-sm min-w-0">
+              <h2 className="font-display text-lg font-black text-ink-950 mb-1">
+                6. Medio de pago acordado
+              </h2>
+
+              {saleType === 'gift' ? (
+                <div className="mt-3 flex items-center gap-3 rounded-2xl border border-purple-200 bg-purple-50/70 p-4 text-purple-950">
+                  <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-purple-100 text-purple-700">
+                    <Gift className="size-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <span className="block text-sm font-black text-purple-950">
+                      Sin cobro monetario
+                    </span>
+                    <p className="text-xs text-purple-800 mt-0.5">
+                      No se requiere medio de pago porque este pedido es una atención de cortesía ($ 0).
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <p className="text-xs text-ink-600 font-medium mb-4">
+                    Seleccioná cómo abonará el cliente.
+                  </p>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <button
+                      type="button"
+                      onClick={() => setPaymentMethod('cash')}
+                      className={cn(
+                        'flex items-center gap-3 p-3.5 rounded-2xl border text-left transition',
+                        paymentMethod === 'cash'
+                          ? 'border-brand-600 bg-brand-50/70 text-brand-950 ring-2 ring-brand-500/20'
+                          : 'border-ink-950/12 bg-white text-ink-700 hover:border-ink-950/25'
+                      )}
+                    >
+                      <Banknote className="size-5 text-emerald-600 shrink-0" />
+                      <div className="min-w-0">
+                        <span className="block text-sm font-black">Efectivo</span>
+                        <span className="text-[11px] text-ink-500">Cobro en entrega</span>
+                      </div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setPaymentMethod('transfer')}
+                      className={cn(
+                        'flex items-center gap-3 p-3.5 rounded-2xl border text-left transition',
+                        paymentMethod === 'transfer'
+                          ? 'border-brand-600 bg-brand-50/70 text-brand-950 ring-2 ring-brand-500/20'
+                          : 'border-ink-950/12 bg-white text-ink-700 hover:border-ink-950/25'
+                      )}
+                    >
+                      <CreditCard className="size-5 text-blue-600 shrink-0" />
+                      <div className="min-w-0">
+                        <span className="block text-sm font-black">Transferencia</span>
+                        <span className="text-[11px] text-ink-500">Alias o CBU</span>
+                      </div>
+                    </button>
+                  </div>
+                </>
+              )}
             </section>
 
             {/* Resumen Económico y Botón de Confirmación */}
@@ -975,15 +980,12 @@ export default function CreateOrderPage() {
                 <div className="flex justify-between font-semibold text-ink-700">
                   <span>Productos ({totals.units} unidades)</span>
                   <span className="font-bold text-ink-950">
-                    {paymentMethod === 'gift' ? '$0 (Cortesía)' : formatMoney(totals.subtotal)}
+                    {saleType === 'gift' ? '$0 (Cortesía)' : formatMoney(totals.subtotal)}
                   </span>
                 </div>
                 <div className="flex justify-between font-semibold text-ink-700">
                   <span>
-                    Envío{' '}
-                    {deliveryMethod === 'shipping'
-                      ? `(${shippingType === 'express' ? 'Express' : 'Estándar'})`
-                      : '(Retiro)'}
+                    Envío {deliveryMethod === 'shipping' ? '(A domicilio)' : '(Retiro)'}
                   </span>
                   <span className="font-bold text-ink-950">
                     {deliveryMethod === 'shipping'
@@ -999,32 +1001,32 @@ export default function CreateOrderPage() {
 
               <div className="flex items-baseline justify-between mb-4">
                 <span className="text-xs font-black uppercase tracking-wider text-ink-700">
-                  {paymentMethod === 'gift' ? 'Total cortesía' : 'Total a cobrar'}
+                  {saleType === 'gift' ? 'Total cortesía' : 'Total a cobrar'}
                 </span>
                 <span
                   className={cn(
                     'font-display text-3xl font-black',
-                    paymentMethod === 'gift' ? 'text-purple-700' : 'text-ink-950'
+                    saleType === 'gift' ? 'text-purple-700' : 'text-ink-950'
                   )}
                 >
                   {formatMoney(totals.total)}
                 </span>
               </div>
 
-              {saleType === 'cost' && paymentMethod !== 'gift' ? (
-                <div className="mb-4 rounded-xl bg-amber-50 p-3 border border-amber-200/60 text-xs font-semibold text-amber-900 flex items-start gap-2">
-                  <Tag className="size-4 shrink-0 text-amber-600 mt-0.5" />
+              {saleType === 'cost' ? (
+                <div className="mb-4 rounded-xl bg-amber-50 p-3.5 border border-amber-200/80 text-xs font-semibold text-amber-950 flex items-start gap-2.5">
+                  <Tag className="size-4 shrink-0 text-amber-700 mt-0.5" />
                   <span>
-                    Venta al costo activa: El cliente abona el valor de reposición de la mercadería ({formatMoney(totals.subtotal)}). El margen comercial registrado en Ventas será neutral (ganancia = $ 0).
+                    Venta al costo: el pedido se cobra al valor de reposición de la mercadería ({formatMoney(totals.subtotal)}), sin recargo comercial adicional.
                   </span>
                 </div>
               ) : null}
 
-              {paymentMethod === 'gift' ? (
-                <div className="mb-4 rounded-xl bg-purple-50 p-3 border border-purple-200/60 text-xs font-semibold text-purple-900 flex items-start gap-2">
-                  <Gift className="size-4 shrink-0 text-purple-600 mt-0.5" />
+              {saleType === 'gift' ? (
+                <div className="mb-4 rounded-xl bg-purple-50 p-3.5 border border-purple-200/80 text-xs font-semibold text-purple-950 flex items-start gap-2.5">
+                  <Gift className="size-4 shrink-0 text-purple-700 mt-0.5" />
                   <span>
-                    El pedido se registrará como regalo. Descontará stock físico, no sumará facturación ($0) y en Ventas se reflejará el costo como pérdida en rojo.
+                    Pedido de regalo / cortesía: se entrega sin cargo ($ 0) al destinatario. Descontará el stock real del inventario.
                   </span>
                 </div>
               ) : null}
@@ -1062,12 +1064,23 @@ export default function CreateOrderPage() {
 
               <Button
                 size="lg"
-                className="w-full text-base font-black shadow-sm"
+                className={cn(
+                  'w-full text-base font-black shadow-sm',
+                  saleType === 'gift'
+                    ? 'bg-purple-700 hover:bg-purple-800 text-white'
+                    : saleType === 'cost'
+                      ? 'bg-amber-700 hover:bg-amber-800 text-white'
+                      : ''
+                )}
                 loading={confirmMutation.isPending}
                 disabled={items.length === 0 || customerName.trim().length < 2 || confirmMutation.isPending}
                 onClick={handleSubmit}
               >
-                Confirmar pedido manual
+                {saleType === 'gift'
+                  ? 'Confirmar regalo / cortesía'
+                  : saleType === 'cost'
+                    ? 'Confirmar venta al costo'
+                    : 'Confirmar pedido manual'}
               </Button>
               <p className="mt-2.5 text-center text-xs font-semibold text-ink-500">
                 Al confirmar, el stock se reserva inmediatamente en el inventario.

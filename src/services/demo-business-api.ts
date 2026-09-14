@@ -263,10 +263,18 @@ export const demoBusinessApi: BusinessApi = {
     const taxes = activeThisMonth.reduce((sum, order) => sum + (order.taxAmountCents ?? 0), 0);
     return latency({
       pendingPreparation: state.orders.filter(
-        (order) => order.orderState === 'confirmed' && order.preparationState !== 'ready'
+        (order) =>
+          order.orderState === 'confirmed' &&
+          order.preparationState !== 'ready' &&
+          order.fulfillmentState === 'pending' &&
+          order.paymentState !== 'refunded'
       ).length,
       readyForDelivery: state.orders.filter(
-        (order) => order.preparationState === 'ready' && order.fulfillmentState === 'pending'
+        (order) =>
+          order.orderState === 'confirmed' &&
+          order.preparationState === 'ready' &&
+          order.fulfillmentState === 'pending' &&
+          order.paymentState !== 'refunded'
       ).length,
       lowStockProducts: inventory.filter((item) => item.status !== 'ok').length,
       incomingPurchases: state.purchases.filter((purchase) => purchase.state === 'ordered').length,
@@ -524,7 +532,7 @@ export const demoBusinessApi: BusinessApi = {
       saleType: isCost ? 'cost' : isGift ? 'gift' : 'retail',
       isCostSale: isCost,
       paymentState: isGift ? 'gifted' : 'pending',
-      preparationState: 'ready',
+      preparationState: isGift ? 'ready' : 'pending',
       fulfillmentState: isGift ? 'delivered' : 'pending',
       stockReadiness: requiresIncoming ? 'waiting_incoming' : 'ready',
       expectedArrivalAt,
@@ -718,8 +726,21 @@ export const demoBusinessApi: BusinessApi = {
         }
       }
     }
-    if (action === 'start_preparing') order.preparationState = 'preparing';
-    if (action === 'mark_ready') order.preparationState = 'ready';
+    if (action === 'start_preparing') {
+      if (order.orderState === 'cancelled' || order.fulfillmentState !== 'pending') {
+        throw new AppError('business', 'Transición inválida para este pedido.');
+      }
+      order.preparationState = 'preparing';
+    }
+    if (action === 'mark_ready') {
+      if (order.orderState === 'cancelled' || order.fulfillmentState !== 'pending') {
+        throw new AppError('business', 'Transición inválida para este pedido.');
+      }
+      if (order.stockReadiness === 'waiting_incoming') {
+        throw new AppError('business', 'No se puede marcar como listo un pedido en espera de mercadería.');
+      }
+      order.preparationState = 'ready';
+    }
     if (action === 'mark_shipped' || action === 'mark_delivered') {
       if (order.stockReadiness === 'waiting_incoming') {
         throw new AppError('business', 'No se puede entregar un pedido en espera de mercadería.');

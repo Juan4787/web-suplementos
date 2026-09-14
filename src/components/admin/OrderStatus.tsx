@@ -21,7 +21,11 @@ export function OrderStatus({ order, compact = false }: { order: Order; compact?
           <Gift className="size-4 text-purple-600" /> Regalo / Cortesía
         </span>
         {order.fulfillmentState !== 'delivered' && (
-          <StatusChip key="deliv-pend" label="Falta entregar" tone="warning" />
+          order.preparationState === 'ready' ? (
+            <StatusChip key="ready" label="Listo para entrega" tone="info" />
+          ) : (
+            <StatusChip key="pending-prep" label="Falta preparar" tone="warning" />
+          )
         )}
       </div>
     );
@@ -53,13 +57,15 @@ export function OrderStatus({ order, compact = false }: { order: Order; compact?
     );
   }
 
-  // 1. Estado de Entrega
+  // 1. Estado Operativo (Preparación y Entrega)
   if (order.fulfillmentState === 'delivered') {
     chips.push(<StatusChip key="deliv" label="Entregado" tone="success" />);
   } else if (order.fulfillmentState === 'shipped') {
     chips.push(<StatusChip key="ship" label="Enviado" tone="info" />);
+  } else if (order.preparationState === 'ready') {
+    chips.push(<StatusChip key="ready" label="Listo para entrega" tone="info" />);
   } else {
-    chips.push(<StatusChip key="deliv-pend" label="Falta entregar" tone="warning" />);
+    chips.push(<StatusChip key="pending-prep" label="Falta preparar" tone="warning" />);
   }
 
   // 2. Estado de Cobro

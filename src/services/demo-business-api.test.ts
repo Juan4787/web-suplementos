@@ -351,6 +351,55 @@ describe('demoBusinessApi lifecycle and domain guarantees', () => {
     expect(after.reserved).toBe(initialReserved);
   });
 
+  it('permite marcar un pedido como listo para entregar (mark_ready) y actualiza métricas del dashboard', async () => {
+    const products = await demoBusinessApi.listAdminProducts();
+    const targetProduct = products.find((p) => p.onHand > 2)!;
+
+    const dashBefore = await demoBusinessApi.getDashboard();
+
+    const order = await demoBusinessApi.confirmImportedOrder({
+      protocolOrderId: `TEST_READY_${Date.now()}`,
+      protocolChecksum: 'chk123',
+      customerName: 'Cliente Test Listo',
+      phone: '1155556666',
+      deliveryMethod: 'pickup',
+      shippingType: null,
+      address: null,
+      addressNumber: null,
+      shippingFeeCents: 0,
+      paymentMethod: 'cash',
+      quotedSubtotalCents: targetProduct.priceCents,
+      quotedTotalCents: targetProduct.priceCents,
+      lines: [
+        {
+          productId: targetProduct.id,
+          sku: targetProduct.sku,
+          slug: targetProduct.slug,
+          name: targetProduct.name,
+          presentation: targetProduct.presentation,
+          imageUrl: targetProduct.imageUrl,
+          unitPriceCents: targetProduct.priceCents,
+          quantity: 1
+        }
+      ]
+    });
+
+    // Nuevo pedido debe iniciar en preparationState: 'pending'
+    expect(order.preparationState).toBe('pending');
+
+    const dashAfterCreate = await demoBusinessApi.getDashboard();
+    expect(dashAfterCreate.pendingPreparation).toBe(dashBefore.pendingPreparation + 1);
+    expect(dashAfterCreate.readyForDelivery).toBe(dashBefore.readyForDelivery);
+
+    // Marcar como listo para entregar
+    const readyOrder = await demoBusinessApi.transitionOrder(order.id, 'mark_ready');
+    expect(readyOrder.preparationState).toBe('ready');
+
+    const dashAfterReady = await demoBusinessApi.getDashboard();
+    expect(dashAfterReady.pendingPreparation).toBe(dashBefore.pendingPreparation);
+    expect(dashAfterReady.readyForDelivery).toBe(dashBefore.readyForDelivery + 1);
+  });
+
   it('manages supplier purchases from creation to receipt, updating stock', async () => {
     const products = await demoBusinessApi.listAdminProducts();
     const targetProduct = products[0]!;

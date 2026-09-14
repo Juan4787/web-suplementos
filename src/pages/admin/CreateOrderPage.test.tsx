@@ -177,8 +177,8 @@ describe('CreateOrderPage', () => {
     const shippingButton = screen.getByText('Envío a domicilio');
     fireEvent.click(shippingButton);
 
-    // Debe mostrar campos de dirección y tipo de envío
-    expect(screen.getByText('Tipo de envío')).toBeDefined();
+    // Debe mostrar campos de dirección de envío a coordinar
+    expect(screen.getByText('Altura / Piso *')).toBeDefined();
     expect(screen.getByText('Calle / Dirección *')).toBeDefined();
   });
 

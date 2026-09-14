@@ -9,14 +9,23 @@ export const availableOrderActions = (order: Order): OrderAction[] => {
     return actions;
   }
 
-  // 1. Acciones principales operativas: Cobro y Entrega directos
+  const canFulfill = !order.stockReadiness || order.stockReadiness === 'ready';
+
+  // 1. Paso previo: Preparación (Listo para entregar)
+  if (order.fulfillmentState === 'pending' && order.preparationState !== 'ready') {
+    if (canFulfill) {
+      actions.push('mark_ready');
+    }
+  }
+
+  // 2. Acciones de Cobro
   if (order.paymentState === 'pending') {
     actions.push('mark_paid');
     actions.push('mark_at_cost');
     actions.push('mark_gifted');
   }
 
-  const canFulfill = !order.stockReadiness || order.stockReadiness === 'ready';
+  // 3. Acciones de Entrega
   if (canFulfill) {
     if (order.fulfillmentState === 'pending') {
       actions.push('mark_delivered');
@@ -28,7 +37,7 @@ export const availableOrderActions = (order: Order): OrderAction[] => {
     }
   }
 
-  // 2. Acciones de excepción / reversión al final
+  // 4. Acciones de excepción / reversión al final
   if (order.paymentState === 'paid' && order.fulfillmentState === 'pending') {
     actions.push('mark_refunded');
   }
@@ -40,12 +49,12 @@ export const availableOrderActions = (order: Order): OrderAction[] => {
 };
 
 export const ORDER_ACTION_LABELS: Record<OrderAction, string> = {
+  mark_ready: 'Listo para entregar',
   mark_paid: 'Marcar como cobrado',
   mark_at_cost: 'Cobrar al costo',
   mark_gifted: 'Regalar',
   mark_refunded: 'Marcar reintegro realizado',
   start_preparing: 'Empezar a preparar',
-  mark_ready: 'Marcar como listo',
   mark_shipped: 'Marcar como enviado',
   mark_delivered: 'Marcar como entregado',
   cancel: 'Cancelar pedido'

@@ -46,7 +46,9 @@ export const translateDatabaseError = (error: { message?: string; code?: string 
     PURCHASE_ITEM_NOT_FOUND: ['Uno de los productos ya no pertenece a esta compra.', 'Cerrá la recepción y abrí de nuevo la compra actualizada.'],
     INVALID_ORDER: ['El pedido tiene datos incompletos.', 'Revisá nombre del cliente, productos, cantidades y datos de entrega.'],
     INVALID_PRODUCT: ['El producto tiene datos incompletos o inválidos.', 'Revisá nombre, presentación, precio y campos marcados en el formulario.'],
-    INVALID_PRODUCT_IMAGE: ['La imagen del producto no es válida.', 'Elegí nuevamente una imagen y esperá a que termine de cargarse.']
+    INVALID_PRODUCT_IMAGE: ['La imagen del producto no es válida.', 'Elegí nuevamente una imagen y esperá a que termine de cargarse.'],
+    CANNOT_CANCEL_SHIPPED_ORDER: ['No se puede cancelar un pedido que ya fue entregado.', 'Verificá el estado del pedido en la lista.'],
+    CANNOT_READY_ORDER_WAITING_FOR_STOCK: ['No se puede marcar como listo un pedido con mercadería en camino.', 'Recepcioná la compra correspondiente en Inventario antes de preparar el pedido.']
   };
   const specific = businessMessages[error.message ?? ''];
   if (specific) return new AppError('business', specific[0], { nextAction: specific[1] });
