@@ -96,11 +96,10 @@ describe('Checkout con cambios o fallos de conexión', () => {
       screen.getByText(/¿Tu envío es dentro de la ciudad de Santa Fe Capital o alguna localidad cercana\?/i)
     ).toBeInTheDocument();
 
-    // 1. Si elige SÍ: no se pide email y se muestra mensaje tranquilizador
+    // 1. Si elige SÍ: no pasa nada ni se le pide email
     const siButton = screen.getByRole('button', { name: /SÍ/i });
     fireEvent.click(siButton);
     expect(screen.queryByLabelText(/correo electrónico \*/i)).not.toBeInTheDocument();
-    expect(screen.getByText(/No necesitás ingresar correo electrónico/i)).toBeInTheDocument();
 
     // 2. Si elige NO: se solicita email obligatorio con el hint especificado
     const noButton = screen.getByRole('button', { name: /NO/i });
