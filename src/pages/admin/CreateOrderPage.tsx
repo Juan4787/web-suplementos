@@ -251,14 +251,14 @@ export default function CreateOrderPage() {
     }
 
     const trimmedFirst = customerFirstName.trim();
-    if (trimmedFirst.length < 2) {
-      setValidationError('Ingresá el nombre del cliente (mínimo 2 letras).');
+    if (!trimmedFirst) {
+      setValidationError('Ingresá el nombre del cliente.');
       return;
     }
 
     const trimmedLast = customerLastName.trim();
-    if (trimmedLast.length < 2) {
-      setValidationError('Ingresá el apellido del cliente (mínimo 2 letras).');
+    if (!trimmedLast) {
+      setValidationError('Ingresá el apellido del cliente.');
       return;
     }
 
@@ -1086,9 +1086,9 @@ export default function CreateOrderPage() {
                 <p className="mb-3 rounded-xl bg-cream-100 p-2.5 text-center text-xs font-bold text-ink-600">
                   Agregá al menos un producto al pedido para poder confirmar.
                 </p>
-              ) : customerFirstName.trim().length < 2 || customerLastName.trim().length < 2 ? (
+              ) : !customerFirstName.trim() || !customerLastName.trim() ? (
                 <p className="mb-3 rounded-xl bg-amber-50 p-2.5 text-center text-xs font-bold text-amber-800 border border-amber-200">
-                  Completá el nombre y el apellido del cliente (mínimo 2 letras cada uno) para habilitar la confirmación.
+                  Completá el nombre y el apellido del cliente para habilitar la confirmación.
                 </p>
               ) : null}
 
@@ -1103,7 +1103,7 @@ export default function CreateOrderPage() {
                       : ''
                 )}
                 loading={confirmMutation.isPending}
-                disabled={items.length === 0 || customerFirstName.trim().length < 2 || customerLastName.trim().length < 2 || confirmMutation.isPending}
+                disabled={items.length === 0 || !customerFirstName.trim() || !customerLastName.trim() || confirmMutation.isPending}
                 onClick={handleSubmit}
               >
                 {saleType === 'gift'

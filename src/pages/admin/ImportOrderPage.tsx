@@ -422,8 +422,8 @@ export default function ImportOrderPage() {
                         label="Nombre *"
                         htmlFor="review-first-name"
                         error={
-                          review.customerFirstName.trim().length < 2
-                            ? 'Ingresá el nombre (mínimo 2 letras).'
+                          !review.customerFirstName.trim()
+                            ? 'Ingresá el nombre.'
                             : undefined
                         }
                       >
@@ -444,8 +444,8 @@ export default function ImportOrderPage() {
                         label="Apellido *"
                         htmlFor="review-last-name"
                         error={
-                          review.customerLastName.trim().length < 2
-                            ? 'Ingresá el apellido (mínimo 2 letras).'
+                          !review.customerLastName.trim()
+                            ? 'Ingresá el apellido.'
                             : undefined
                         }
                       >
@@ -598,9 +598,9 @@ export default function ImportOrderPage() {
               </span>
             </div>
 
-            {review.customerFirstName.trim().length < 2 || review.customerLastName.trim().length < 2 ? (
+            {!review.customerFirstName.trim() || !review.customerLastName.trim() ? (
               <p role="status" className="mb-3 text-sm font-bold text-amber-900">
-                En “Corregir datos del pedido”, completá el nombre y apellido del cliente (mínimo 2 caracteres cada uno).
+                En “Corregir datos del pedido”, completá el nombre y apellido del cliente.
               </p>
             ) : null}
             <Button
@@ -608,8 +608,8 @@ export default function ImportOrderPage() {
               size="lg"
               loading={confirm.isPending}
               disabled={
-                review.customerFirstName.trim().length < 2 ||
-                review.customerLastName.trim().length < 2
+                !review.customerFirstName.trim() ||
+                !review.customerLastName.trim()
               }
               onClick={() =>
                 confirm.mutate({

@@ -150,22 +150,23 @@ describe('CreateOrderPage', () => {
     const confirmButton = screen.getByRole('button', { name: /confirmar pedido manual/i });
     expect(confirmButton).toBeDisabled();
 
-    // Completar nombre corto inválido
+    // Completar solo nombre con apellido vacío o espacios
     const firstNameInput = screen.getByPlaceholderText('Ej. Marta');
     const lastNameInput = screen.getByPlaceholderText('Ej. Gómez');
-    fireEvent.change(firstNameInput, { target: { value: 'A' } });
-    fireEvent.change(lastNameInput, { target: { value: 'Gómez' } });
-
-    // Botón sigue deshabilitado por validación
-    expect(confirmButton).toBeDisabled();
-
-    // Nombre válido pero apellido corto inválido
     fireEvent.change(firstNameInput, { target: { value: 'Marta' } });
-    fireEvent.change(lastNameInput, { target: { value: 'G' } });
+    fireEvent.change(lastNameInput, { target: { value: '   ' } });
+
+    // Botón sigue deshabilitado por falta de apellido
     expect(confirmButton).toBeDisabled();
 
-    // Ambos válidos
+    // Completar solo apellido con nombre vacío o espacios
+    fireEvent.change(firstNameInput, { target: { value: '   ' } });
     fireEvent.change(lastNameInput, { target: { value: 'Gómez' } });
+    expect(confirmButton).toBeDisabled();
+
+    // Ambos completados (incluso nombres breves)
+    fireEvent.change(firstNameInput, { target: { value: 'Bo' } });
+    fireEvent.change(lastNameInput, { target: { value: 'Li' } });
     expect(confirmButton).not.toBeDisabled();
   });
 

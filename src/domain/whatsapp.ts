@@ -416,12 +416,12 @@ export const whatsappCheckoutSchema = z
     customerFirstName: z
       .string()
       .trim()
-      .min(2, 'Ingresá tu nombre (mínimo 2 letras).')
+      .min(1, 'Ingresá tu nombre.')
       .max(50, 'El nombre admite hasta 50 caracteres.'),
     customerLastName: z
       .string()
       .trim()
-      .min(2, 'Ingresá tu apellido (mínimo 2 letras).')
+      .min(1, 'Ingresá tu apellido.')
       .max(50, 'El apellido admite hasta 50 caracteres.'),
     customerName: z.string().optional(),
     paymentMethod: z.enum(['cash', 'transfer', 'gift']),
