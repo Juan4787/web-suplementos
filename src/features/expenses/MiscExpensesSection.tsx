@@ -16,7 +16,7 @@ import {
 import { useMemo, useState } from 'react';
 import { addMonths, endOfMonth, format, parseISO, subMonths } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useMutation, useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from '@/app/query-keys';
 import { useBusinessQuery } from '@/app/use-business-query';
 import { Button } from '@/components/ui/Button';
@@ -622,7 +622,8 @@ export function MiscExpensesSection({ onNotify }: { onNotify: Notify }) {
 
   const expenses = useBusinessQuery({
     queryKey: queryKeys.miscExpenses(from, to),
-    queryFn: (api) => api.listMiscExpenses(from, to)
+    queryFn: (api) => api.listMiscExpenses(from, to),
+    placeholderData: keepPreviousData
   });
 
   const remove = useMutation({
@@ -676,9 +677,9 @@ export function MiscExpensesSection({ onNotify }: { onNotify: Notify }) {
               >
                 <ChevronLeft className="size-4" />
               </button>
-              <div className="relative flex items-center gap-2 px-3 py-1.5">
-                <CalendarRange className="size-4 text-ink-500" aria-hidden="true" />
-                <span className="text-sm font-black capitalize text-ink-950">
+              <div className="relative flex w-36 items-center justify-center gap-2 px-2 py-1.5 sm:w-44">
+                <CalendarRange className="size-4 shrink-0 text-ink-500" aria-hidden="true" />
+                <span className="truncate text-sm font-black capitalize text-ink-950">
                   {monthName}
                 </span>
                 <input
@@ -717,42 +718,49 @@ export function MiscExpensesSection({ onNotify }: { onNotify: Notify }) {
 
           <div className="flex items-center gap-2 sm:text-right">
             <span className="text-xs font-bold text-ink-500">Total del mes:</span>
-            <span className="font-display text-xl font-black tabular-nums text-ink-950">
+            <span className={cn(
+              "font-display text-xl font-black tabular-nums text-ink-950 transition-opacity",
+              expenses.isPlaceholderData && "opacity-50"
+            )}>
               {formatMoney(expenses.data?.totalCents ?? 0)}
             </span>
           </div>
         </div>
       </div>
 
-      {expenses.isPending ? <LoadingState label="Calculando gastos del período…" /> : null}
-      {expenses.isError ? (
-        <div className="p-5 sm:p-6"><ErrorState error={expenses.error} onRetry={() => void expenses.refetch()} /></div>
-      ) : null}
-      {expenses.data && expenses.data.items.length === 0 ? (
-        <div className="p-5 sm:p-6">
-          <EmptyState
-            title={`No hay gastos para ${monthName}`}
-            description="Podés agregar uno puntual o programar una recurrencia semanal o mensual. Las opciones de fecha aparecen a medida que las necesitás."
-            action={
-              <Button variant="secondary" size="sm" onClick={() => setFormDraft(newDraft(today))}>
-                <Plus className="size-4" /> Agregar el primero
-              </Button>
-            }
-          />
-        </div>
-      ) : null}
-      {expenses.data && expenses.data.items.length > 0 ? (
-        <div className="divide-y divide-ink-950/8">
-          {expenses.data.items.map((expense) => (
-            <ExpenseRow
-              key={expense.id}
-              expense={expense}
-              onEdit={() => setFormDraft(editDraft(expense))}
-              onDelete={() => { remove.reset(); setDeleteTarget(expense); }}
+      <div className="min-h-[16rem]">
+        {expenses.isPending && !expenses.data ? (
+          <LoadingState label="Calculando gastos del período…" />
+        ) : null}
+        {expenses.isError && !expenses.data ? (
+          <div className="p-5 sm:p-6"><ErrorState error={expenses.error} onRetry={() => void expenses.refetch()} /></div>
+        ) : null}
+        {expenses.data && expenses.data.items.length === 0 ? (
+          <div className="p-5 sm:p-6">
+            <EmptyState
+              title={`No hay gastos para ${monthName}`}
+              description="Podés agregar uno puntual o programar una recurrencia semanal o mensual. Las opciones de fecha aparecen a medida que las necesitás."
+              action={
+                <Button variant="secondary" size="sm" onClick={() => setFormDraft(newDraft(today))}>
+                  <Plus className="size-4" /> Agregar el primero
+                </Button>
+              }
             />
-          ))}
-        </div>
-      ) : null}
+          </div>
+        ) : null}
+        {expenses.data && expenses.data.items.length > 0 ? (
+          <div className={cn("divide-y divide-ink-950/8 transition-opacity duration-150", expenses.isPlaceholderData && "opacity-50")}>
+            {expenses.data.items.map((expense) => (
+              <ExpenseRow
+                key={expense.id}
+                expense={expense}
+                onEdit={() => setFormDraft(editDraft(expense))}
+                onDelete={() => { remove.reset(); setDeleteTarget(expense); }}
+              />
+            ))}
+          </div>
+        ) : null}
+      </div>
 
       <div className="flex items-center gap-2 border-t border-ink-950/6 bg-cream-50/40 px-5 py-3 text-xs font-medium text-ink-600">
         <Info className="size-4 shrink-0 text-ink-400" aria-hidden="true" />
