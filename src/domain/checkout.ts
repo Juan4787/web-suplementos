@@ -23,19 +23,49 @@ export type CartRevalidationResult = {
   partialStockProducts: Array<{ name: string; available: number; requested: number }>;
 };
 
+export const splitCustomerName = (fullName: string): { firstName: string; lastName: string } => {
+  const trimmed = fullName.trim();
+  const spaceIndex = trimmed.indexOf(' ');
+  if (spaceIndex <= 0) {
+    return { firstName: trimmed, lastName: '-' };
+  }
+  return {
+    firstName: trimmed.slice(0, spaceIndex).trim(),
+    lastName: trimmed.slice(spaceIndex + 1).trim()
+  };
+};
+
 /**
  * Sanitiza los valores del formulario de Checkout.
  * Si el método de entrega es retiro en persona, limpia rigurosamente
  * los campos de envío a domicilio (tipo de envío, dirección, altura y teléfono).
  */
-export const sanitizeCheckoutValues = (values: CheckoutData): CheckoutData => ({
-  ...values,
-  customerName: values.customerName.trim(),
-  shippingType: values.deliveryMethod === 'shipping' ? values.shippingType : null,
-  address: values.deliveryMethod === 'shipping' ? (values.address?.trim() ?? null) : null,
-  addressNumber: values.deliveryMethod === 'shipping' ? (values.addressNumber?.trim() || null) : null,
-  phone: values.deliveryMethod === 'shipping' ? (values.phone?.trim() ?? null) : null
-});
+export const sanitizeCheckoutValues = (values: CheckoutData): CheckoutData => {
+  const rawFirst = values.customerFirstName?.trim();
+  const rawLast = values.customerLastName?.trim();
+  let firstName = rawFirst;
+  let lastName = rawLast;
+  let customerName = values.customerName?.trim() ?? '';
+
+  if (firstName && lastName) {
+    customerName = `${firstName} ${lastName}`.trim();
+  } else if (customerName) {
+    const split = splitCustomerName(customerName);
+    firstName = firstName || split.firstName;
+    lastName = lastName || split.lastName;
+  }
+
+  return {
+    ...values,
+    customerFirstName: firstName || undefined,
+    customerLastName: lastName || undefined,
+    customerName,
+    shippingType: values.deliveryMethod === 'shipping' ? values.shippingType : null,
+    address: values.deliveryMethod === 'shipping' ? (values.address?.trim() ?? null) : null,
+    addressNumber: values.deliveryMethod === 'shipping' ? (values.addressNumber?.trim() || null) : null,
+    phone: values.deliveryMethod === 'shipping' ? (values.phone?.trim() ?? null) : null
+  };
+};
 
 /**
  * Calcula la tarifa de envío vigente según el método y tipo seleccionado.

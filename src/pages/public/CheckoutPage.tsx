@@ -22,7 +22,7 @@ import { Field, Input } from '@/components/ui/Field';
 import { formatMoney } from '@/domain/money';
 import type { CheckoutData } from '@/domain/types';
 import { calculateShippingFee, prepareCheckoutSubmission } from '@/domain/checkout';
-import { whatsappCheckoutSchema } from '@/domain/whatsapp';
+import { whatsappCheckoutSchema, type CheckoutFormValues } from '@/domain/whatsapp';
 import { useCart } from '@/features/cart/CartProvider';
 import { cn } from '@/lib/cn';
 import { getBusinessApi } from '@/services/business-api';
@@ -101,9 +101,15 @@ export default function CheckoutPage() {
     setValue,
     watch,
     formState: { errors, isSubmitting }
-  } = useForm<CheckoutData>({
+  } = useForm<CheckoutFormValues>({
     resolver: zodResolver(whatsappCheckoutSchema),
     defaultValues: {
+      customerFirstName: cart.checkoutDraft?.customerFirstName ?? (
+        cart.checkoutDraft?.customerName ? cart.checkoutDraft.customerName.split(' ')[0] ?? '' : ''
+      ),
+      customerLastName: cart.checkoutDraft?.customerLastName ?? (
+        cart.checkoutDraft?.customerName ? cart.checkoutDraft.customerName.split(' ').slice(1).join(' ') : ''
+      ),
       customerName: cart.checkoutDraft?.customerName ?? '',
       paymentMethod: cart.checkoutDraft?.paymentMethod ?? 'cash',
       deliveryMethod: cart.checkoutDraft?.deliveryMethod ?? 'pickup',
@@ -120,8 +126,12 @@ export default function CheckoutPage() {
 
   // Mantener el borrador sincronizado cuando cambian los campos
   useEffect(() => {
-    const subscription = watch((values) => {
-      cart.updateCheckoutDraft(values as Partial<CheckoutData>);
+    const subscription = watch((formValues) => {
+      const customerName = `${formValues.customerFirstName ?? ''} ${formValues.customerLastName ?? ''}`.trim();
+      cart.updateCheckoutDraft({
+        ...formValues,
+        customerName: customerName || undefined
+      } as Partial<CheckoutData>);
     });
     return () => subscription.unsubscribe();
   }, [watch, cart]);
@@ -149,7 +159,7 @@ export default function CheckoutPage() {
     ? calculateShippingFee(deliveryMethod, shippingType, settingsQuery.data)
     : 0;
 
-  const submit = handleSubmit(async (values) => {
+  const submit = handleSubmit(async (formValues) => {
     if (isDebouncingClick || isSubmitting) return;
     setSubmitError(null);
     setPriceNotice(null);
@@ -171,6 +181,13 @@ export default function CheckoutPage() {
       const liveProducts = await api.listStorefrontProducts();
       const liveSettings = await api.getSettings();
       queryClient.setQueryData(queryKeys.settings, liveSettings);
+
+      const customerName = `${formValues.customerFirstName} ${formValues.customerLastName}`.trim();
+      const values: CheckoutData = {
+        ...formValues,
+        customerName
+      };
+
       const submission = await prepareCheckoutSubmission({
         values,
         lines: cart.lines,
@@ -265,17 +282,29 @@ export default function CheckoutPage() {
             <form className="mt-9 space-y-8" onSubmit={submit} noValidate>
               <section className="rounded-[2rem] bg-white p-5 shadow-card sm:p-7">
                 <h2 className="font-display text-xl font-black">1. Tus datos</h2>
-                <div className="mt-5">
+                <div className="mt-5 grid gap-4 sm:grid-cols-2">
                   <Field
-                    label="Nombre"
-                    htmlFor="customerName"
-                    error={errors.customerName?.message}
+                    label="Nombre *"
+                    htmlFor="customerFirstName"
+                    error={errors.customerFirstName?.message}
                   >
                     <Input
-                      id="customerName"
-                      autoComplete="name"
-                      placeholder="Ej. Juan Pérez"
-                      {...register('customerName')}
+                      id="customerFirstName"
+                      autoComplete="given-name"
+                      placeholder="Ej. Juan"
+                      {...register('customerFirstName')}
+                    />
+                  </Field>
+                  <Field
+                    label="Apellido *"
+                    htmlFor="customerLastName"
+                    error={errors.customerLastName?.message}
+                  >
+                    <Input
+                      id="customerLastName"
+                      autoComplete="family-name"
+                      placeholder="Ej. Pérez"
+                      {...register('customerLastName')}
                     />
                   </Field>
                 </div>

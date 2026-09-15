@@ -28,6 +28,8 @@ import { getBusinessApi } from '@/services/business-api';
 type Review = {
   source: ParsedWhatsAppOrder;
   lines: CartLine[];
+  customerFirstName: string;
+  customerLastName: string;
   customerName: string;
 };
 
@@ -94,7 +96,15 @@ export default function ImportOrderPage() {
           quantity: line.quantity
         } satisfies CartLine;
       });
-      setReview({ source: parsed, lines, customerName: parsed.customerName });
+      const defaultFirst = parsed.customerFirstName || (parsed.customerName ? parsed.customerName.split(' ')[0] ?? '' : '');
+      const defaultLast = parsed.customerLastName || (parsed.customerName ? parsed.customerName.split(' ').slice(1).join(' ') : '');
+      setReview({
+        source: parsed,
+        lines,
+        customerFirstName: defaultFirst,
+        customerLastName: defaultLast,
+        customerName: parsed.customerName
+      });
     } catch (error) {
       setReview(null);
       setParseError(
@@ -407,12 +417,49 @@ export default function ImportOrderPage() {
                     <h4 className="text-[13px] font-black uppercase tracking-wider text-ink-700 mb-2.5">
                       Cliente
                     </h4>
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <Field label="Nombre del cliente" htmlFor="review-name" error={review.customerName.trim().length < 2 ? 'Ingresá el nombre del cliente (al menos 2 caracteres).' : review.customerName.trim().length > 100 ? 'Acortá el nombre a 100 caracteres como máximo.' : undefined}>
+                    <div className="grid gap-3 sm:grid-cols-3">
+                      <Field
+                        label="Nombre *"
+                        htmlFor="review-first-name"
+                        error={
+                          review.customerFirstName.trim().length < 2
+                            ? 'Ingresá el nombre (mínimo 2 letras).'
+                            : undefined
+                        }
+                      >
                         <Input
-                          id="review-name"
-                          value={review.customerName}
-                          onChange={(e) => setReview({ ...review, customerName: e.target.value })}
+                          id="review-first-name"
+                          value={review.customerFirstName}
+                          onChange={(e) => {
+                            const newFirst = e.target.value;
+                            setReview({
+                              ...review,
+                              customerFirstName: newFirst,
+                              customerName: `${newFirst.trim()} ${review.customerLastName.trim()}`.trim()
+                            });
+                          }}
+                        />
+                      </Field>
+                      <Field
+                        label="Apellido *"
+                        htmlFor="review-last-name"
+                        error={
+                          review.customerLastName.trim().length < 2
+                            ? 'Ingresá el apellido (mínimo 2 letras).'
+                            : undefined
+                        }
+                      >
+                        <Input
+                          id="review-last-name"
+                          value={review.customerLastName}
+                          onChange={(e) => {
+                            const newLast = e.target.value;
+                            setReview({
+                              ...review,
+                              customerLastName: newLast,
+                              customerName: `${review.customerFirstName.trim()} ${newLast.trim()}`.trim()
+                            });
+                          }}
                         />
                       </Field>
                       <Field label="Teléfono" htmlFor="review-phone">
@@ -551,17 +598,24 @@ export default function ImportOrderPage() {
               </span>
             </div>
 
-            {review.customerName.trim().length < 2 || review.customerName.trim().length > 100 ? (
-              <p role="status" className="mb-3 text-sm font-bold text-amber-900">En “Corregir datos del pedido”, completá un nombre de cliente de entre 2 y 100 caracteres.</p>
+            {review.customerFirstName.trim().length < 2 || review.customerLastName.trim().length < 2 ? (
+              <p role="status" className="mb-3 text-sm font-bold text-amber-900">
+                En “Corregir datos del pedido”, completá el nombre y apellido del cliente (mínimo 2 caracteres cada uno).
+              </p>
             ) : null}
             <Button
               className="w-full text-[15.5px] font-black"
               size="lg"
               loading={confirm.isPending}
-              disabled={review.customerName.trim().length < 2 || review.customerName.trim().length > 100}
+              disabled={
+                review.customerFirstName.trim().length < 2 ||
+                review.customerLastName.trim().length < 2
+              }
               onClick={() =>
                 confirm.mutate({
-                  customerName: review.customerName.trim(),
+                  customerFirstName: review.customerFirstName.trim(),
+                  customerLastName: review.customerLastName.trim(),
+                  customerName: `${review.customerFirstName.trim()} ${review.customerLastName.trim()}`.trim(),
                   paymentMethod: review.source.paymentMethod,
                   deliveryMethod: review.source.deliveryMethod,
                   shippingType: review.source.shippingType,

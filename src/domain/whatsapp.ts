@@ -57,9 +57,26 @@ const buildProtocolBody = (
     (total, line) => total + line.unitPriceCents * line.quantity,
     0
   );
+  const rawFirst = checkout.customerFirstName?.trim();
+  const rawLast = checkout.customerLastName?.trim();
+  let firstName = rawFirst;
+  let lastName = rawLast;
+  if (!firstName || !lastName) {
+    const trimmed = (checkout.customerName ?? '').trim();
+    const spaceIndex = trimmed.indexOf(' ');
+    if (spaceIndex > 0) {
+      firstName = firstName || trimmed.slice(0, spaceIndex).trim();
+      lastName = lastName || trimmed.slice(spaceIndex + 1).trim();
+    } else {
+      firstName = firstName || trimmed;
+      lastName = lastName || '-';
+    }
+  }
+
   const sections = [
     WHATSAPP_PROTOCOL_HEADER,
-    field('Nombre', checkout.customerName.trim()),
+    field('Nombre', firstName),
+    field('Apellido', lastName),
     `Productos\n${lines.map(productLine).join('\n')}`,
     field('Subtotal', formatMoney(subtotalCents)),
     field('Medio de pago', paymentLabel(checkout.paymentMethod)),
@@ -175,6 +192,7 @@ const KNOWN_LEGACY_HEADERS = [
   'PEDIDO IMPULSO · V1',
   'Código de pedido',
   'Nombre',
+  'Apellido',
   'Productos',
   'Subtotal',
   'Medio de pago',
@@ -351,8 +369,30 @@ export const parseWhatsAppProtocol = (message: string): ParsedWhatsAppOrder => {
     throw new Error('Un retiro no puede tener costo de envío.');
   }
 
+  let customerFirstName = '';
+  let customerLastName = '';
+  let customerName = '';
+
+  if (sections.has('Apellido')) {
+    customerFirstName = parsedRequired(sections, 'Nombre');
+    customerLastName = parsedRequired(sections, 'Apellido');
+    customerName = `${customerFirstName} ${customerLastName}`.trim();
+  } else {
+    customerName = parsedRequired(sections, 'Nombre');
+    const spaceIndex = customerName.indexOf(' ');
+    if (spaceIndex > 0) {
+      customerFirstName = customerName.slice(0, spaceIndex).trim();
+      customerLastName = customerName.slice(spaceIndex + 1).trim();
+    } else {
+      customerFirstName = customerName;
+      customerLastName = '-';
+    }
+  }
+
   return {
-    customerName: parsedRequired(sections, 'Nombre'),
+    customerFirstName,
+    customerLastName,
+    customerName,
     paymentMethod: parsedPayment(parsedRequired(sections, 'Medio de pago')),
     deliveryMethod,
     shippingType,
@@ -373,7 +413,17 @@ export const parseWhatsAppProtocol = (message: string): ParsedWhatsAppOrder => {
 
 export const whatsappCheckoutSchema = z
   .object({
-    customerName: z.string().trim().min(2, 'Ingresá el nombre de quien hace el pedido.').max(100, 'El nombre admite hasta 100 caracteres. Acortalo para continuar.'),
+    customerFirstName: z
+      .string()
+      .trim()
+      .min(2, 'Ingresá tu nombre (mínimo 2 letras).')
+      .max(50, 'El nombre admite hasta 50 caracteres.'),
+    customerLastName: z
+      .string()
+      .trim()
+      .min(2, 'Ingresá tu apellido (mínimo 2 letras).')
+      .max(50, 'El apellido admite hasta 50 caracteres.'),
+    customerName: z.string().optional(),
     paymentMethod: z.enum(['cash', 'transfer', 'gift']),
     deliveryMethod: z.enum(['pickup', 'shipping']),
     shippingType: z.enum(['standard', 'express']).nullable(),
@@ -393,3 +443,5 @@ export const whatsappCheckoutSchema = z
       context.addIssue({ code: 'custom', path: ['phone'], message: 'Ingresá un teléfono válido.' });
     }
   });
+
+export type CheckoutFormValues = z.infer<typeof whatsappCheckoutSchema>;

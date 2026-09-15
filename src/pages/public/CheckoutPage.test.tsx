@@ -47,10 +47,12 @@ describe('Checkout con cambios o fallos de conexión', () => {
   it('permite recuperar la configuración sin borrar los datos del cliente', async () => {
     api.getSettings.mockRejectedValueOnce(new Error('Failed to fetch')).mockResolvedValue(demoSettings);
     render(<CheckoutPage />, { wrapper: Wrapper });
-    fireEvent.change(screen.getByLabelText('Nombre'), { target: { value: 'Cliente de prueba' } });
+    fireEvent.change(screen.getByLabelText(/nombre \*/i), { target: { value: 'Cliente' } });
+    fireEvent.change(screen.getByLabelText(/apellido \*/i), { target: { value: 'de prueba' } });
     fireEvent.click(await screen.findByRole('button', { name: /Intentar de nuevo/ }));
     await waitFor(() => expect(screen.getByRole('button', { name: /Continuar por WhatsApp/ })).toBeEnabled());
-    expect(screen.getByLabelText('Nombre')).toHaveValue('Cliente de prueba');
+    expect(screen.getByLabelText(/nombre \*/i)).toHaveValue('Cliente');
+    expect(screen.getByLabelText(/apellido \*/i)).toHaveValue('de prueba');
   });
 
   it('pide revisar el nuevo precio antes de enviar y usa ese precio al continuar', async () => {
@@ -59,7 +61,8 @@ describe('Checkout con cambios o fallos de conexión', () => {
     render(<CheckoutPage />, { wrapper: Wrapper });
     const button = screen.getByRole('button', { name: /Continuar por WhatsApp/ });
     await waitFor(() => expect(button).toBeEnabled());
-    fireEvent.change(screen.getByLabelText('Nombre'), { target: { value: 'Cliente de prueba' } });
+    fireEvent.change(screen.getByLabelText(/nombre \*/i), { target: { value: 'Cliente' } });
+    fireEvent.change(screen.getByLabelText(/apellido \*/i), { target: { value: 'de prueba' } });
     api.listStorefrontProducts.mockResolvedValue(demoProducts.map(p => ({ ...p, priceCents: p.priceCents + 10000 })));
     fireEvent.click(button);
     await screen.findByText(/Revisá el nuevo importe y volvé a continuar/);

@@ -679,10 +679,28 @@ export const demoBusinessApi: BusinessApi = {
       (sum, item) => sum + (item.unitCostCents ?? 0) * item.quantity,
       0
     );
+    const rawFirst = input.customerFirstName?.trim();
+    const rawLast = input.customerLastName?.trim();
+    let firstName = rawFirst;
+    let lastName = rawLast;
+    let fullName = input.customerName?.trim() ?? '';
+    if (firstName && lastName) {
+      fullName = `${firstName} ${lastName}`.trim();
+    } else if (fullName) {
+      const spaceIndex = fullName.indexOf(' ');
+      if (spaceIndex > 0) {
+        firstName = firstName || fullName.slice(0, spaceIndex).trim();
+        lastName = lastName || fullName.slice(spaceIndex + 1).trim();
+      } else {
+        firstName = firstName || fullName;
+        lastName = lastName || '-';
+      }
+    }
+
     const existingCustomer = state.customers.find(
       (c) =>
         (input.phone && c.phone && c.phone.trim() === input.phone.trim()) ||
-        c.name.trim().toLowerCase() === input.customerName.trim().toLowerCase()
+        c.name.trim().toLowerCase() === fullName.toLowerCase()
     );
     const customerId = existingCustomer ? existingCustomer.id : nextUuid();
 
@@ -706,7 +724,9 @@ export const demoBusinessApi: BusinessApi = {
       id: nextUuid(),
       number,
       customerId,
-      customerName: input.customerName,
+      customerName: fullName,
+      customerFirstName: firstName,
+      customerLastName: lastName,
       customerPhone: input.phone,
       paymentMethod: input.paymentMethod,
       deliveryMethod: input.deliveryMethod,
@@ -782,6 +802,9 @@ export const demoBusinessApi: BusinessApi = {
     if (existingCustomer) {
       existingCustomer.orderCount += 1;
       existingCustomer.lastOrderAt = now;
+      existingCustomer.name = fullName;
+      existingCustomer.firstName = firstName;
+      existingCustomer.lastName = lastName;
       if (!existingCustomer.phone && input.phone) {
         existingCustomer.phone = input.phone;
       }
@@ -789,6 +812,8 @@ export const demoBusinessApi: BusinessApi = {
       state.customers.unshift({
         id: customerId,
         name: order.customerName,
+        firstName,
+        lastName,
         phone: order.customerPhone,
         firstOrderAt: now,
         lastOrderAt: now,

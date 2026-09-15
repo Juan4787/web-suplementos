@@ -87,6 +87,8 @@ export type CartLine = {
 };
 
 export type CheckoutData = {
+  customerFirstName?: string | undefined;
+  customerLastName?: string | undefined;
   customerName: string;
   paymentMethod: PaymentMethod;
   deliveryMethod: DeliveryMethod;
@@ -116,6 +118,8 @@ export type Order = {
   number: number;
   customerId: string | null;
   customerName: string;
+  customerFirstName?: string | undefined;
+  customerLastName?: string | undefined;
   customerPhone: string | null;
   paymentMethod: PaymentMethod;
   deliveryMethod: DeliveryMethod;
@@ -211,6 +215,8 @@ export type QuoteCartEtaResult = {
 export type Customer = {
   id: string;
   name: string;
+  firstName?: string | undefined;
+  lastName?: string | undefined;
   phone: string | null;
   firstOrderAt: string;
   lastOrderAt: string;

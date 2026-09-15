@@ -151,14 +151,21 @@ describe('CreateOrderPage', () => {
     expect(confirmButton).toBeDisabled();
 
     // Completar nombre corto inválido
-    const nameInput = screen.getByPlaceholderText('Ej. Marta Gómez');
-    fireEvent.change(nameInput, { target: { value: 'A' } });
+    const firstNameInput = screen.getByPlaceholderText('Ej. Marta');
+    const lastNameInput = screen.getByPlaceholderText('Ej. Gómez');
+    fireEvent.change(firstNameInput, { target: { value: 'A' } });
+    fireEvent.change(lastNameInput, { target: { value: 'Gómez' } });
 
     // Botón sigue deshabilitado por validación
     expect(confirmButton).toBeDisabled();
 
-    // Nombre válido
-    fireEvent.change(nameInput, { target: { value: 'Marta Gómez' } });
+    // Nombre válido pero apellido corto inválido
+    fireEvent.change(firstNameInput, { target: { value: 'Marta' } });
+    fireEvent.change(lastNameInput, { target: { value: 'G' } });
+    expect(confirmButton).toBeDisabled();
+
+    // Ambos válidos
+    fireEvent.change(lastNameInput, { target: { value: 'Gómez' } });
     expect(confirmButton).not.toBeDisabled();
   });
 
@@ -236,8 +243,8 @@ describe('CreateOrderPage', () => {
     fireEvent.click(addButtons[0]!);
 
     // Datos del cliente
-    const nameInput = screen.getByPlaceholderText('Ej. Marta Gómez');
-    fireEvent.change(nameInput, { target: { value: 'Alberto Spinetta' } });
+    fireEvent.change(screen.getByPlaceholderText('Ej. Marta'), { target: { value: 'Alberto' } });
+    fireEvent.change(screen.getByPlaceholderText('Ej. Gómez'), { target: { value: 'Spinetta' } });
 
     // Confirmar
     const confirmButton = screen.getByRole('button', { name: /confirmar pedido manual/i });
@@ -255,7 +262,8 @@ describe('CreateOrderPage', () => {
     render(<CreateOrderPage />, { wrapper: createWrapper() });
     await screen.findByText('Creatina Creapure');
     fireEvent.click(screen.getAllByRole('button', { name: /agregar/i })[0]!);
-    fireEvent.change(screen.getByPlaceholderText('Ej. Marta Gómez'), { target: { value: 'Cliente Auditoría' } });
+    fireEvent.change(screen.getByPlaceholderText('Ej. Marta'), { target: { value: 'Cliente' } });
+    fireEvent.change(screen.getByPlaceholderText('Ej. Gómez'), { target: { value: 'Auditoría' } });
     const button = screen.getByRole('button', { name: /confirmar pedido manual/i });
     fireEvent.click(button);
     await waitFor(() => expect(mockConfirm).toHaveBeenCalledTimes(1));

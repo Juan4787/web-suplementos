@@ -208,7 +208,8 @@ test.describe('E2E Real: Ciclo de Vida de Stock Entrante (Cliente a Entrega y Ve
     await page.evaluate(setupFakeOpen);
 
     // Completar datos mínimos requeridos
-    await page.locator('#customerName').fill('Santiago E2E Lifecycle');
+    await page.locator('#customerFirstName').fill('Santiago');
+    await page.locator('#customerLastName').fill('E2E Lifecycle');
 
     capturedWhatsAppUrl = '';
     await page.route(/whatsapp\.com|wa\.me/, (route) => {

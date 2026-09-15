@@ -108,8 +108,9 @@ test.describe('Pilar 1: Aislamiento entre BrowserContexts, 0 mutaciones y Revali
     await page.getByRole('button', { name: /agregar al carrito/i }).click();
     await page.goto('/checkout');
 
-    // 2. Completar nombre
-    await page.locator('#customerName').fill('Florencia Peña');
+    // 2. Completar nombre y apellido
+    await page.locator('#customerFirstName').fill('Florencia');
+    await page.locator('#customerLastName').fill('Peña');
 
     // 3. Seleccionar Envío a domicilio y completar dirección
     await page.getByRole('button', { name: /envío a domicilio/i }).click();
@@ -185,7 +186,8 @@ test.describe('Pilar 1: Aislamiento entre BrowserContexts, 0 mutaciones y Revali
     await page.locator('article a[href^="/producto/"]').first().click();
     await page.getByRole('button', { name: /agregar al carrito/i }).click();
     await page.goto('/checkout');
-    await page.locator('#customerName').fill('Martín Fierro');
+    await page.locator('#customerFirstName').fill('Martín');
+    await page.locator('#customerLastName').fill('Fierro');
 
     // Clic inicial
     await page.getByRole('button', { name: /continuar por whatsapp/i }).click();
@@ -211,7 +213,7 @@ test.describe('Pilar 1: Aislamiento entre BrowserContexts, 0 mutaciones y Revali
     if (!page.url().includes('/checkout')) {
       await page.goto('/checkout');
     }
-    await page.locator('#customerName').fill('Martín Fierro Modificado');
+    await page.locator('#customerLastName').fill('Fierro Modificado');
     await page.waitForTimeout(1300); // Debounce
     await page.getByRole('button', { name: /continuar por whatsapp/i }).click();
     await page.waitForTimeout(600);
@@ -240,7 +242,8 @@ test.describe('Pilar 1: Aislamiento entre BrowserContexts, 0 mutaciones y Revali
 
     await page.getByRole('button', { name: /agregar al carrito/i }).click();
     await page.goto('/checkout');
-    await page.locator('#customerName').fill('Gonzalo Valenzuela');
+    await page.locator('#customerFirstName').fill('Gonzalo');
+    await page.locator('#customerLastName').fill('Valenzuela');
 
     // 2. Simular reducción de stock en tiempo real antes de abrir WhatsApp
     await page.evaluate(async () => {

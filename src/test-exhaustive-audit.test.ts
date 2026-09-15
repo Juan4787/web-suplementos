@@ -195,9 +195,23 @@ DCE085E3`;
         await db.connect();
         await db.query('begin read only');
 
-        // Migraciones (47 incluyendo restauración de mark_ready)
+        // Migraciones aplicadas en base de datos
         const migrationsRes = await db.query('select count(*) as count from supabase_migrations.schema_migrations');
-        expect(Number(migrationsRes.rows[0].count)).toBe(47);
+        expect(Number(migrationsRes.rows[0].count)).toBe(49);
+
+        // Columnas first_name y last_name en customers
+        const customerColsRes = await db.query(`
+          select column_name from information_schema.columns 
+          where table_schema = 'public' and table_name = 'customers' and column_name in ('first_name', 'last_name')
+        `);
+        expect(customerColsRes.rows.length).toBe(2);
+
+        // Columna customer_first_name_snapshot en orders
+        const orderNameColsRes = await db.query(`
+          select column_name from information_schema.columns 
+          where table_schema = 'public' and table_name = 'orders' and column_name in ('customer_first_name_snapshot', 'customer_last_name_snapshot')
+        `);
+        expect(orderNameColsRes.rows.length).toBe(2);
 
         // Columna sale_type en orders
         const saleTypeRes = await db.query(`

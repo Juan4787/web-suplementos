@@ -70,8 +70,9 @@ test.describe('Pilar 1: Tienda Pública y Generación de WhatsApp', () => {
     await page.goto('/checkout');
     await expect(page.getByRole('heading', { name: /cómo coordinamos/i })).toBeVisible();
 
-    // Completa nombre del cliente
-    await page.locator('#customerName').fill('María José Agüero');
+    // Completa nombre y apellido del cliente
+    await page.locator('#customerFirstName').fill('María José');
+    await page.locator('#customerLastName').fill('Agüero');
 
     // Selecciona Efectivo
     await page.getByRole('button', { name: /efectivo/i }).first().click();
@@ -118,10 +119,13 @@ test.describe('Pilar 1: Tienda Pública y Generación de WhatsApp', () => {
     const textParam = urlObj.searchParams.get('text') ?? '';
     expect(textParam).toContain('PEDIDO DE TIENDA DE SUPLEMENTOS');
     expect(textParam).not.toContain('*');
-    expect(textParam).toContain('María José Agüero');
+    expect(textParam).toContain('María José');
+    expect(textParam).toContain('Agüero');
 
     // Valida semántica e integridad del mensaje con el parser oficial
     const parsed = parseWhatsAppProtocol(textParam);
+    expect(parsed.customerFirstName).toBe('María José');
+    expect(parsed.customerLastName).toBe('Agüero');
     expect(parsed.customerName).toBe('María José Agüero');
     expect(parsed.paymentMethod).toBe('cash');
     expect(parsed.deliveryMethod).toBe('pickup');

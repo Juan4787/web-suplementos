@@ -71,7 +71,8 @@ export default function CreateOrderPage() {
   const [items, setItems] = useState<SelectedItem[]>([]);
 
   // Datos del cliente
-  const [customerName, setCustomerName] = useState('');
+  const [customerFirstName, setCustomerFirstName] = useState('');
+  const [customerLastName, setCustomerLastName] = useState('');
   const [phone, setPhone] = useState('');
 
   // Entrega y pago
@@ -249,11 +250,19 @@ export default function CreateOrderPage() {
       return;
     }
 
-    const trimmedName = customerName.trim();
-    if (trimmedName.length < 2) {
+    const trimmedFirst = customerFirstName.trim();
+    if (trimmedFirst.length < 2) {
       setValidationError('Ingresá el nombre del cliente (mínimo 2 letras).');
       return;
     }
+
+    const trimmedLast = customerLastName.trim();
+    if (trimmedLast.length < 2) {
+      setValidationError('Ingresá el apellido del cliente (mínimo 2 letras).');
+      return;
+    }
+
+    const trimmedName = `${trimmedFirst} ${trimmedLast}`.trim();
 
     const trimmedPhone = phone.trim();
     const phoneDigits = trimmedPhone.replace(/[^0-9]/g, '');
@@ -301,6 +310,8 @@ export default function CreateOrderPage() {
     const isCost = saleType === 'cost' && !isGift;
     const finalPaymentMethod: PaymentMethod = isGift ? 'gift' : paymentMethod;
     const checkoutData = {
+      customerFirstName: trimmedFirst,
+      customerLastName: trimmedLast,
       customerName: trimmedName,
       phone: trimmedPhone || null,
       deliveryMethod,
@@ -336,7 +347,8 @@ export default function CreateOrderPage() {
     confirmMutation.reset();
     setCreatedOrder(null);
     setItems([]);
-    setCustomerName('');
+    setCustomerFirstName('');
+    setCustomerLastName('');
     setPhone('');
     setAddress('');
     setAddressNumber('');
@@ -727,21 +739,39 @@ export default function CreateOrderPage() {
               </h2>
 
               <div className="space-y-4">
-                <Field
-                  label="Nombre y Apellido *"
-                  htmlFor="customerName"
-                  hint="Persona a nombre de quien se registra el pedido."
-                >
-                  <Input
-                    id="customerName"
-                    placeholder="Ej. Marta Gómez"
-                    value={customerName}
-                    onChange={(e) => {
-                      setCustomerName(e.target.value);
-                      setValidationError(null);
-                    }}
-                  />
-                </Field>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Field
+                    label="Nombre *"
+                    htmlFor="customerFirstName"
+                    hint="Primer nombre del cliente."
+                  >
+                    <Input
+                      id="customerFirstName"
+                      placeholder="Ej. Marta"
+                      value={customerFirstName}
+                      onChange={(e) => {
+                        setCustomerFirstName(e.target.value);
+                        setValidationError(null);
+                      }}
+                    />
+                  </Field>
+
+                  <Field
+                    label="Apellido *"
+                    htmlFor="customerLastName"
+                    hint="Apellido del cliente."
+                  >
+                    <Input
+                      id="customerLastName"
+                      placeholder="Ej. Gómez"
+                      value={customerLastName}
+                      onChange={(e) => {
+                        setCustomerLastName(e.target.value);
+                        setValidationError(null);
+                      }}
+                    />
+                  </Field>
+                </div>
 
                 <Field
                   label={deliveryMethod === 'shipping' ? 'Teléfono de contacto *' : 'Teléfono (opcional)'}
@@ -1056,9 +1086,9 @@ export default function CreateOrderPage() {
                 <p className="mb-3 rounded-xl bg-cream-100 p-2.5 text-center text-xs font-bold text-ink-600">
                   Agregá al menos un producto al pedido para poder confirmar.
                 </p>
-              ) : customerName.trim().length < 2 ? (
+              ) : customerFirstName.trim().length < 2 || customerLastName.trim().length < 2 ? (
                 <p className="mb-3 rounded-xl bg-amber-50 p-2.5 text-center text-xs font-bold text-amber-800 border border-amber-200">
-                  Completá el nombre del cliente (mínimo 2 letras) para habilitar la confirmación.
+                  Completá el nombre y el apellido del cliente (mínimo 2 letras cada uno) para habilitar la confirmación.
                 </p>
               ) : null}
 
@@ -1073,7 +1103,7 @@ export default function CreateOrderPage() {
                       : ''
                 )}
                 loading={confirmMutation.isPending}
-                disabled={items.length === 0 || customerName.trim().length < 2 || confirmMutation.isPending}
+                disabled={items.length === 0 || customerFirstName.trim().length < 2 || customerLastName.trim().length < 2 || confirmMutation.isPending}
                 onClick={handleSubmit}
               >
                 {saleType === 'gift'

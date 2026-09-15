@@ -6,7 +6,9 @@ async function createDailyOrder(page: Page, customer: string) {
   await expect(page.getByText('DEMO', { exact: true }).filter({ visible: true }).first()).toBeVisible();
   await page.getByPlaceholder('Buscar creatina, proteína, colágeno, SKU…').fill('Creatina');
   await page.getByRole('button', { name: 'Agregar', exact: true }).click();
-  await page.getByPlaceholder('Ej. Marta Gómez').fill(customer);
+  const [first, ...rest] = customer.split(' ');
+  await page.locator('#customerFirstName').fill(first || customer);
+  await page.locator('#customerLastName').fill(rest.join(' ') || 'Auditoría');
   await page.getByRole('button', { name: 'Confirmar pedido manual' }).click();
   await page.getByRole('link', { name: /Ver pedido #\d+ en la lista/ }).click();
   const order = page.locator('article').filter({ has: page.getByRole('heading', { name: customer, exact: true }) });
