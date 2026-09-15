@@ -66,19 +66,32 @@ afterEach(() => {
 });
 
 describe('Gastos varios en Configuración', () => {
-  it('revela las opciones de finalización solo cuando la frecuencia las necesita', async () => {
+  it('habilita las opciones SI y NO para la fecha de finalización y solo pide fecha con SI', async () => {
     setup();
     await screen.findByText(/No hay gastos para/i);
     fireEvent.click(screen.getAllByRole('button', { name: 'Agregar gasto' })[0]!);
 
     const dialog = screen.getByRole('dialog', { name: 'Agregar gasto' });
-    expect(within(dialog).queryByLabelText('Repetir hasta')).toBeNull();
+    expect(within(dialog).queryByLabelText('Fecha de finalización')).toBeNull();
     expect(within(dialog).queryByText('¿Este gasto termina en una fecha?')).toBeNull();
 
     fireEvent.click(within(dialog).getByRole('button', { name: 'Semanal' }));
     expect(within(dialog).getByText('¿Este gasto termina en una fecha?')).toBeVisible();
-    fireEvent.click(within(dialog).getByRole('button', { name: /Definir fecha/ }));
-    expect(within(dialog).getByLabelText('Repetir hasta')).toBeVisible();
+
+    const noButton = within(dialog).getByRole('button', { name: 'No' });
+    const yesButton = within(dialog).getByRole('button', { name: 'Sí' });
+
+    expect(noButton).toHaveAttribute('aria-pressed', 'true');
+    expect(yesButton).toHaveAttribute('aria-pressed', 'false');
+    expect(within(dialog).queryByLabelText('Fecha de finalización')).toBeNull();
+
+    fireEvent.click(yesButton);
+    expect(yesButton).toHaveAttribute('aria-pressed', 'true');
+    expect(within(dialog).getByLabelText('Fecha de finalización')).toBeVisible();
+
+    fireEvent.click(noButton);
+    expect(noButton).toHaveAttribute('aria-pressed', 'true');
+    expect(within(dialog).queryByLabelText('Fecha de finalización')).toBeNull();
   });
 
   it('explica qué falta después de un intento incompleto', async () => {
@@ -92,7 +105,7 @@ describe('Gastos varios en Configuración', () => {
     expect(api.saveMiscExpense).not.toHaveBeenCalled();
   });
 
-  it('guarda un gasto mensual con centavos y sin opciones ocultas residuales', async () => {
+  it('formatea montos con puntos de miles a partir de 1.000 y guarda con centavos', async () => {
     const { onNotify } = setup();
     fireEvent.click(screen.getAllByRole('button', { name: 'Agregar gasto' })[0]!);
     const dialog = screen.getByRole('dialog', { name: 'Agregar gasto' });
@@ -100,9 +113,13 @@ describe('Gastos varios en Configuración', () => {
     fireEvent.change(within(dialog).getByLabelText('Título del gasto'), {
       target: { value: 'Impuestos provinciales' }
     });
-    fireEvent.change(within(dialog).getByLabelText('Monto (ARS)'), {
+
+    const amountInput = within(dialog).getByLabelText('Monto (ARS)');
+    fireEvent.change(amountInput, {
       target: { value: '250000,50' }
     });
+    expect(amountInput).toHaveValue('250.000,50');
+
     fireEvent.click(within(dialog).getByRole('button', { name: 'Mensual' }));
     fireEvent.change(within(dialog).getByLabelText('Primera fecha'), {
       target: { value: '2026-09-15' }

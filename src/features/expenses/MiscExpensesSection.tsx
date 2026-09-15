@@ -22,7 +22,6 @@ import { Button } from '@/components/ui/Button';
 import { EmptyState, ErrorState, LoadingState } from '@/components/ui/DataState';
 import { Field, Input } from '@/components/ui/Field';
 import { Modal } from '@/components/ui/Modal';
-import { sanitizeDecimalInput } from '@/domain/inventory';
 import {
   MAX_MISC_EXPENSE_CENTS,
   isSupportedMiscExpenseDate,
@@ -60,24 +59,97 @@ const frequencyOptions: Array<{
   { value: 'monthly', label: 'Mensual', icon: CalendarRange }
 ];
 
-const amountForInput = (amountCents: number): string => {
+const formatAmountForInput = (amountCents: number): string => {
   const pesos = amountCents / 100;
-  return Number.isInteger(pesos) ? String(pesos) : pesos.toFixed(2);
+  const isInteger = Number.isInteger(pesos);
+  const cleanWhole = Math.floor(pesos);
+  const formattedWhole = new Intl.NumberFormat('es-AR').format(cleanWhole);
+  if (isInteger) return formattedWhole;
+  const decimals = String(Math.round((pesos - cleanWhole) * 100)).padStart(2, '0');
+  return `${formattedWhole},${decimals}`;
+};
+
+const formatPesosInput = (rawValue: string): string => {
+  if (!rawValue) return '';
+
+  let wholeDigits = '';
+  let decimalDigits = '';
+  let hasDecimal = false;
+
+  if (rawValue.includes(',')) {
+    const commaIndex = rawValue.indexOf(',');
+    wholeDigits = rawValue.slice(0, commaIndex).replace(/\D/g, '').slice(0, 9);
+    decimalDigits = rawValue.slice(commaIndex + 1).replace(/\D/g, '').slice(0, 2);
+    hasDecimal = true;
+  } else if (rawValue.endsWith('.')) {
+    wholeDigits = rawValue.replace(/\D/g, '').slice(0, 9);
+    hasDecimal = true;
+  } else {
+    wholeDigits = rawValue.replace(/\D/g, '').slice(0, 9);
+  }
+
+  if (!wholeDigits && !decimalDigits && !hasDecimal) return '';
+
+  const cleanNum = wholeDigits ? parseInt(wholeDigits, 10) : 0;
+  let formattedWhole = wholeDigits ? new Intl.NumberFormat('es-AR').format(cleanNum) : '';
+  if (!formattedWhole && hasDecimal) formattedWhole = '0';
+
+  let display = formattedWhole;
+  if (hasDecimal) {
+    display += `,${decimalDigits}`;
+  }
+  return display;
+};
+
+const getAmountCursorPosition = (rawInput: string, rawCursor: number, newDisplay: string): number => {
+  let digitsBefore = 0;
+  let hasCommaBefore = false;
+  let decimalsBefore = 0;
+
+  const rawBefore = rawInput.slice(0, rawCursor);
+  const commaIdx = rawBefore.indexOf(',');
+
+  if (commaIdx !== -1) {
+    hasCommaBefore = true;
+    digitsBefore = rawBefore.slice(0, commaIdx).replace(/\D/g, '').length;
+    decimalsBefore = rawBefore.slice(commaIdx + 1).replace(/\D/g, '').length;
+  } else {
+    digitsBefore = rawBefore.replace(/\D/g, '').length;
+  }
+
+  if (!hasCommaBefore) {
+    if (digitsBefore === 0) return 0;
+    let count = 0;
+    for (let i = 0; i < newDisplay.length; i++) {
+      const char = newDisplay[i];
+      if (char === ',') return i;
+      if (char && /\d/.test(char)) count++;
+      if (count === digitsBefore) return i + 1;
+    }
+    return newDisplay.length;
+  }
+
+  const displayCommaIdx = newDisplay.indexOf(',');
+  if (displayCommaIdx === -1) return newDisplay.length;
+  if (decimalsBefore === 0) return displayCommaIdx + 1;
+
+  let count = 0;
+  for (let i = displayCommaIdx + 1; i < newDisplay.length; i++) {
+    const char = newDisplay[i];
+    if (char && /\d/.test(char)) count++;
+    if (count === decimalsBefore) return i + 1;
+  }
+  return newDisplay.length;
 };
 
 const amountToCents = (value: string): number | null => {
-  if (!/^\d+(?:\.\d{1,2})?$/u.test(value)) return null;
-  const cents = Math.round(Number(value) * 100);
+  if (!value || !value.trim()) return null;
+  const clean = value.replace(/\./g, '').replace(',', '.').trim();
+  if (!/^\d+(?:\.\d{1,2})?$/u.test(clean)) return null;
+  const cents = Math.round(Number(clean) * 100);
   return Number.isSafeInteger(cents) && cents > 0 && cents <= MAX_MISC_EXPENSE_CENTS
     ? cents
     : null;
-};
-
-const sanitizeAmount = (value: string, previous: string): string => {
-  const sanitized = sanitizeDecimalInput(value, previous);
-  const [whole = '', decimals] = sanitized.split('.');
-  if (decimals === undefined) return whole.slice(0, 9);
-  return `${whole.slice(0, 9)}.${decimals.slice(0, 2)}`;
 };
 
 const newDraft = (today: string): ExpenseDraft => ({
@@ -95,7 +167,7 @@ const editDraft = (expense: MiscExpense): ExpenseDraft => ({
   source: expense,
   operationId: expense.operationId,
   title: expense.title,
-  amountPesos: amountForInput(expense.amountCents),
+  amountPesos: formatAmountForInput(expense.amountCents),
   frequency: expense.frequency,
   startsOn: expense.startsOn,
   hasEnd: expense.endsOn !== null,
@@ -149,7 +221,7 @@ function ExpenseFormModal({
       ? 'Acortá el título a 100 caracteres.'
       : undefined;
   const amountError = amountCents === null
-    ? Number(draft.amountPesos) * 100 > MAX_MISC_EXPENSE_CENTS
+    ? draft.amountPesos && Number(draft.amountPesos.replace(/\./g, '').replace(',', '.')) * 100 > MAX_MISC_EXPENSE_CENTS
       ? `El monto máximo por vez es ${formatMoney(MAX_MISC_EXPENSE_CENTS)}.`
       : 'Ingresá un monto mayor a cero.'
     : undefined;
@@ -160,6 +232,55 @@ function ExpenseFormModal({
     ? 'La finalización debe ser igual o posterior al inicio.'
     : undefined;
   const valid = !titleError && !amountError && !startsOnError && !endsOnError;
+
+  const handleAmountKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    const input = e.currentTarget;
+    const { selectionStart, selectionEnd, value: currentVal } = input;
+    const isCollapsed = selectionStart !== null && selectionStart === selectionEnd;
+
+    if (e.key === 'Backspace' && isCollapsed && selectionStart > 0) {
+      if (currentVal[selectionStart - 1] === '.') {
+        e.preventDefault();
+        const before = currentVal.slice(0, selectionStart - 2);
+        const after = currentVal.slice(selectionStart);
+        const formatted = formatPesosInput(before + after);
+        setDraft((current) => ({ ...current, amountPesos: formatted }));
+        const newPos = Math.max(0, selectionStart - 2);
+        requestAnimationFrame(() => {
+          input.setSelectionRange(newPos, newPos);
+        });
+        return;
+      }
+    }
+
+    if (e.key === 'Delete' && isCollapsed && selectionStart < currentVal.length) {
+      if (currentVal[selectionStart] === '.') {
+        e.preventDefault();
+        const before = currentVal.slice(0, selectionStart);
+        const after = currentVal.slice(selectionStart + 2);
+        const formatted = formatPesosInput(before + after);
+        setDraft((current) => ({ ...current, amountPesos: formatted }));
+        const newPos = selectionStart;
+        requestAnimationFrame(() => {
+          input.setSelectionRange(newPos, newPos);
+        });
+        return;
+      }
+    }
+  };
+
+  const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const input = e.target;
+    const rawValue = input.value;
+    const rawCursor = input.selectionStart ?? rawValue.length;
+    const formatted = formatPesosInput(rawValue);
+    const newCursor = getAmountCursorPosition(rawValue, rawCursor, formatted);
+
+    setDraft((current) => ({ ...current, amountPesos: formatted }));
+    requestAnimationFrame(() => {
+      input.setSelectionRange(newCursor, newCursor);
+    });
+  };
 
   const save = useMutation({
     mutationFn: async () => {
@@ -255,7 +376,7 @@ function ExpenseFormModal({
         <Field
           label="Monto (ARS)"
           error={attempted ? amountError : undefined}
-          hint="Podés usar coma para centavos. Ejemplo: 25000,50."
+          hint="Podés usar coma para centavos. Ejemplo: 25.000 o 25.000,50."
         >
           <div className="relative">
             <span className="pointer-events-none absolute inset-y-0 left-4 flex items-center font-black text-ink-500">$</span>
@@ -264,12 +385,8 @@ function ExpenseFormModal({
               inputMode="decimal"
               placeholder="0"
               value={draft.amountPesos}
-              onChange={(event) =>
-                setDraft((current) => ({
-                  ...current,
-                  amountPesos: sanitizeAmount(event.target.value, current.amountPesos)
-                }))
-              }
+              onKeyDown={handleAmountKeyDown}
+              onChange={handleAmountChange}
             />
           </div>
         </Field>
@@ -329,39 +446,67 @@ function ExpenseFormModal({
         </Field>
 
         {draft.frequency !== 'once' ? (
-          draft.hasEnd ? (
-            <div className="rounded-2xl border border-ink-950/10 bg-cream-50/60 p-4">
-              <Field
-                label="Repetir hasta"
-                error={attempted ? endsOnError : undefined}
-                hint="La fecha elegida también se incluye si coincide con una ocurrencia."
-              >
-                <Input
-                  type="date"
-                  min={draft.startsOn || today}
-                  max="2100-12-31"
-                  value={draft.endsOn}
-                  onChange={(event) => setDraft((current) => ({ ...current, endsOn: event.target.value }))}
-                />
-              </Field>
-              <button
-                type="button"
-                className="mt-3 text-sm font-black text-brand-700 hover:text-brand-900"
-                onClick={() => setDraft((current) => ({ ...current, hasEnd: false, endsOn: '' }))}
-              >
-                Dejar sin fecha de finalización
-              </button>
-            </div>
-          ) : (
-            <button
-              type="button"
-              className="flex min-h-12 w-full items-center justify-between gap-3 rounded-2xl border border-dashed border-ink-950/20 bg-cream-50/40 px-4 py-3 text-left text-sm font-bold text-ink-700 transition hover:border-brand-300 hover:bg-brand-50/50 hover:text-brand-800"
-              onClick={() => setDraft((current) => ({ ...current, hasEnd: true, endsOn: current.startsOn }))}
-            >
-              <span>¿Este gasto termina en una fecha?</span>
-              <span className="text-xs font-black text-brand-700">Definir fecha</span>
-            </button>
-          )
+          <div className="space-y-3">
+            <fieldset>
+              <legend className="mb-2 block text-[15px] font-extrabold text-ink-950">
+                ¿Este gasto termina en una fecha?
+              </legend>
+              <div className="grid grid-cols-2 gap-2" role="group" aria-label="¿Este gasto termina en una fecha?">
+                <button
+                  type="button"
+                  aria-pressed={!draft.hasEnd}
+                  onClick={() => setDraft((current) => ({ ...current, hasEnd: false, endsOn: '' }))}
+                  className={cn(
+                    'flex min-h-12 items-center justify-center rounded-2xl border px-3 py-2 text-sm font-black transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/30',
+                    !draft.hasEnd
+                      ? 'border-brand-600 bg-brand-600 text-white shadow-sm'
+                      : 'border-ink-950/12 bg-white text-ink-700 hover:border-brand-300 hover:bg-brand-50/50'
+                  )}
+                >
+                  No
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={draft.hasEnd}
+                  onClick={() =>
+                    setDraft((current) => ({
+                      ...current,
+                      hasEnd: true,
+                      endsOn: current.endsOn || current.startsOn || today
+                    }))
+                  }
+                  className={cn(
+                    'flex min-h-12 items-center justify-center rounded-2xl border px-3 py-2 text-sm font-black transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/30',
+                    draft.hasEnd
+                      ? 'border-brand-600 bg-brand-600 text-white shadow-sm'
+                      : 'border-ink-950/12 bg-white text-ink-700 hover:border-brand-300 hover:bg-brand-50/50'
+                  )}
+                >
+                  Sí
+                </button>
+              </div>
+            </fieldset>
+
+            {draft.hasEnd ? (
+              <div className="rounded-2xl border border-ink-950/10 bg-cream-50/60 p-4 transition">
+                <Field
+                  label="Fecha de finalización"
+                  error={attempted ? endsOnError : undefined}
+                  hint="La fecha elegida también se incluye si coincide con una ocurrencia."
+                >
+                  <Input
+                    type="date"
+                    min={draft.startsOn || today}
+                    max="2100-12-31"
+                    value={draft.endsOn}
+                    onChange={(event) =>
+                      setDraft((current) => ({ ...current, endsOn: event.target.value }))
+                    }
+                  />
+                </Field>
+              </div>
+            ) : null}
+          </div>
         ) : null}
 
         {draft.source && (draft.source.frequency !== 'once' || draft.frequency !== 'once') ? (

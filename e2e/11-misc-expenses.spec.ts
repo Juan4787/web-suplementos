@@ -14,13 +14,16 @@ test.describe('Gastos varios y ganancia neta', () => {
     await page.getByRole('button', { name: 'Agregar gasto' }).first().click();
     const dialog = page.getByRole('dialog', { name: 'Agregar gasto' });
     await expect(dialog).toBeVisible();
-    await expect(dialog.getByLabel('Repetir hasta')).toHaveCount(0);
+    await expect(dialog.getByLabel('Fecha de finalización')).toHaveCount(0);
 
     await dialog.getByLabel('Título del gasto').fill('Etiquetas auditoría');
     await dialog.getByLabel('Monto (ARS)').fill('12345,67');
+    await expect(dialog.getByLabel('Monto (ARS)')).toHaveValue('12.345,67');
     await dialog.getByRole('button', { name: 'Mensual' }).click();
     await expect(dialog.getByText('¿Este gasto termina en una fecha?')).toBeVisible();
-    await expect(dialog.getByLabel('Repetir hasta')).toHaveCount(0);
+    await expect(dialog.getByRole('button', { name: 'No' })).toHaveAttribute('aria-pressed', 'true');
+    await expect(dialog.getByRole('button', { name: 'Sí' })).toHaveAttribute('aria-pressed', 'false');
+    await expect(dialog.getByLabel('Fecha de finalización')).toHaveCount(0);
     await expect(dialog.getByText(/se descontará cada mes/i)).toBeVisible();
     await dialog.getByRole('button', { name: 'Agregar gasto' }).click();
 
