@@ -4,10 +4,13 @@ import {
   AlertCircle,
   ArrowLeft,
   Banknote,
+  Building2,
+  Check,
   CheckCircle2,
   ChevronRight,
   CreditCard,
   Gift,
+  Mail,
   MapPin,
   Minus,
   Package,
@@ -900,17 +903,22 @@ export default function CreateOrderPage() {
                   </div>
 
                   {/* Zona de Entrega (Santa Fe Capital / Alrededores vs Resto del País) */}
-                  <div className="rounded-2xl border border-ink-950/10 bg-cream-50/70 p-4 space-y-3">
-                    <div>
-                      <p className="text-sm font-black text-ink-950">
-                        ¿El envío es dentro de la ciudad de Santa Fe Capital o alguna localidad cercana?
-                      </p>
-                      <p className="text-xs text-ink-600 mt-0.5">
-                        Si es fuera de Santa Fe, se solicitará el email para enviar el código de seguimiento.
-                      </p>
+                  <div className="pt-6 border-t border-ink-950/10 space-y-4">
+                    <div className="flex items-start gap-3">
+                      <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-brand-50 text-brand-600 border border-brand-200/50 shadow-xs">
+                        <MapPin className="size-4.5" />
+                      </span>
+                      <div>
+                        <p className="text-sm font-black text-ink-950 tracking-tight">
+                          ¿El envío es dentro de la ciudad de Santa Fe Capital o alguna localidad cercana?
+                        </p>
+                        <p className="text-xs text-ink-600 mt-0.5 font-medium">
+                          Si es fuera de Santa Fe, se solicitará el email para enviar el código de seguimiento.
+                        </p>
+                      </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                       <button
                         type="button"
                         onClick={() => {
@@ -919,13 +927,52 @@ export default function CreateOrderPage() {
                           setValidationError(null);
                         }}
                         className={cn(
-                          'flex items-center justify-center gap-2 p-3 rounded-xl border-2 font-black text-xs transition cursor-pointer',
+                          'group relative flex items-start gap-3.5 rounded-2xl border-2 p-4 text-left transition-all duration-200 cursor-pointer',
                           isSantaFeOrNearby === true
-                            ? 'border-brand-600 bg-brand-500 text-white shadow-sm ring-2 ring-brand-500/20'
-                            : 'border-ink-950/12 bg-white text-ink-800 hover:border-brand-500/40'
+                            ? 'border-brand-600 bg-brand-50/80 ring-2 ring-brand-500/25 shadow-sm shadow-brand-500/10'
+                            : 'border-ink-950/10 bg-white hover:border-brand-500/40 hover:bg-cream-50/80'
                         )}
                       >
-                        SÍ (Santa Fe / Cercanías)
+                        <span
+                          className={cn(
+                            'grid size-11 shrink-0 place-items-center rounded-xl transition-colors',
+                            isSantaFeOrNearby === true
+                              ? 'bg-brand-600 text-white shadow-xs'
+                              : 'bg-cream-100 text-ink-700 group-hover:bg-brand-100/60 group-hover:text-brand-700'
+                          )}
+                        >
+                          <Building2 className="size-5" />
+                        </span>
+                        <div className="min-w-0 flex-1 pr-4">
+                          <div className="flex items-center gap-2">
+                            <span
+                              className={cn(
+                                'inline-flex items-center rounded-md px-1.5 py-0.5 text-[11px] font-black tracking-wide uppercase',
+                                isSantaFeOrNearby === true
+                                  ? 'bg-brand-600 text-white'
+                                  : 'bg-ink-950/8 text-ink-700 group-hover:bg-brand-100 group-hover:text-brand-800'
+                              )}
+                            >
+                              SÍ
+                            </span>
+                            <strong className="text-sm font-black text-ink-950">
+                              Santa Fe y cercanías
+                            </strong>
+                          </div>
+                          <p className="mt-1 text-xs text-ink-600 leading-relaxed font-medium">
+                            Cadetería local directa. Sin email de seguimiento.
+                          </p>
+                        </div>
+                        <div
+                          className={cn(
+                            'mt-0.5 grid size-5 shrink-0 place-items-center rounded-full border-2 transition',
+                            isSantaFeOrNearby === true
+                              ? 'border-brand-600 bg-brand-600 text-white'
+                              : 'border-ink-950/20 bg-white'
+                          )}
+                        >
+                          {isSantaFeOrNearby === true ? <Check className="size-3 stroke-[3]" /> : null}
+                        </div>
                       </button>
 
                       <button
@@ -935,18 +982,87 @@ export default function CreateOrderPage() {
                           setValidationError(null);
                         }}
                         className={cn(
-                          'flex items-center justify-center gap-2 p-3 rounded-xl border-2 font-black text-xs transition cursor-pointer',
+                          'group relative flex items-start gap-3.5 rounded-2xl border-2 p-4 text-left transition-all duration-200 cursor-pointer',
                           isSantaFeOrNearby === false
-                            ? 'border-brand-600 bg-brand-500 text-white shadow-sm ring-2 ring-brand-500/20'
-                            : 'border-ink-950/12 bg-white text-ink-800 hover:border-brand-500/40'
+                            ? 'border-brand-600 bg-brand-50/80 ring-2 ring-brand-500/25 shadow-sm shadow-brand-500/10'
+                            : 'border-ink-950/10 bg-white hover:border-brand-500/40 hover:bg-cream-50/80'
                         )}
                       >
-                        NO (Resto del país)
+                        <span
+                          className={cn(
+                            'grid size-11 shrink-0 place-items-center rounded-xl transition-colors',
+                            isSantaFeOrNearby === false
+                              ? 'bg-brand-600 text-white shadow-xs'
+                              : 'bg-cream-100 text-ink-700 group-hover:bg-brand-100/60 group-hover:text-brand-700'
+                          )}
+                        >
+                          <Truck className="size-5" />
+                        </span>
+                        <div className="min-w-0 flex-1 pr-4">
+                          <div className="flex items-center gap-2">
+                            <span
+                              className={cn(
+                                'inline-flex items-center rounded-md px-1.5 py-0.5 text-[11px] font-black tracking-wide uppercase',
+                                isSantaFeOrNearby === false
+                                  ? 'bg-brand-600 text-white'
+                                  : 'bg-ink-950/8 text-ink-700 group-hover:bg-brand-100 group-hover:text-brand-800'
+                              )}
+                            >
+                              NO
+                            </span>
+                            <strong className="text-sm font-black text-ink-950">
+                              Resto del país
+                            </strong>
+                          </div>
+                          <p className="mt-1 text-xs text-ink-600 leading-relaxed font-medium">
+                            Despacho por correo / encomienda. Requiere email.
+                          </p>
+                        </div>
+                        <div
+                          className={cn(
+                            'mt-0.5 grid size-5 shrink-0 place-items-center rounded-full border-2 transition',
+                            isSantaFeOrNearby === false
+                              ? 'border-brand-600 bg-brand-600 text-white'
+                              : 'border-ink-950/20 bg-white'
+                          )}
+                        >
+                          {isSantaFeOrNearby === false ? <Check className="size-3 stroke-[3]" /> : null}
+                        </div>
                       </button>
                     </div>
 
+                    {isSantaFeOrNearby === true ? (
+                      <div className="flex items-center gap-3 rounded-2xl bg-emerald-50/90 border border-emerald-200/80 p-3.5 text-xs text-emerald-950">
+                        <span className="grid size-7 shrink-0 place-items-center rounded-xl bg-emerald-100 text-emerald-700">
+                          <CheckCircle2 className="size-4" />
+                        </span>
+                        <div>
+                          <strong className="block font-black text-emerald-900">
+                            Envío local Santa Fe
+                          </strong>
+                          <span className="text-emerald-800 font-medium">
+                            Se coordina cadetería local directa sin código postal.
+                          </span>
+                        </div>
+                      </div>
+                    ) : null}
+
                     {isSantaFeOrNearby === false ? (
-                      <div className="pt-3 border-t border-ink-950/8">
+                      <div className="rounded-2xl border border-brand-200/80 bg-gradient-to-br from-brand-50/80 to-cream-50 p-4 sm:p-5 space-y-3">
+                        <div className="flex items-center gap-2.5">
+                          <span className="grid size-8 shrink-0 place-items-center rounded-xl bg-brand-600 text-white shadow-xs">
+                            <Mail className="size-4" />
+                          </span>
+                          <div>
+                            <h4 className="text-xs font-black uppercase tracking-wider text-brand-900">
+                              Seguimiento de envío nacional
+                            </h4>
+                            <p className="text-xs text-ink-600 font-medium">
+                              Es para poder enviarte el link de seguimiento de tu pedido
+                            </p>
+                          </div>
+                        </div>
+
                         <Field
                           label="Correo electrónico del cliente *"
                           htmlFor="clientEmail"
