@@ -44,6 +44,19 @@ import { getBusinessApi } from '@/services/business-api';
 import { cleanSearchTerm } from '@/lib/search';
 
 function OrderTimeline({ order }: { order: Order }) {
+  if (order.orderState === 'cancelled') {
+    return (
+      <div className="flex items-center justify-between gap-3 text-xs font-bold text-rose-900 bg-rose-50/70 rounded-xl p-3 border border-rose-200/70">
+        <div className="flex items-center gap-2.5">
+          <span className="grid size-6 place-items-center rounded-full bg-rose-200 text-rose-800 font-black text-xs">✕</span>
+          <span className="text-sm font-black text-rose-950">Flujo interrumpido: Pedido cancelado</span>
+        </div>
+        <span className="rounded-md bg-rose-100 text-rose-800 px-2.5 py-1 font-black text-[11px] uppercase tracking-wider">
+          Sin acciones requeridas
+        </span>
+      </div>
+    );
+  }
   const isGift = order.paymentState === 'gifted';
   const isCost = Boolean(order.isCostSale || order.saleType === 'cost');
   const isReady =
@@ -330,6 +343,7 @@ export default function OrdersPage() {
           ) : (
             filteredOrders.map((order) => {
               const open = expanded === order.id;
+              const isSelected = open;
               const isCompleted =
                 order.orderState === 'cancelled' ||
                 (order.fulfillmentState === 'delivered' && order.paymentState === 'paid');
@@ -342,23 +356,47 @@ export default function OrdersPage() {
                 <article
                   key={order.id}
                   className={cn(
-                    'overflow-hidden rounded-2xl border transition',
-                    isCompleted
-                      ? 'border-ink-950/6 bg-cream-50/50 shadow-none'
-                      : 'border-ink-950/8 bg-white shadow-sm hover:border-ink-950/20'
+                    'overflow-hidden rounded-2xl transition-all duration-200',
+                    isSelected
+                      ? 'border-2 border-brand-600 bg-white ring-4 ring-brand-500/15 shadow-xl shadow-brand-950/10 border-l-[8px] border-l-brand-600'
+                      : isCompleted
+                        ? 'border border-ink-950/6 bg-cream-50/50 shadow-none hover:border-ink-950/20'
+                        : 'border border-ink-950/8 bg-white shadow-xs hover:border-ink-950/20 hover:shadow-sm'
                   )}
                 >
                   <button
                     type="button"
-                    className="grid w-full min-h-[4.25rem] gap-3 p-4 text-left sm:grid-cols-[5.5rem_1.2fr_1.2fr_auto] sm:items-center sm:px-6 sm:py-4"
+                    className={cn(
+                      'grid w-full min-h-[4.5rem] gap-3 p-4 text-left sm:grid-cols-[6rem_1.2fr_1.2fr_auto] sm:items-center sm:px-6 sm:py-4 transition-colors',
+                      isSelected
+                        ? 'bg-gradient-to-r from-brand-50/90 via-brand-50/40 to-white border-b-2 border-brand-200'
+                        : 'hover:bg-cream-50/60'
+                    )}
                     onClick={() => setExpanded(open ? null : order.id)}
                     aria-expanded={open}
                   >
-                    <span className="font-display text-xl font-black text-ink-950">
-                      #{order.number}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      {isSelected ? (
+                        <span className="inline-flex items-center justify-center rounded-xl bg-brand-700 px-3 py-1 font-display text-lg font-black text-white shadow-xs">
+                          #{order.number}
+                        </span>
+                      ) : (
+                        <span className="font-display text-xl font-black text-ink-950">
+                          #{order.number}
+                        </span>
+                      )}
+                    </div>
+
                     <div>
-                      <h2 className="text-[16.5px] font-black text-ink-950">{order.customerName}</h2>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h2 className="text-[16.5px] font-black text-ink-950">{order.customerName}</h2>
+                        {isSelected ? (
+                          <span className="inline-flex items-center gap-1.5 rounded-full bg-brand-600 px-2.5 py-0.5 text-[11px] font-black uppercase tracking-wider text-white shadow-2xs">
+                            <span className="size-1.5 rounded-full bg-white animate-pulse" />
+                            Seleccionado
+                          </span>
+                        ) : null}
+                      </div>
                       <p className="text-[14px] text-ink-700 font-semibold">
                         {new Intl.DateTimeFormat('es-AR', {
                           dateStyle: 'short',
@@ -373,22 +411,43 @@ export default function OrdersPage() {
                       <strong className="font-display text-xl font-black text-ink-950">
                         {formatMoney(order.totalCents)}
                       </strong>
-                      <ChevronDown
-                        className={cn(
-                          'size-5 text-ink-600 transition-transform',
-                          open && 'rotate-180'
-                        )}
-                      />
-                      <span className="text-sm font-bold text-brand-700">{open ? 'Ocultar acciones' : 'Ver pedido y acciones'}</span>
+                      {isSelected ? (
+                        <span className="inline-flex items-center gap-1.5 rounded-xl bg-brand-700 px-3.5 py-2 text-xs font-black text-white shadow-xs hover:bg-brand-800 transition">
+                          Ocultar acciones
+                          <ChevronDown className="size-4 rotate-180 text-white transition-transform" />
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1.5 rounded-xl bg-cream-100/90 border border-ink-950/8 px-3 py-1.5 text-xs font-black text-ink-800 hover:bg-cream-200 hover:text-brand-900 transition">
+                          Ver pedido y acciones
+                          <ChevronDown className="size-4 text-ink-600 transition-transform" />
+                        </span>
+                      )}
                     </div>
                   </button>
 
                   {open ? (
-                    <div className="border-t border-ink-950/8 bg-cream-50/60 p-5 sm:p-6">
-                      {/* Timeline superior */}
-                      <div className="mb-6 rounded-xl bg-white p-4 border border-ink-950/6">
-                        <OrderTimeline order={order} />
-                      </div>
+                    <div className="border-t border-brand-100 bg-cream-50/50 p-5 sm:p-6">
+                      {order.orderState === 'cancelled' ? (
+                        <div className="mb-6 rounded-2xl bg-rose-50 border border-rose-200 p-4 text-rose-950 flex flex-wrap items-center justify-between gap-3 shadow-xs">
+                          <div className="flex items-center gap-3">
+                            <div className="grid size-9 place-items-center rounded-xl bg-rose-100 text-rose-700 shrink-0">
+                              <AlertTriangle className="size-5" />
+                            </div>
+                            <div>
+                              <p className="font-black text-[15px] text-rose-950">Pedido cancelado</p>
+                              <p className="text-xs text-rose-800 font-medium">Este pedido está cancelado. El stock reservado fue liberado y no requiere preparación ni cobro.</p>
+                            </div>
+                          </div>
+                          <span className="inline-flex items-center gap-1 rounded-full bg-rose-200/90 px-3 py-1 text-xs font-black text-rose-950 uppercase tracking-wide">
+                            Estado: Cancelado
+                          </span>
+                        </div>
+                      ) : (
+                        /* Timeline superior */
+                        <div className="mb-6 rounded-xl bg-white p-4 border border-ink-950/6 shadow-xs">
+                          <OrderTimeline order={order} />
+                        </div>
+                      )}
 
                       <div className="grid gap-6 lg:grid-cols-[1fr_20rem]">
                         {/* Detalle de productos y entrega */}
@@ -578,7 +637,11 @@ export default function OrdersPage() {
                             <p className="text-[12.5px] font-black uppercase tracking-wider text-ink-700">
                               Acción operativa
                             </p>
-                            {order.isCostSale || order.saleType === 'cost' ? (
+                            {order.orderState === 'cancelled' ? (
+                              <span className="inline-flex items-center gap-1 rounded-md bg-rose-100 px-2 py-0.5 text-[11px] font-bold text-rose-900 border border-rose-200">
+                                Cancelado
+                              </span>
+                            ) : order.isCostSale || order.saleType === 'cost' ? (
                               <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2 py-0.5 text-[11px] font-bold text-amber-900 border border-amber-200">
                                 <Tag className="size-3 text-amber-600" /> Al costo
                               </span>
@@ -589,7 +652,14 @@ export default function OrdersPage() {
                             ) : null}
                           </div>
 
-                          {/* 1. Paso Preparación (Listo para entregar) */}
+                          {order.orderState === 'cancelled' ? (
+                            <div className="rounded-xl bg-rose-50 border border-rose-200/80 p-4 text-center space-y-1">
+                              <p className="text-[13.5px] font-black text-rose-950">Pedido cancelado</p>
+                              <p className="text-xs text-rose-700 font-medium">No requiere acciones operativas pendientes.</p>
+                            </div>
+                          ) : (
+                            <>
+                              {/* 1. Paso Preparación (Listo para entregar) */}
                           {order.preparationState === 'ready' || order.fulfillmentState === 'delivered' || order.fulfillmentState === 'shipped' ? (
                             <div className="flex items-center gap-2 rounded-xl bg-brand-50 border border-brand-200 px-3.5 py-2.5 text-[13.5px] font-black text-brand-900">
                               <PackageCheck className="size-4 shrink-0 text-brand-600" />
@@ -762,6 +832,8 @@ export default function OrdersPage() {
                               Pedido completado y stock actualizado.
                             </p>
                           ) : null}
+                        </>
+                      )}
 
                           {/* Acciones secundarias (cancelar, envío intermedio, reintegro) */}
                           {actions.filter((a) => a !== 'mark_ready' && a !== 'mark_paid' && a !== 'mark_delivered' && a !== 'mark_gifted' && a !== 'mark_at_cost').length > 0 ? (
