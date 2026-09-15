@@ -356,47 +356,31 @@ export default function OrdersPage() {
                 <article
                   key={order.id}
                   className={cn(
-                    'overflow-hidden rounded-2xl transition-all duration-200',
+                    'overflow-hidden rounded-2xl transition-all duration-150',
                     isSelected
-                      ? 'border-2 border-brand-600 bg-white ring-4 ring-brand-500/15 shadow-xl shadow-brand-950/10 border-l-[8px] border-l-brand-600'
+                      ? 'border border-ink-950/20 bg-white shadow-md shadow-ink-950/4 border-l-[3.5px] border-l-ink-900'
                       : isCompleted
-                        ? 'border border-ink-950/6 bg-cream-50/50 shadow-none hover:border-ink-950/20'
-                        : 'border border-ink-950/8 bg-white shadow-xs hover:border-ink-950/20 hover:shadow-sm'
+                        ? 'border border-ink-950/6 bg-cream-50/50 shadow-none hover:border-ink-950/15'
+                        : 'border border-ink-950/8 bg-white shadow-xs hover:border-ink-950/15 hover:shadow-2xs'
                   )}
                 >
                   <button
                     type="button"
                     className={cn(
-                      'grid w-full min-h-[4.5rem] gap-3 p-4 text-left sm:grid-cols-[6rem_1.2fr_1.2fr_auto] sm:items-center sm:px-6 sm:py-4 transition-colors',
+                      'grid w-full min-h-[4.25rem] gap-3 p-4 text-left sm:grid-cols-[5.5rem_1.2fr_1.2fr_auto] sm:items-center sm:px-6 sm:py-4 transition-colors',
                       isSelected
-                        ? 'bg-gradient-to-r from-brand-50/90 via-brand-50/40 to-white border-b-2 border-brand-200'
+                        ? 'bg-white border-b border-ink-950/6'
                         : 'hover:bg-cream-50/60'
                     )}
                     onClick={() => setExpanded(open ? null : order.id)}
                     aria-expanded={open}
                   >
-                    <div className="flex items-center gap-2">
-                      {isSelected ? (
-                        <span className="inline-flex items-center justify-center rounded-xl bg-brand-700 px-3 py-1 font-display text-lg font-black text-white shadow-xs">
-                          #{order.number}
-                        </span>
-                      ) : (
-                        <span className="font-display text-xl font-black text-ink-950">
-                          #{order.number}
-                        </span>
-                      )}
-                    </div>
+                    <span className="font-display text-xl font-black text-ink-950">
+                      #{order.number}
+                    </span>
 
                     <div>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <h2 className="text-[16.5px] font-black text-ink-950">{order.customerName}</h2>
-                        {isSelected ? (
-                          <span className="inline-flex items-center gap-1.5 rounded-full bg-brand-600 px-2.5 py-0.5 text-[11px] font-black uppercase tracking-wider text-white shadow-2xs">
-                            <span className="size-1.5 rounded-full bg-white animate-pulse" />
-                            Seleccionado
-                          </span>
-                        ) : null}
-                      </div>
+                      <h2 className="text-[16.5px] font-black text-ink-950">{order.customerName}</h2>
                       <p className="text-[14px] text-ink-700 font-semibold">
                         {new Intl.DateTimeFormat('es-AR', {
                           dateStyle: 'short',
@@ -411,22 +395,27 @@ export default function OrdersPage() {
                       <strong className="font-display text-xl font-black text-ink-950">
                         {formatMoney(order.totalCents)}
                       </strong>
-                      {isSelected ? (
-                        <span className="inline-flex items-center gap-1.5 rounded-xl bg-brand-700 px-3.5 py-2 text-xs font-black text-white shadow-xs hover:bg-brand-800 transition">
-                          Ocultar acciones
-                          <ChevronDown className="size-4 rotate-180 text-white transition-transform" />
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1.5 rounded-xl bg-cream-100/90 border border-ink-950/8 px-3 py-1.5 text-xs font-black text-ink-800 hover:bg-cream-200 hover:text-brand-900 transition">
-                          Ver pedido y acciones
-                          <ChevronDown className="size-4 text-ink-600 transition-transform" />
-                        </span>
-                      )}
+                      <span
+                        className={cn(
+                          'inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold transition select-none',
+                          isSelected
+                            ? 'bg-cream-200/90 text-ink-950 border border-ink-950/10 shadow-2xs'
+                            : 'bg-cream-100/80 text-ink-700 border border-ink-950/6 hover:bg-cream-200 hover:text-ink-950'
+                        )}
+                      >
+                        {isSelected ? 'Ocultar acciones' : 'Ver pedido y acciones'}
+                        <ChevronDown
+                          className={cn(
+                            'size-3.5 transition-transform duration-200',
+                            isSelected ? 'rotate-180 text-ink-800' : 'text-ink-500'
+                          )}
+                        />
+                      </span>
                     </div>
                   </button>
 
                   {open ? (
-                    <div className="border-t border-brand-100 bg-cream-50/50 p-5 sm:p-6">
+                    <div className="border-t border-ink-950/6 bg-cream-50/25 p-5 sm:p-6">
                       {order.orderState === 'cancelled' ? (
                         <div className="mb-6 rounded-2xl bg-rose-50 border border-rose-200 p-4 text-rose-950 flex flex-wrap items-center justify-between gap-3 shadow-xs">
                           <div className="flex items-center gap-3">
