@@ -46,6 +46,12 @@ const checkoutRoute = createRoute({
   component: lazyRouteComponent(() => import('@/pages/public/CheckoutPage'))
 });
 
+const privacyRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/privacidad',
+  component: lazyRouteComponent(() => import('@/pages/public/PrivacyPolicyPage'))
+});
+
 const loginRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/ingresar',
@@ -178,6 +184,7 @@ const routeTree = rootRoute.addChildren([
   productRoute,
   cartRoute,
   checkoutRoute,
+  privacyRoute,
   loginRoute,
   adminTree
 ]);

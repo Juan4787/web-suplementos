@@ -47,6 +47,7 @@ export function PublicShell({ children }: PropsWithChildren) {
             <div className="flex flex-col gap-2">
               <Link to="/" hash="productos" className="rounded-2xl px-4 py-3 font-bold hover:text-brand-600" onClick={() => setMenuOpen(false)}>Productos</Link>
               <Link to="/" hash="como-comprar" className="rounded-2xl px-4 py-3 font-bold hover:text-brand-600" onClick={() => setMenuOpen(false)}>Cómo comprar</Link>
+              <Link to="/privacidad" className="rounded-2xl px-4 py-3 font-bold hover:text-brand-600" onClick={() => setMenuOpen(false)}>Privacidad</Link>
             </div>
           </nav>
         ) : null}
@@ -59,8 +60,23 @@ export function PublicShell({ children }: PropsWithChildren) {
             <p className="mt-4 max-w-md text-sm leading-6 text-white/65">
               Suplementos diseñados a medida en laboratorio.
             </p>
+            <div className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-2 text-xs font-bold text-white/70">
+              <Link to="/privacidad" className="transition hover:text-white underline underline-offset-4 decoration-white/30 hover:decoration-white">
+                Política de Privacidad
+              </Link>
+              <Link to="/" hash="como-comprar" className="transition hover:text-white">
+                Cómo comprar
+              </Link>
+              <Link to="/" hash="productos" className="transition hover:text-white">
+                Catálogo
+              </Link>
+              <span className="text-white/40 font-normal">Ley Nº 25.326 · Datos Personales</span>
+            </div>
           </div>
-          <p className="text-xs font-semibold text-white/45">© 2026 Tienda de Suplementos</p>
+          <div className="text-left md:text-right space-y-1">
+            <p className="text-xs font-semibold text-white/45">© 2026 Tienda de Suplementos · República Argentina</p>
+            <p className="text-[11px] text-white/35">Datos resguardados bajo supervisión de la AAIP</p>
+          </div>
         </div>
       </footer>
     </div>

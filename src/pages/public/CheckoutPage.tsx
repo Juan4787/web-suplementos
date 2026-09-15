@@ -440,6 +440,17 @@ export default function CheckoutPage() {
               <p className="text-xs leading-5 text-ink-600">
                 Antes de abrir WhatsApp volvemos a comprobar que las cantidades sigan disponibles. Esto todavía no reserva stock.
               </p>
+              <p className="text-[11.5px] leading-4 text-ink-500">
+                Tus datos personales están protegidos conforme a la Ley Nacional Nº 25.326.{' '}
+                <Link
+                  to="/privacidad"
+                  target="_blank"
+                  className="font-bold text-brand-600 hover:underline"
+                >
+                  Leé nuestra Política de Privacidad
+                </Link>
+                .
+              </p>
             </form>
           </div>
           <aside className="sticky top-6 rounded-[2rem] bg-ink-950 p-6 text-white shadow-soft">
