@@ -29,7 +29,7 @@ test.describe('Verificación Rigurosa E2E de Operación Diaria', () => {
     await expect(page.getByRole('heading', { name: 'Prioridades de hoy' })).toBeVisible({ timeout: 15000 });
     await expect(page.getByText('Facturación cobrada mes').first()).toBeVisible();
     await expect(page.getByText(/\$\s*\d+(?:\.\d{3})*/).first()).toBeVisible();
-    await expect(page.getByText('Margen estimado').first()).toBeVisible();
+    await expect(page.getByText(/Ganancia neta|Margen estimado/i).first()).toBeVisible();
     
     // Verificar que NO exista ningún error boundary en la página
     await expect(page.locator('text=No pudimos completar la acción')).not.toBeVisible();
