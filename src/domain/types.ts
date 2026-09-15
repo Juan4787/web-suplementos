@@ -93,9 +93,11 @@ export type CheckoutData = {
   paymentMethod: PaymentMethod;
   deliveryMethod: DeliveryMethod;
   shippingType: ShippingType | null;
-  address: string | null;
-  addressNumber: string | null;
-  phone: string | null;
+  isSantaFeOrNearby?: boolean | null | undefined;
+  email?: string | null | undefined;
+  address?: string | null | undefined;
+  addressNumber?: string | null | undefined;
+  phone?: string | null | undefined;
 };
 
 export type StockReadiness = 'ready' | 'waiting_incoming' | 'uncovered';

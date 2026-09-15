@@ -4,6 +4,7 @@ import {
   AlertCircle,
   ArrowLeft,
   Banknote,
+  Check,
   CheckCircle2,
   Info,
   MessageCircle,
@@ -114,6 +115,8 @@ export default function CheckoutPage() {
       paymentMethod: cart.checkoutDraft?.paymentMethod ?? 'cash',
       deliveryMethod: cart.checkoutDraft?.deliveryMethod ?? 'pickup',
       shippingType: cart.checkoutDraft?.deliveryMethod === 'shipping' ? (cart.checkoutDraft.shippingType ?? 'standard') : null,
+      isSantaFeOrNearby: cart.checkoutDraft?.deliveryMethod === 'shipping' ? (cart.checkoutDraft.isSantaFeOrNearby ?? null) : null,
+      email: cart.checkoutDraft?.deliveryMethod === 'shipping' ? (cart.checkoutDraft.email ?? '') : '',
       address: cart.checkoutDraft?.address ?? null,
       addressNumber: cart.checkoutDraft?.addressNumber ?? null,
       phone: cart.checkoutDraft?.phone ?? null
@@ -123,6 +126,7 @@ export default function CheckoutPage() {
   const paymentMethod = watch('paymentMethod');
   const deliveryMethod = watch('deliveryMethod');
   const shippingType = watch('shippingType');
+  const isSantaFeOrNearby = watch('isSantaFeOrNearby');
 
   // Mantener el borrador sincronizado cuando cambian los campos
   useEffect(() => {
@@ -354,6 +358,8 @@ export default function CheckoutPage() {
                     onClick={() => {
                       setValue('deliveryMethod', 'pickup', { shouldValidate: true });
                       setValue('shippingType', null);
+                      setValue('isSantaFeOrNearby', null);
+                      setValue('email', '');
                     }}
                   />
                   <RadioCard
@@ -420,6 +426,97 @@ export default function CheckoutPage() {
                         {...register('phone')}
                       />
                     </Field>
+
+                    {/* Pregunta de Zona de Envío (Santa Fe Capital / Alrededores vs Resto del País) */}
+                    <div className="rounded-2xl border border-ink-950/10 bg-cream-50/70 p-4 sm:p-5 space-y-3.5">
+                      <div>
+                        <p className="text-sm font-black text-ink-950">
+                          ¿Tu envío es dentro de la ciudad de Santa Fe Capital o alguna localidad cercana?
+                        </p>
+                        <p className="text-xs text-ink-600 mt-0.5 font-medium">
+                          Elegí una opción para saber cómo gestionar el seguimiento de tu entrega.
+                        </p>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setValue('isSantaFeOrNearby', true, { shouldValidate: true });
+                            setValue('email', '', { shouldValidate: true });
+                          }}
+                          className={cn(
+                            'flex flex-col items-center justify-center p-3 sm:p-3.5 rounded-2xl border-2 font-black text-sm transition active:scale-95 cursor-pointer',
+                            isSantaFeOrNearby === true
+                              ? 'border-brand-600 bg-brand-500 text-white shadow-md shadow-brand-500/20 ring-2 ring-brand-500/30'
+                              : 'border-ink-950/12 bg-white text-ink-800 hover:border-brand-500/40 hover:bg-cream-100/50'
+                          )}
+                        >
+                          <span className="flex items-center gap-1.5">
+                            {isSantaFeOrNearby === true ? <Check className="size-4 stroke-[3]" /> : null}
+                            SÍ
+                          </span>
+                          <span className={cn('text-[11px] font-semibold mt-0.5', isSantaFeOrNearby === true ? 'text-white/90' : 'text-ink-500')}>
+                            Santa Fe y cercanías
+                          </span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setValue('isSantaFeOrNearby', false, { shouldValidate: true });
+                          }}
+                          className={cn(
+                            'flex flex-col items-center justify-center p-3 sm:p-3.5 rounded-2xl border-2 font-black text-sm transition active:scale-95 cursor-pointer',
+                            isSantaFeOrNearby === false
+                              ? 'border-brand-600 bg-brand-500 text-white shadow-md shadow-brand-500/20 ring-2 ring-brand-500/30'
+                              : 'border-ink-950/12 bg-white text-ink-800 hover:border-brand-500/40 hover:bg-cream-100/50'
+                          )}
+                        >
+                          <span className="flex items-center gap-1.5">
+                            {isSantaFeOrNearby === false ? <Check className="size-4 stroke-[3]" /> : null}
+                            NO
+                          </span>
+                          <span className={cn('text-[11px] font-semibold mt-0.5', isSantaFeOrNearby === false ? 'text-white/90' : 'text-ink-500')}>
+                            Resto del país
+                          </span>
+                        </button>
+                      </div>
+
+                      {errors.isSantaFeOrNearby ? (
+                        <p role="alert" className="text-xs font-bold text-red-700">
+                          {errors.isSantaFeOrNearby.message}
+                        </p>
+                      ) : null}
+
+                      {/* Si responde SÍ: no se pide email y confirmación sutil */}
+                      {isSantaFeOrNearby === true ? (
+                        <div className="flex items-center gap-2 rounded-xl bg-emerald-50 border border-emerald-200/80 p-3 text-xs text-emerald-900 font-medium">
+                          <CheckCircle2 className="size-4 shrink-0 text-emerald-600" />
+                          <span>Entrega local por WhatsApp. No necesitás ingresar correo electrónico.</span>
+                        </div>
+                      ) : null}
+
+                      {/* Si responde NO: se pide email obligatorio */}
+                      {isSantaFeOrNearby === false ? (
+                        <div className="pt-3 border-t border-ink-950/8 space-y-2">
+                          <Field
+                            label="Correo electrónico *"
+                            htmlFor="email"
+                            error={errors.email?.message}
+                            hint="Es para poder enviarte el link de seguimiento de tu pedido"
+                          >
+                            <Input
+                              id="email"
+                              type="email"
+                              autoComplete="email"
+                              placeholder="tunombre@correo.com"
+                              {...register('email')}
+                            />
+                          </Field>
+                        </div>
+                      ) : null}
+                    </div>
                   </div>
                 ) : null}
               </section>

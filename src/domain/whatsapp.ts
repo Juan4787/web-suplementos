@@ -91,6 +91,19 @@ const buildProtocolBody = (
       field('Altura', checkout.addressNumber?.trim() || 'Sin altura'),
       field('Teléfono', checkout.phone?.trim() ?? '')
     );
+    if (checkout.isSantaFeOrNearby !== undefined && checkout.isSantaFeOrNearby !== null) {
+      sections.push(
+        field(
+          'Zona de entrega',
+          checkout.isSantaFeOrNearby
+            ? 'Santa Fe Capital o alrededores'
+            : 'Fuera de Santa Fe Capital'
+        )
+      );
+    }
+    if (checkout.email?.trim()) {
+      sections.push(field('Email de seguimiento', checkout.email.trim()));
+    }
   } else {
     sections.push(field('Envío', formatMoney(0)));
   }
@@ -119,7 +132,7 @@ export const createOrderFingerprint = (
     .join('|');
   const deliveryStr =
     checkout.deliveryMethod === 'shipping'
-      ? `shipping:${checkout.shippingType ?? ''}:${checkout.address ?? ''}:${checkout.addressNumber ?? ''}:${checkout.phone ?? ''}:${shippingFeeCents}`
+      ? `shipping:${checkout.shippingType ?? ''}:${checkout.address ?? ''}:${checkout.addressNumber ?? ''}:${checkout.phone ?? ''}:${checkout.isSantaFeOrNearby ?? ''}:${checkout.email ?? ''}:${shippingFeeCents}`
       : 'pickup';
   return `${lineStr}__${checkout.customerName.trim()}__${checkout.paymentMethod}__${deliveryStr}`;
 };
@@ -202,6 +215,10 @@ const KNOWN_LEGACY_HEADERS = [
   'Dirección',
   'Altura',
   'Teléfono',
+  'Zona de entrega',
+  'Email de seguimiento',
+  'Email',
+  'Zona',
   'Total'
 ];
 
@@ -389,6 +406,15 @@ export const parseWhatsAppProtocol = (message: string): ParsedWhatsAppOrder => {
     }
   }
 
+  const rawZona = sections.get('Zona de entrega') ?? sections.get('Zona') ?? null;
+  const isSantaFeOrNearby = rawZona
+    ? rawZona.toLowerCase().startsWith('santa fe')
+    : null;
+  const email =
+    sections.get('Email de seguimiento') ??
+    sections.get('Email') ??
+    null;
+
   return {
     customerFirstName,
     customerLastName,
@@ -396,6 +422,8 @@ export const parseWhatsAppProtocol = (message: string): ParsedWhatsAppOrder => {
     paymentMethod: parsedPayment(parsedRequired(sections, 'Medio de pago')),
     deliveryMethod,
     shippingType,
+    isSantaFeOrNearby,
+    email,
     address: deliveryMethod === 'shipping' ? parsedRequired(sections, 'Dirección') : null,
     addressNumber:
       deliveryMethod === 'shipping'
@@ -427,9 +455,11 @@ export const whatsappCheckoutSchema = z
     paymentMethod: z.enum(['cash', 'transfer', 'gift']),
     deliveryMethod: z.enum(['pickup', 'shipping']),
     shippingType: z.enum(['standard', 'express']).nullable(),
-    address: z.string().trim().max(160, 'La dirección admite hasta 160 caracteres. Quitá las indicaciones adicionales.').nullable(),
-    addressNumber: z.string().trim().max(20, 'La altura admite hasta 20 caracteres. Ingresá solo el número o S/N.').nullable(),
-    phone: z.string().trim().max(40, 'El teléfono es demasiado largo. Ingresá solo el número de contacto.').nullable()
+    isSantaFeOrNearby: z.boolean().nullable().optional(),
+    email: z.string().trim().max(120, 'El correo admite hasta 120 caracteres.').nullable().optional(),
+    address: z.string().trim().max(160, 'La dirección admite hasta 160 caracteres. Quitá las indicaciones adicionales.').nullable().optional(),
+    addressNumber: z.string().trim().max(20, 'La altura admite hasta 20 caracteres. Ingresá solo el número o S/N.').nullable().optional(),
+    phone: z.string().trim().max(40, 'El teléfono es demasiado largo. Ingresá solo el número de contacto.').nullable().optional()
   })
   .superRefine((data, context) => {
     if (data.deliveryMethod !== 'shipping') return;
@@ -441,6 +471,28 @@ export const whatsappCheckoutSchema = z
     }
     if (!data.phone || data.phone.replace(/\D/g, '').length < 8) {
       context.addIssue({ code: 'custom', path: ['phone'], message: 'Ingresá un teléfono válido.' });
+    }
+    if (data.isSantaFeOrNearby === null || data.isSantaFeOrNearby === undefined) {
+      context.addIssue({
+        code: 'custom',
+        path: ['isSantaFeOrNearby'],
+        message: 'Respondé si tu envío es dentro de Santa Fe Capital o alguna localidad cercana.'
+      });
+    } else if (data.isSantaFeOrNearby === false) {
+      const email = data.email?.trim() ?? '';
+      if (!email) {
+        context.addIssue({
+          code: 'custom',
+          path: ['email'],
+          message: 'Ingresá tu correo electrónico para enviarte el link de seguimiento.'
+        });
+      } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        context.addIssue({
+          code: 'custom',
+          path: ['email'],
+          message: 'Ingresá un correo electrónico válido.'
+        });
+      }
     }
   });
 

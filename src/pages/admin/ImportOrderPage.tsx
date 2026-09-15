@@ -309,6 +309,16 @@ export default function ImportOrderPage() {
                 {review.source.address ? (
                   <span className="text-ink-600">({review.source.address} {review.source.addressNumber ?? ''})</span>
                 ) : null}
+                {review.source.deliveryMethod === 'shipping' && review.source.isSantaFeOrNearby !== null && review.source.isSantaFeOrNearby !== undefined ? (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-cream-100 px-2.5 py-0.5 text-xs font-bold text-ink-700">
+                    {review.source.isSantaFeOrNearby ? 'Santa Fe / Cercanías' : 'Fuera de Santa Fe (Nacional)'}
+                  </span>
+                ) : null}
+                {review.source.email ? (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-brand-50 border border-brand-200/60 px-2.5 py-0.5 text-xs font-bold text-brand-800">
+                    Seguimiento: {review.source.email}
+                  </span>
+                ) : null}
               </div>
             </div>
 
@@ -551,6 +561,28 @@ export default function ImportOrderPage() {
                         />
                       </Field>
                     </div>
+                    {review.source.deliveryMethod === 'shipping' ? (
+                      <div className="mt-3 pt-3 border-t border-ink-950/8">
+                        <Field
+                          label="Email de seguimiento (envíos fuera de Santa Fe)"
+                          htmlFor="review-email"
+                          hint="Es para poder enviar el link de seguimiento del envío"
+                        >
+                          <Input
+                            id="review-email"
+                            type="email"
+                            placeholder="cliente@correo.com"
+                            value={review.source.email ?? ''}
+                            onChange={(e) =>
+                              setReview({
+                                ...review,
+                                source: { ...review.source, email: e.target.value }
+                              })
+                            }
+                          />
+                        </Field>
+                      </div>
+                    ) : null}
                   </div>
                 </div>
               ) : null}
@@ -619,7 +651,13 @@ export default function ImportOrderPage() {
                   paymentMethod: review.source.paymentMethod,
                   deliveryMethod: review.source.deliveryMethod,
                   shippingType: review.source.shippingType,
-                  address: review.source.address,
+                  isSantaFeOrNearby: review.source.isSantaFeOrNearby,
+                  email: review.source.email,
+                  address: review.source.address
+                    ? review.source.isSantaFeOrNearby === false && review.source.email?.trim()
+                      ? `${review.source.address} · Seguimiento: ${review.source.email.trim()}`
+                      : review.source.address
+                    : null,
                   addressNumber: review.source.addressNumber,
                   phone: review.source.phone,
                   lines: review.lines,

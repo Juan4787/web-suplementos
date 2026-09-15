@@ -55,15 +55,21 @@ export const sanitizeCheckoutValues = (values: CheckoutData): CheckoutData => {
     lastName = lastName || split.lastName;
   }
 
+  const isShipping = values.deliveryMethod === 'shipping';
+  const isSantaFe = isShipping ? values.isSantaFeOrNearby ?? null : null;
+  const email = isShipping && isSantaFe === false ? (values.email?.trim() || null) : null;
+
   return {
     ...values,
     customerFirstName: firstName || undefined,
     customerLastName: lastName || undefined,
     customerName,
-    shippingType: values.deliveryMethod === 'shipping' ? values.shippingType : null,
-    address: values.deliveryMethod === 'shipping' ? (values.address?.trim() ?? null) : null,
-    addressNumber: values.deliveryMethod === 'shipping' ? (values.addressNumber?.trim() || null) : null,
-    phone: values.deliveryMethod === 'shipping' ? (values.phone?.trim() ?? null) : null
+    shippingType: isShipping ? values.shippingType : null,
+    isSantaFeOrNearby: isSantaFe,
+    email,
+    address: isShipping ? (values.address?.trim() ?? null) : null,
+    addressNumber: isShipping ? (values.addressNumber?.trim() || null) : null,
+    phone: isShipping ? (values.phone?.trim() ?? null) : null
   };
 };
 

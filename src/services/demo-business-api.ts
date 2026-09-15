@@ -727,7 +727,7 @@ export const demoBusinessApi: BusinessApi = {
       customerName: fullName,
       customerFirstName: firstName,
       customerLastName: lastName,
-      customerPhone: input.phone,
+      customerPhone: input.phone ?? null,
       paymentMethod: input.paymentMethod,
       deliveryMethod: input.deliveryMethod,
       shippingType: input.shippingType,

@@ -32,6 +32,7 @@ import { formatMoney } from '@/domain/money';
 import type {
   AdminProduct,
   CartLine,
+  CheckoutData,
   DeliveryMethod,
   ImportOrderInput,
   Order,
@@ -78,6 +79,8 @@ export default function CreateOrderPage() {
   // Entrega y pago
   const [deliveryMethod, setDeliveryMethod] = useState<DeliveryMethod>('pickup');
   const [shippingType, setShippingType] = useState<ShippingType>('standard');
+  const [isSantaFeOrNearby, setIsSantaFeOrNearby] = useState<boolean | null>(null);
+  const [email, setEmail] = useState('');
   const [address, setAddress] = useState('');
   const [addressNumber, setAddressNumber] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
@@ -282,6 +285,20 @@ export default function CreateOrderPage() {
         setValidationError('Ingresá la altura de la dirección (o "S/N" si no tiene).');
         return;
       }
+      if (isSantaFeOrNearby === null) {
+        setValidationError('Respondé si el envío es dentro de Santa Fe Capital o alguna localidad cercana.');
+        return;
+      }
+      if (isSantaFeOrNearby === false) {
+        if (!email.trim()) {
+          setValidationError('Ingresá el correo electrónico del cliente para el link de seguimiento.');
+          return;
+        }
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+          setValidationError('Ingresá un correo electrónico válido.');
+          return;
+        }
+      }
     }
 
     if (!settings) {
@@ -309,14 +326,23 @@ export default function CreateOrderPage() {
     const isGift = saleType === 'gift' || paymentMethod === 'gift';
     const isCost = saleType === 'cost' && !isGift;
     const finalPaymentMethod: PaymentMethod = isGift ? 'gift' : paymentMethod;
-    const checkoutData = {
+    const fullAddress = deliveryMethod === 'shipping'
+      ? (addressNumber.trim() ? `${address.trim()} ${addressNumber.trim()}` : address.trim())
+      : null;
+    const finalAddress = fullAddress && isSantaFeOrNearby === false && email.trim()
+      ? `${fullAddress} · Seguimiento: ${email.trim()}`
+      : fullAddress;
+
+    const checkoutData: CheckoutData = {
       customerFirstName: trimmedFirst,
       customerLastName: trimmedLast,
       customerName: trimmedName,
       phone: trimmedPhone || null,
       deliveryMethod,
       shippingType: deliveryMethod === 'shipping' ? shippingType : null,
-      address: deliveryMethod === 'shipping' ? address.trim() : null,
+      isSantaFeOrNearby: deliveryMethod === 'shipping' ? isSantaFeOrNearby : null,
+      email: deliveryMethod === 'shipping' && isSantaFeOrNearby === false ? email.trim() : null,
+      address: finalAddress,
       addressNumber: deliveryMethod === 'shipping' ? addressNumber.trim() : null,
       paymentMethod: finalPaymentMethod
     };
@@ -352,6 +378,8 @@ export default function CreateOrderPage() {
     setPhone('');
     setAddress('');
     setAddressNumber('');
+    setIsSantaFeOrNearby(null);
+    setEmail('');
     setDeliveryMethod('pickup');
     setShippingType('standard');
     setPaymentMethod('cash');
@@ -869,6 +897,74 @@ export default function CreateOrderPage() {
                         />
                       </Field>
                     </div>
+                  </div>
+
+                  {/* Zona de Entrega (Santa Fe Capital / Alrededores vs Resto del País) */}
+                  <div className="rounded-2xl border border-ink-950/10 bg-cream-50/70 p-4 space-y-3">
+                    <div>
+                      <p className="text-sm font-black text-ink-950">
+                        ¿El envío es dentro de la ciudad de Santa Fe Capital o alguna localidad cercana?
+                      </p>
+                      <p className="text-xs text-ink-600 mt-0.5">
+                        Si es fuera de Santa Fe, se solicitará el email para enviar el código de seguimiento.
+                      </p>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsSantaFeOrNearby(true);
+                          setEmail('');
+                          setValidationError(null);
+                        }}
+                        className={cn(
+                          'flex items-center justify-center gap-2 p-3 rounded-xl border-2 font-black text-xs transition cursor-pointer',
+                          isSantaFeOrNearby === true
+                            ? 'border-brand-600 bg-brand-500 text-white shadow-sm ring-2 ring-brand-500/20'
+                            : 'border-ink-950/12 bg-white text-ink-800 hover:border-brand-500/40'
+                        )}
+                      >
+                        SÍ (Santa Fe / Cercanías)
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsSantaFeOrNearby(false);
+                          setValidationError(null);
+                        }}
+                        className={cn(
+                          'flex items-center justify-center gap-2 p-3 rounded-xl border-2 font-black text-xs transition cursor-pointer',
+                          isSantaFeOrNearby === false
+                            ? 'border-brand-600 bg-brand-500 text-white shadow-sm ring-2 ring-brand-500/20'
+                            : 'border-ink-950/12 bg-white text-ink-800 hover:border-brand-500/40'
+                        )}
+                      >
+                        NO (Resto del país)
+                      </button>
+                    </div>
+
+                    {isSantaFeOrNearby === false ? (
+                      <div className="pt-3 border-t border-ink-950/8">
+                        <Field
+                          label="Correo electrónico del cliente *"
+                          htmlFor="clientEmail"
+                          hint="Es para poder enviarte el link de seguimiento de tu pedido"
+                        >
+                          <Input
+                            id="clientEmail"
+                            type="email"
+                            placeholder="cliente@correo.com"
+                            value={email}
+                            onChange={(e) => {
+                              setEmail(e.target.value);
+                              setValidationError(null);
+                            }}
+                          />
+                        </Field>
+                      </div>
+                    ) : null}
                   </div>
                 </div>
               ) : null}

@@ -73,4 +73,57 @@ describe('Checkout con cambios o fallos de conexión', () => {
     await waitFor(() => expect(popup.location.href).toMatch(/wa\.me|whatsapp/));
     expect(api.validateAvailability).toHaveBeenCalledTimes(2);
   });
+
+  it('gestiona la pregunta de Santa Fe y solicita email obligatorio si responde NO', async () => {
+    render(<CheckoutPage />, { wrapper: Wrapper });
+    const button = screen.getByRole('button', { name: /Continuar por WhatsApp/ });
+    await waitFor(() => expect(button).toBeEnabled());
+
+    // Completar nombre y apellido
+    fireEvent.change(screen.getByLabelText(/nombre \*/i), { target: { value: 'Martín' } });
+    fireEvent.change(screen.getByLabelText(/apellido \*/i), { target: { value: 'Palermo' } });
+
+    // Seleccionar Envío a domicilio
+    fireEvent.click(screen.getByRole('button', { name: /Envío a domicilio/i }));
+
+    // Completar dirección y teléfono
+    fireEvent.change(screen.getByLabelText(/dirección/i), { target: { value: 'Av. Corrientes' } });
+    fireEvent.change(screen.getByLabelText(/altura/i), { target: { value: '1234' } });
+    fireEvent.change(screen.getByLabelText(/teléfono/i), { target: { value: '1155554444' } });
+
+    // La pregunta debe estar visible en pantalla
+    expect(
+      screen.getByText(/¿Tu envío es dentro de la ciudad de Santa Fe Capital o alguna localidad cercana\?/i)
+    ).toBeInTheDocument();
+
+    // 1. Si elige SÍ: no se pide email y se muestra mensaje tranquilizador
+    const siButton = screen.getByRole('button', { name: /SÍ/i });
+    fireEvent.click(siButton);
+    expect(screen.queryByLabelText(/correo electrónico \*/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/No necesitás ingresar correo electrónico/i)).toBeInTheDocument();
+
+    // 2. Si elige NO: se solicita email obligatorio con el hint especificado
+    const noButton = screen.getByRole('button', { name: /NO/i });
+    fireEvent.click(noButton);
+    expect(screen.getByLabelText(/correo electrónico \*/i)).toBeInTheDocument();
+    expect(
+      screen.getByText('Es para poder enviarte el link de seguimiento de tu pedido')
+    ).toBeInTheDocument();
+
+    // Si intenta enviar sin email, falla la validación
+    fireEvent.click(button);
+    await waitFor(() => {
+      expect(screen.getByText(/Ingresá tu correo electrónico para enviarte el link de seguimiento/i)).toBeInTheDocument();
+    });
+
+    // Ingresar email válido
+    fireEvent.change(screen.getByLabelText(/correo electrónico \*/i), { target: { value: 'martin@palermo.com' } });
+
+    // Ahora el error desaparece y permite continuar
+    const popup = { location: { href: 'about:blank' }, close: vi.fn() };
+    vi.spyOn(window, 'open').mockReturnValue(popup as unknown as Window);
+    fireEvent.click(button);
+    await waitFor(() => expect(popup.location.href).toMatch(/wa\.me|whatsapp/));
+    expect(decodeURIComponent(popup.location.href)).toContain('Email de seguimiento\nmartin@palermo.com');
+  });
 });

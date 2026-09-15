@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { formatMoney } from './money';
-import { buildWhatsAppProtocol, parseWhatsAppProtocol } from './whatsapp';
+import { buildWhatsAppProtocol, parseWhatsAppProtocol, whatsappCheckoutSchema } from './whatsapp';
 import type { CartLine, CheckoutData, StoreSettings } from './types';
 
 const settings: StoreSettings = {
@@ -401,5 +401,137 @@ DCE085E3`;
     expect(parsed.quotedTotalCents).toBe(13_200_000);
     expect(parsed.deliveryMethod).toBe('pickup');
     expect(parsed.paymentMethod).toBe('transfer');
+  });
+
+  it('valida la zona de envío y el email de seguimiento condicional según el esquema Zod', () => {
+    // 1. Envío a domicilio sin responder la pregunta de zona: debe fallar
+    const missingZone = whatsappCheckoutSchema.safeParse({
+      customerFirstName: 'Juan',
+      customerLastName: 'Pérez',
+      paymentMethod: 'cash',
+      deliveryMethod: 'shipping',
+      shippingType: 'standard',
+      address: 'Av. Libertador',
+      addressNumber: '1234',
+      phone: '3424111222'
+    });
+    expect(missingZone.success).toBe(false);
+    if (!missingZone.success) {
+      expect(missingZone.error.issues.some((i) => i.path.includes('isSantaFeOrNearby'))).toBe(true);
+    }
+
+    // 2. Envío a domicilio respondiendo SÍ: pasa sin email
+    const santaFeOk = whatsappCheckoutSchema.safeParse({
+      customerFirstName: 'Juan',
+      customerLastName: 'Pérez',
+      paymentMethod: 'cash',
+      deliveryMethod: 'shipping',
+      shippingType: 'standard',
+      isSantaFeOrNearby: true,
+      address: 'Av. Libertador',
+      addressNumber: '1234',
+      phone: '3424111222'
+    });
+    expect(santaFeOk.success).toBe(true);
+
+    // 3. Envío a domicilio respondiendo NO sin email: debe fallar
+    const nationalNoEmail = whatsappCheckoutSchema.safeParse({
+      customerFirstName: 'Juan',
+      customerLastName: 'Pérez',
+      paymentMethod: 'cash',
+      deliveryMethod: 'shipping',
+      shippingType: 'standard',
+      isSantaFeOrNearby: false,
+      address: 'Av. Libertador',
+      addressNumber: '1234',
+      phone: '3424111222'
+    });
+    expect(nationalNoEmail.success).toBe(false);
+    if (!nationalNoEmail.success) {
+      expect(nationalNoEmail.error.issues.some((i) => i.path.includes('email'))).toBe(true);
+    }
+
+    // 4. Envío a domicilio respondiendo NO con email inválido: debe fallar
+    const nationalInvalidEmail = whatsappCheckoutSchema.safeParse({
+      customerFirstName: 'Juan',
+      customerLastName: 'Pérez',
+      paymentMethod: 'cash',
+      deliveryMethod: 'shipping',
+      shippingType: 'standard',
+      isSantaFeOrNearby: false,
+      email: 'no-es-un-correo',
+      address: 'Av. Libertador',
+      addressNumber: '1234',
+      phone: '3424111222'
+    });
+    expect(nationalInvalidEmail.success).toBe(false);
+
+    // 5. Envío a domicilio respondiendo NO con email válido: pasa
+    const nationalValidEmail = whatsappCheckoutSchema.safeParse({
+      customerFirstName: 'Juan',
+      customerLastName: 'Pérez',
+      paymentMethod: 'cash',
+      deliveryMethod: 'shipping',
+      shippingType: 'standard',
+      isSantaFeOrNearby: false,
+      email: 'juan@cliente.com',
+      address: 'Av. Libertador',
+      addressNumber: '1234',
+      phone: '3424111222'
+    });
+    expect(nationalValidEmail.success).toBe(true);
+
+    // 6. Retiro en local: no requiere zona ni email
+    const pickupOk = whatsappCheckoutSchema.safeParse({
+      customerFirstName: 'Juan',
+      customerLastName: 'Pérez',
+      paymentMethod: 'cash',
+      deliveryMethod: 'pickup',
+      shippingType: null
+    });
+    expect(pickupOk.success).toBe(true);
+  });
+
+  it('genera y parsea correctamente el protocolo de WhatsApp con zona y email condicional', () => {
+    // Pedido Santa Fe Capital
+    const santaFeCheckout: CheckoutData = {
+      customerFirstName: 'Lucía',
+      customerLastName: 'Gómez',
+      customerName: 'Lucía Gómez',
+      paymentMethod: 'cash',
+      deliveryMethod: 'shipping',
+      shippingType: 'standard',
+      isSantaFeOrNearby: true,
+      address: 'Bv. Pellegrini',
+      addressNumber: '2500',
+      phone: '3425987654'
+    };
+    const santaFeProtocol = buildWhatsAppProtocol(santaFeCheckout, lines, settings);
+    expect(santaFeProtocol.message).toContain('Zona de entrega\nSanta Fe Capital o alrededores');
+    expect(santaFeProtocol.message).not.toContain('Email de seguimiento');
+    const parsedSantaFe = parseWhatsAppProtocol(santaFeProtocol.message);
+    expect(parsedSantaFe.isSantaFeOrNearby).toBe(true);
+    expect(parsedSantaFe.email).toBeNull();
+
+    // Pedido fuera de Santa Fe (Nacional)
+    const nationalCheckout: CheckoutData = {
+      customerFirstName: 'Carlos',
+      customerLastName: 'Tevez',
+      customerName: 'Carlos Tevez',
+      paymentMethod: 'transfer',
+      deliveryMethod: 'shipping',
+      shippingType: 'express',
+      isSantaFeOrNearby: false,
+      email: 'carlos.tevez@correo.com',
+      address: 'Brandsen',
+      addressNumber: '805',
+      phone: '1145678901'
+    };
+    const nationalProtocol = buildWhatsAppProtocol(nationalCheckout, lines, settings);
+    expect(nationalProtocol.message).toContain('Zona de entrega\nFuera de Santa Fe Capital');
+    expect(nationalProtocol.message).toContain('Email de seguimiento\ncarlos.tevez@correo.com');
+    const parsedNational = parseWhatsAppProtocol(nationalProtocol.message);
+    expect(parsedNational.isSantaFeOrNearby).toBe(false);
+    expect(parsedNational.email).toBe('carlos.tevez@correo.com');
   });
 });
