@@ -5,17 +5,21 @@ import {
   AlertTriangle,
   Archive,
   ArchiveRestore,
+  CheckCircle2,
   ChevronDown,
   Edit3,
   Image as ImageIcon,
+  Info,
   Plus,
   Search,
   Sliders,
   Sparkles,
+  Trash2,
   Truck,
+  UploadCloud,
   X
 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useForm, Controller } from 'react-hook-form';
 import { z } from 'zod';
 import { queryKeys } from '@/app/query-keys';
@@ -42,7 +46,7 @@ import { cn } from '@/lib/cn';
 const formSchema = z.object({
   name: z.string().trim().min(2, 'Ingresá el nombre del producto (mínimo 2 caracteres).').max(100, 'Acortá el nombre a 100 caracteres como máximo.'),
   presentation: z.string().trim().min(1, 'Ingresá la presentación (ej. 300 g · Sin sabor).').max(100, 'Acortá la presentación a 100 caracteres como máximo.'),
-  description: z.string().trim().min(10, 'Describí el producto en al menos 10 caracteres.').max(1000, 'Acortá la descripción a 1000 caracteres como máximo.'),
+  description: z.string().trim().min(10, 'Describí el producto en al menos 10 caracteres.').max(10000, 'Acortá la descripción a 10.000 caracteres como máximo.'),
   category: z.string().trim().min(2, 'Ingresá una categoría.').max(60, 'Acortá la categoría a 60 caracteres como máximo.'),
   pricePesos: z
     .number({ error: 'Ingresá el precio de venta al público.' })
@@ -121,6 +125,66 @@ function ProductForm({
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
   const [imageError, setImageError] = useState<unknown>(null);
   const [confirmArchive, setConfirmArchive] = useState<boolean | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const formatFileSize = (bytes: number): string => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
+  const handleSelectFile = (file: File | null) => {
+    setImageError(null);
+    if (!file) return;
+    try {
+      validateProductImageFile(file);
+      if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl);
+      const preview = URL.createObjectURL(file);
+      setImagePreviewUrl(preview);
+      setImageFile(file);
+      setValue('imageUrl', preview, { shouldValidate: true });
+    } catch (error) {
+      setImageError(error);
+    }
+  };
+
+  const handleRemoveImage = () => {
+    if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl);
+    setImagePreviewUrl(null);
+    setImageFile(null);
+    setImageError(null);
+    if (product?.imageUrl) {
+      setValue('imageUrl', product.imageUrl, { shouldValidate: true });
+    } else {
+      setValue('imageUrl', '', { shouldValidate: true });
+    }
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    const file = e.dataTransfer.files?.[0] ?? null;
+    if (file) {
+      handleSelectFile(file);
+    }
+  };
 
   const {
     register,
@@ -347,60 +411,143 @@ function ProductForm({
               ) : null}
             </div>
 
-            <Field label="Descripción comercial" error={errors.description?.message}>
+            <Field
+              label="Descripción comercial"
+              error={errors.description?.message}
+              hint={`${(watch('description') || '').length.toLocaleString('es-AR')} / 10.000 caracteres`}
+            >
               <Textarea
-                className="min-h-[6.5rem]"
-                placeholder="Breve descripción del producto para la tienda pública…"
+                className="min-h-[8.5rem] resize-y"
+                placeholder="Descripción detallada del producto para la tienda pública (hasta 10.000 caracteres)…"
                 {...register('description')}
               />
             </Field>
 
             {/* Imagen del producto */}
-            <div className="rounded-2xl border border-ink-950/8 bg-cream-50 p-4">
-              <p className="text-xs font-black uppercase tracking-wider text-ink-600 mb-3">
-                Imagen del producto
-              </p>
-              <div className="grid gap-4 sm:grid-cols-[6rem_1fr] sm:items-center">
-                <div className="aspect-square size-24 overflow-hidden rounded-2xl bg-cream-100 border border-ink-950/10">
-                  {imagePreviewUrl || currentImageUrl ? (
-                    <ProductImage
-                      src={imagePreviewUrl || currentImageUrl}
-                      alt="Vista previa"
-                      className="size-full object-contain p-1.5"
-                    />
-                  ) : (
-                    <div className="grid size-full place-items-center text-ink-400">
-                      <ImageIcon className="size-6 text-ink-600/40" />
-                    </div>
-                  )}
-                </div>
-                <div className="space-y-2">
-                  <Input
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp,image/avif"
-                    onChange={(event) => {
-                      const file = event.target.files?.[0] ?? null;
-                      setImageError(null);
-                      if (!file) return;
-                      try {
-                        validateProductImageFile(file);
-                        if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl);
-                        const preview = URL.createObjectURL(file);
-                        setImagePreviewUrl(preview);
-                        setImageFile(file);
-                        setValue('imageUrl', preview, { shouldValidate: true });
-                      } catch (error) {
-                        setImageError(error);
-                        event.target.value = '';
-                      }
-                    }}
-                  />
-                  <p className="text-[13px] font-medium text-ink-600">
-                    Fotos en JPG o PNG (fotos de celular o catálogo). Si no seleccionás ninguna, se asignará una imagen estándar que podés cambiar luego.
-                  </p>
-                </div>
+            <div className="rounded-2xl border border-ink-950/10 bg-cream-50/80 p-4 sm:p-5">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-xs font-black uppercase tracking-wider text-ink-700 flex items-center gap-1.5">
+                  <ImageIcon className="size-4 text-brand-600" /> Imagen del producto
+                </span>
+                <span className="text-[11px] font-bold text-ink-500">
+                  JPG, PNG, WebP o AVIF · Hasta 12 MB
+                </span>
               </div>
-              {imageError ? <div className="mt-3"><ErrorState error={imageError} /></div> : null}
+
+              {/* Input nativo oculto para accesibilidad */}
+              <input
+                ref={fileInputRef}
+                type="file"
+                className="sr-only"
+                accept="image/jpeg,image/png,image/webp,image/avif"
+                onChange={(event) => {
+                  const file = event.target.files?.[0] ?? null;
+                  handleSelectFile(file);
+                  event.target.value = '';
+                }}
+              />
+
+              {imagePreviewUrl || (currentImageUrl && currentImageUrl !== '/product-placeholder.svg') ? (
+                /* Estado 1: Imagen cargada o nueva seleccionada */
+                <div className="rounded-2xl border border-ink-950/8 bg-white p-4 shadow-sm">
+                  <div className="flex flex-col sm:flex-row items-center sm:items-start gap-4">
+                    {/* Visualizador de imagen */}
+                    <div className="relative group shrink-0">
+                      <div className="size-28 sm:size-32 rounded-2xl bg-cream-100/80 border border-ink-950/10 overflow-hidden shadow-inner flex items-center justify-center p-2">
+                        <ProductImage
+                          src={imagePreviewUrl || currentImageUrl}
+                          alt="Vista previa del producto"
+                          className="size-full object-contain"
+                        />
+                      </div>
+                      <span
+                        className={cn(
+                          'absolute -top-2 -right-2 px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider shadow-sm',
+                          imageFile
+                            ? 'bg-emerald-600 text-white'
+                            : 'bg-ink-900 text-white'
+                        )}
+                      >
+                        {imageFile ? 'Nueva' : 'Actual'}
+                      </span>
+                    </div>
+
+                    {/* Metadatos y Acciones */}
+                    <div className="min-w-0 flex-1 text-center sm:text-left space-y-2">
+                      <div>
+                        <p className="text-sm font-black text-ink-950 truncate">
+                          {imageFile ? imageFile.name : product?.name || 'Imagen del producto'}
+                        </p>
+                        <p className="text-xs text-ink-600 font-medium">
+                          {imageFile ? (
+                            <span className="inline-flex items-center gap-1 text-emerald-700 font-bold">
+                              <CheckCircle2 className="size-3.5" /> {formatFileSize(imageFile.size)} · Lista para guardar
+                            </span>
+                          ) : (
+                            'Imagen publicada en el catálogo'
+                          )}
+                        </p>
+                      </div>
+
+                      <p className="text-[12px] leading-relaxed text-ink-500">
+                        Al guardar, se optimiza y comprime automáticamente en formato WebP de alta velocidad.
+                      </p>
+
+                      <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 pt-1">
+                        <button
+                          type="button"
+                          onClick={() => fileInputRef.current?.click()}
+                          className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-black bg-brand-50 text-brand-700 hover:bg-brand-100/80 border border-brand-200/80 transition active:scale-95 cursor-pointer"
+                        >
+                          <UploadCloud className="size-3.5" /> Cambiar foto
+                        </button>
+                        {imageFile ? (
+                          <button
+                            type="button"
+                            onClick={handleRemoveImage}
+                            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-red-600 hover:bg-red-50 transition active:scale-95 cursor-pointer"
+                          >
+                            <Trash2 className="size-3.5" /> Descartar cambio
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                /* Estado 2: Dropzone interactivo para agregar */
+                <div
+                  onDragOver={handleDragOver}
+                  onDragLeave={handleDragLeave}
+                  onDrop={handleDrop}
+                  onClick={() => fileInputRef.current?.click()}
+                  className={cn(
+                    'relative group cursor-pointer rounded-2xl border-2 border-dashed p-6 sm:p-8 text-center transition-all',
+                    isDragging
+                      ? 'border-brand-600 bg-brand-50/70 ring-4 ring-brand-500/20 scale-[1.01]'
+                      : 'border-ink-950/15 bg-white/70 hover:border-brand-500 hover:bg-brand-50/30 shadow-sm'
+                  )}
+                >
+                  <div className="mx-auto grid size-12 place-items-center rounded-2xl bg-brand-50 text-brand-600 group-hover:scale-110 group-hover:bg-brand-100 transition-transform">
+                    <UploadCloud className="size-6" />
+                  </div>
+                  <p className="mt-3 text-sm font-black text-ink-950">
+                    Hacé clic para elegir una imagen o arrastrala acá
+                  </p>
+                  <p className="mt-1 text-xs text-ink-600">
+                    Fotos de celular o catálogo en JPG, PNG, WebP o AVIF (hasta 12 MB)
+                  </p>
+                  <div className="mt-3 inline-flex items-center gap-1 rounded-full bg-cream-100 px-2.5 py-1 text-[11px] font-semibold text-ink-600">
+                    <Info className="size-3 text-brand-600" /> Si no subís ninguna, se asignará la imagen estándar de catálogo
+                  </div>
+                </div>
+              )}
+
+              {imageError ? (
+                <div className="mt-3">
+                  <ErrorState error={imageError} />
+                </div>
+              ) : null}
               {errors.imageUrl ? (
                 <p className="mt-2 text-[14px] font-semibold text-red-700">{errors.imageUrl.message}</p>
               ) : null}

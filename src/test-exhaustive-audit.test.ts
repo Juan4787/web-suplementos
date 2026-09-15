@@ -197,7 +197,7 @@ DCE085E3`;
 
         // Migraciones aplicadas en base de datos
         const migrationsRes = await db.query('select count(*) as count from supabase_migrations.schema_migrations');
-        expect(Number(migrationsRes.rows[0].count)).toBe(49);
+        expect(Number(migrationsRes.rows[0].count)).toBe(50);
 
         // Columnas first_name y last_name en customers
         const customerColsRes = await db.query(`
