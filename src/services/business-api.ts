@@ -11,6 +11,9 @@ import type {
   ImportOrderInput,
   InflationIndex,
   InventoryItem,
+  MiscExpense,
+  MiscExpenseFrequency,
+  MiscExpensePeriod,
   OpeningReservation,
   Order,
   OrderAction,
@@ -88,6 +91,17 @@ export type PurchaseUpdateInput = {
   }>;
 };
 
+export type SaveMiscExpenseInput = {
+  id?: string;
+  operationId?: string;
+  title: string;
+  amountCents: number;
+  frequency: MiscExpenseFrequency;
+  startsOn: string;
+  endsOn: string | null;
+  expectedUpdatedAt?: string;
+};
+
 export type AIAnswerEvidence = {
   label: string;
   value: string | number | boolean | null;
@@ -106,6 +120,9 @@ export type AIAnswer = {
 export interface BusinessApi {
   getSettings(): Promise<StoreSettings>;
   updateSettings(settings: StoreSettings): Promise<StoreSettings>;
+  listMiscExpenses(from: string, to: string): Promise<MiscExpensePeriod>;
+  saveMiscExpense(input: SaveMiscExpenseInput): Promise<MiscExpense>;
+  deleteMiscExpense(expenseId: string, expectedUpdatedAt: string): Promise<MiscExpense>;
   listStorefrontProducts(): Promise<StorefrontProduct[]>;
   getStorefrontProduct(slug: string): Promise<StorefrontProduct | null>;
   validateAvailability(lines: Pick<CartLine, 'productId' | 'quantity'>[]): Promise<AvailabilityCheck>;

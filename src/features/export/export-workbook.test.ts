@@ -22,7 +22,7 @@ describe('business XLSX contract', () => {
     const dataset = await demoBusinessApi.getExportDataset();
     const workbook = buildBusinessWorkbook(dataset);
     expect(workbook.sheets.map((sheet) => sheet.name)).toEqual([
-      'Resumen', 'Productos', 'Stock', 'Pedidos', 'Detalle pedidos', 'Ventas', 'Compras', 'Detalle compras', 'Movimientos', 'Reservas', 'Clientes', 'IPC', 'Usuarios'
+      'Resumen', 'Productos', 'Stock', 'Pedidos', 'Detalle pedidos', 'Ventas', 'Compras', 'Detalle compras', 'Movimientos', 'Reservas', 'Clientes', 'Gastos varios', 'Historial gastos', 'IPC', 'Usuarios'
     ]);
     expect(workbook.filename).toMatch(/^respaldo-impulso-\d{8}-\d{4}\.xlsx$/);
   });
@@ -50,7 +50,7 @@ describe('business XLSX contract', () => {
     expect(files['xl/styles.xml']).toBeDefined();
 
     const workbookXml = strFromU8(files['xl/workbook.xml']!);
-    expect(workbookXml.match(/<sheet\b/gu)).toHaveLength(13);
+    expect(workbookXml.match(/<sheet\b/gu)).toHaveLength(15);
 
     const xmlEntries = Object.entries(files)
       .filter(([path]) => path.endsWith('.xml'))
@@ -71,6 +71,10 @@ describe('business XLSX contract', () => {
     expect(orders.headers).toEqual(expect.arrayContaining(['Código protocolo', 'Checksum protocolo', 'Reembolsado', 'Cancelado']));
     const reservations = workbook.sheets.find((sheet) => sheet.name === 'Reservas')!;
     expect(reservations.headers).toEqual(expect.arrayContaining(['Pedido ID', 'Producto ID', 'Estado']));
+    const expenses = workbook.sheets.find((sheet) => sheet.name === 'Gastos varios')!;
+    expect(expenses.headers).toEqual(expect.arrayContaining(['ID', 'Operación ID', 'Monto por vez ARS', 'Frecuencia', 'Estado']));
+    const expenseHistory = workbook.sheets.find((sheet) => sheet.name === 'Historial gastos')!;
+    expect(expenseHistory.headers).toEqual(expect.arrayContaining(['Gasto ID', 'Acción', 'Monto anterior ARS', 'Monto nuevo ARS', 'Realizado por']));
   });
 
   libreOfficeIt('can be reopened and saved again by LibreOffice', async () => {
@@ -102,7 +106,7 @@ describe('business XLSX contract', () => {
       expect((await stat(reopenedPath)).size).toBeGreaterThan(0);
       const reopenedFiles = unzipSync(await readFile(reopenedPath));
       const reopenedWorkbookXml = strFromU8(reopenedFiles['xl/workbook.xml']!);
-      expect(reopenedWorkbookXml.match(/<sheet\b/gu)).toHaveLength(13);
+      expect(reopenedWorkbookXml.match(/<sheet\b/gu)).toHaveLength(15);
     } finally {
       await rm(temporaryRoot, { recursive: true, force: true });
     }

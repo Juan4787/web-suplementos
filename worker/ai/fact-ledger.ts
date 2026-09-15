@@ -36,6 +36,9 @@ export const inferKind = (id: string): FactKind => {
     id.startsWith('change.') ||
     id.includes('_percent') ||
     id.includes('estimated_margin') ||
+    id.includes('commercial_margin') ||
+    id.includes('net_profit') ||
+    id.includes('misc_expense') ||
     id.includes('coverage_days') ||
     id.includes('suggested_purchase') ||
     id.includes('average_ticket')

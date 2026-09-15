@@ -76,12 +76,30 @@ const CONTRACT_SPECS = [
       'readyForDelivery',
       'lowStockProducts',
       'incomingPurchases',
+      'paidRevenueMonthCents',
+      'paidOrdersMonth',
+      'estimatedMarginMonthCents',
+      'miscExpensesMonthCents',
       'recentOrders',
       'priorityInventory'
     ],
     validate: (data) => {
       if (!Array.isArray(data.recentOrders)) throw new Error('recentOrders must be an array');
       if (!Array.isArray(data.priorityInventory)) throw new Error('priorityInventory must be an array');
+    }
+  },
+  {
+    rpc: 'list_misc_expenses',
+    args: { p_from: '2026-09-01', p_to: '2026-09-30' },
+    requiredKeys: ['from', 'to', 'expenseCount', 'occurrenceCount', 'totalCents', 'items'],
+    validate: (data) => {
+      if (!Array.isArray(data.items)) throw new Error('items must be an array');
+      if (data.items.length > 0) {
+        const required = ['id', 'operationId', 'title', 'amountCents', 'frequency', 'startsOn', 'updatedAt', 'occurrenceCount', 'periodAmountCents'];
+        for (const key of required) {
+          if (data.items[0][key] === undefined) throw new Error(`Expense missing item key: ${key}`);
+        }
+      }
     }
   },
   {
@@ -181,6 +199,10 @@ const CONTRACT_SPECS = [
       'to',
       'revenueCents',
       'costCents',
+      'taxCents',
+      'commercialMarginCents',
+      'miscExpensesCents',
+      'miscExpenseOccurrences',
       'estimatedMarginCents',
       'orders',
       'units',
@@ -195,7 +217,11 @@ const CONTRACT_SPECS = [
   {
     rpc: 'get_business_export_dataset',
     args: {},
-    requiredKeys: ['products', 'inventory', 'orders', 'purchases', 'movements', 'customers', 'settings']
+    requiredKeys: ['products', 'inventory', 'orders', 'purchases', 'movements', 'customers', 'expenses', 'expenseHistory', 'settings'],
+    validate: (data) => {
+      if (!Array.isArray(data.expenses)) throw new Error('expenses must be an array');
+      if (!Array.isArray(data.expenseHistory)) throw new Error('expenseHistory must be an array');
+    }
   },
   {
     rpc: 'list_store_users',

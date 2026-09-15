@@ -97,7 +97,7 @@ export const TOOL_REGISTRY: Record<string, ToolSpec<any, any>> = {
   get_sales_summary: {
     definition: {
       name: 'get_sales_summary',
-      description: 'Devuelve ventas cobradas, costos, impuestos, margen, pedidos y unidades para un período de hasta 366 días.',
+      description: 'Devuelve ventas cobradas, costos, impuestos, margen comercial, gastos varios y ganancia neta para un período de hasta 366 días.',
       parameters: {
         type: 'object',
         properties: {
@@ -112,8 +112,8 @@ export const TOOL_REGISTRY: Record<string, ToolSpec<any, any>> = {
     rpcName: 'ai_get_sales_summary',
     toRpcArgs: (args) => ({ p_from: args.from, p_to: args.to }),
     interpretationRules: [
-      'Ventas, margen y costos corresponden únicamente a pedidos cobrados.',
-      'El margen estimado ya deduce los costos unitarios registrados.'
+      'Ventas, margen comercial y costos corresponden a pedidos cobrados; los gastos varios corresponden a sus fechas programadas dentro del período.',
+      'La ganancia neta es el margen comercial menos los gastos varios registrados para el período.'
     ]
   },
   compare_sales_periods: {

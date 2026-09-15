@@ -219,6 +219,30 @@ describe('deterministic business answers', () => {
     expect(template).toContain('{{fact:product:MAG60.label}}');
   });
 
+  it('explica margen comercial, gastos varios y ganancia neta sin duplicar el alias legado', () => {
+    const result = sanitizeToolResult(
+      {
+        schemaVersion: 'ai-facts/v1',
+        tool: 'get_sales_summary',
+        facts: {
+          'sales.revenue_cents': 1_000_000,
+          'sales.commercial_margin_cents': 300_000,
+          'sales.misc_expenses_cents': 50_000,
+          'sales.misc_expense_occurrence_count': 2,
+          'sales.net_profit_cents': 250_000,
+          'sales.estimated_margin_cents': 250_000
+        }
+      },
+      'get_sales_summary'
+    );
+
+    const template = buildDeterministicAnswerTemplate('¿Cuál fue mi ganancia neta?', result);
+    expect(template).toContain('margen comercial {{fact:sales.commercial_margin_cents}}');
+    expect(template).toContain('gastos varios {{fact:sales.misc_expenses_cents}}');
+    expect(template).toContain('ganancia neta {{fact:sales.net_profit_cents}}');
+    expect(template).not.toContain('{{fact:sales.estimated_margin_cents}}');
+  });
+
   it('resume una comparación con todos los cambios calculados por la base', () => {
     const result = sanitizeToolResult(
       {
@@ -250,7 +274,7 @@ describe('deterministic business answers', () => {
     );
 
     expect(buildDeterministicAnswerTemplate('Compará las ventas', result)).toBe(
-      'Período base ({{fact:period.first.from}} a {{fact:period.first.to}}): facturación {{fact:first.revenue_cents}}, margen {{fact:first.estimated_margin_cents}}, pedidos {{fact:first.order_count}} y unidades {{fact:first.units}}. Período comparado ({{fact:period.second.from}} a {{fact:period.second.to}}): facturación {{fact:second.revenue_cents}}, margen {{fact:second.estimated_margin_cents}}, pedidos {{fact:second.order_count}} y unidades {{fact:second.units}}. Cambio del segundo respecto del primero: facturación {{fact:change.revenue_cents}} ({{fact:change.revenue_percent}}), margen {{fact:change.margin_cents}} ({{fact:change.margin_percent}}), pedidos {{fact:change.order_count}} y unidades {{fact:change.units}}.'
+      'Período base ({{fact:period.first.from}} a {{fact:period.first.to}}): facturación {{fact:first.revenue_cents}}, ganancia neta {{fact:first.estimated_margin_cents}}, pedidos {{fact:first.order_count}} y unidades {{fact:first.units}}. Período comparado ({{fact:period.second.from}} a {{fact:period.second.to}}): facturación {{fact:second.revenue_cents}}, ganancia neta {{fact:second.estimated_margin_cents}}, pedidos {{fact:second.order_count}} y unidades {{fact:second.units}}. Cambio del segundo respecto del primero: facturación {{fact:change.revenue_cents}} ({{fact:change.revenue_percent}}), ganancia neta {{fact:change.margin_cents}} ({{fact:change.margin_percent}}), pedidos {{fact:change.order_count}} y unidades {{fact:change.units}}.'
     );
   });
 });

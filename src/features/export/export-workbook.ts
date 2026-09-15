@@ -1,6 +1,6 @@
 import type { ExportDataset } from '@/domain/types';
 
-export const BUSINESS_EXPORT_VERSION = 'impulso-business-backup/v1' as const;
+export const BUSINESS_EXPORT_VERSION = 'impulso-business-backup/v2' as const;
 export const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
 export type WorkbookCell = { kind: 'text'; value: string } | { kind: 'number'; value: number } | null;
@@ -28,6 +28,10 @@ const number = (value: unknown): WorkbookCell => {
 };
 const pesos = (cents: number | null): WorkbookCell => cents === null ? null : number(cents / 100);
 const yesNo = (value: boolean): WorkbookCell => text(value ? 'Sí' : 'No');
+const expenseFrequency = (value: 'once' | 'weekly' | 'monthly'): WorkbookCell =>
+  text(value === 'once' ? 'Puntual' : value === 'weekly' ? 'Semanal' : 'Mensual');
+const expenseAction = (value: 'created' | 'updated' | 'deleted'): WorkbookCell =>
+  text(value === 'created' ? 'Creado' : value === 'updated' ? 'Corregido' : 'Anulado');
 
 const sheet = (name: string, headers: string[], widths: number[], rows: WorkbookCell[][]): WorkbookSheet => {
   if (headers.length !== widths.length || rows.some((row) => row.length !== headers.length)) throw new WorkbookBuildError();
@@ -46,6 +50,8 @@ const filenameFor = (generatedAt: string): string => {
 
 export const buildBusinessWorkbook = (data: ExportDataset): BusinessWorkbook => {
   if (!Number.isSafeInteger(data.revision) || data.revision < 0 || !Array.isArray(data.products)) throw new WorkbookBuildError();
+  const expenses = Array.isArray(data.expenses) ? data.expenses : [];
+  const expenseHistory = Array.isArray(data.expenseHistory) ? data.expenseHistory : [];
   const sheets: WorkbookSheet[] = [
     sheet('Resumen', ['Dato', 'Detalle'], [28, 75], [
       [text('Versión del contrato'), text(BUSINESS_EXPORT_VERSION)],
@@ -67,6 +73,8 @@ export const buildBusinessWorkbook = (data: ExportDataset): BusinessWorkbook => 
       [text('Movimientos'), number(data.movements.length)],
       [text('Reservas'), number(data.reservations.length)],
       [text('Clientes'), number(data.customers.length)],
+      [text('Reglas de gastos varios'), number(expenses.length)],
+      [text('Cambios de gastos conservados'), number(expenseHistory.length)],
       [text('Usuarios'), number(data.users.length)],
       [text('Alcance'), text('Datos comerciales tabulares y permisos. No incluye contraseñas, imágenes binarias, código, esquema SQL, secretos ni configuración del proveedor.')]
     ]),
@@ -82,7 +90,7 @@ export const buildBusinessWorkbook = (data: ExportDataset): BusinessWorkbook => 
     sheet('Detalle pedidos', ['Ítem ID', 'Pedido ID', 'Pedido número', 'Producto ID', 'SKU', 'Producto snapshot', 'Presentación snapshot', 'Cantidad', 'Precio unitario ARS', 'Costo unitario ARS', 'Costo total ARS', 'Subtotal ARS'], [38, 38, 14, 38, 16, 28, 24, 12, 20, 20, 20, 18], data.orders.flatMap((order) => order.items.map((item) => [
       text(item.id), text(order.id), number(order.number), text(item.productId), text(item.sku), text(item.productName), text(item.presentation), number(item.quantity), pesos(item.unitPriceCents), pesos(item.unitCostCents), pesos(item.costTotalCents ?? ((item.unitCostCents ?? 0) * item.quantity)), pesos(item.subtotalCents)
     ]))),
-    sheet('Ventas', ['Pedido ID', 'Pedido número', 'Cliente', 'Fecha cobro', 'Unidades', 'Facturación ARS', 'Costo ARS', 'Impuesto ARS', 'Margen estimado ARS'], [38, 14, 28, 25, 12, 18, 18, 18, 22], data.orders.filter((order) => order.paymentState === 'paid').map((order) => [
+    sheet('Ventas', ['Pedido ID', 'Pedido número', 'Cliente', 'Fecha cobro', 'Unidades', 'Facturación ARS', 'Costo ARS', 'Impuesto ARS', 'Margen comercial ARS'], [38, 14, 28, 25, 12, 18, 18, 18, 22], data.orders.filter((order) => order.paymentState === 'paid').map((order) => [
       text(order.id), number(order.number), text(order.customerName), text(order.paidAt), number(order.items.reduce((sum, item) => sum + item.quantity, 0)), pesos(order.totalCents), pesos(order.costTotalCents), pesos(order.taxAmountCents), pesos(order.totalCents - (order.costTotalCents ?? 0) - (order.taxAmountCents ?? 0))
     ])),
     sheet('Compras', ['ID', 'Número', 'Proveedor', 'Estado', 'Pedido', 'Esperado', 'Recibido', 'Total costo ARS', 'Notas', 'Creado'], [38, 12, 28, 16, 25, 25, 25, 18, 50, 25], data.purchases.map((purchase) => [
@@ -99,6 +107,12 @@ export const buildBusinessWorkbook = (data: ExportDataset): BusinessWorkbook => 
     ])),
     sheet('Clientes', ['ID', 'Nombre', 'Teléfono', 'Primera compra', 'Última compra', 'Cantidad pedidos', 'Total pagado ARS', 'Creado'], [38, 30, 22, 25, 25, 16, 20, 25], data.customers.map((customer) => [
       text(customer.id), text(customer.name), text(customer.phone), text(customer.firstOrderAt), text(customer.lastOrderAt), number(customer.orderCount), pesos(customer.totalPaidCents), text(customer.createdAt)
+    ])),
+    sheet('Gastos varios', ['ID', 'Operación ID', 'Título', 'Monto por vez ARS', 'Frecuencia', 'Fecha inicial', 'Fecha final', 'Estado', 'Creado', 'Actualizado', 'Anulado', 'Creado por', 'Actualizado por'], [38, 38, 34, 20, 16, 18, 18, 14, 25, 25, 25, 24, 24], expenses.map((expense) => [
+      text(expense.id), text(expense.operationId), text(expense.title), pesos(expense.amountCents), expenseFrequency(expense.frequency), text(expense.startsOn), text(expense.endsOn), text(expense.deletedAt ? 'Anulado' : 'Activo'), text(expense.createdAt), text(expense.updatedAt), text(expense.deletedAt), text(expense.createdByName), text(expense.updatedByName)
+    ])),
+    sheet('Historial gastos', ['ID', 'Gasto ID', 'Acción', 'Título anterior', 'Título nuevo', 'Monto anterior ARS', 'Monto nuevo ARS', 'Frecuencia anterior', 'Frecuencia nueva', 'Inicio anterior', 'Inicio nuevo', 'Fin anterior', 'Fin nuevo', 'Estado anterior', 'Estado nuevo', 'Fecha del cambio', 'Realizado por'], [38, 38, 16, 34, 34, 20, 20, 20, 20, 18, 18, 18, 18, 18, 18, 25, 24], expenseHistory.map((entry) => [
+      text(entry.id), text(entry.expenseId), expenseAction(entry.action), text(entry.previous?.title), text(entry.current?.title), pesos(entry.previous?.amountCents ?? null), pesos(entry.current?.amountCents ?? null), entry.previous ? expenseFrequency(entry.previous.frequency) : null, entry.current ? expenseFrequency(entry.current.frequency) : null, text(entry.previous?.startsOn), text(entry.current?.startsOn), text(entry.previous?.endsOn), text(entry.current?.endsOn), entry.previous ? text(entry.previous.deletedAt ? 'Anulado' : 'Activo') : null, entry.current ? text(entry.current.deletedAt ? 'Anulado' : 'Activo') : null, text(entry.changedAt), text(entry.changedByName)
     ])),
     sheet('IPC', ['Período', 'Índice oficial', 'Fuente', 'Publicado'], [16, 18, 55, 25], data.inflation.map((index) => [
       text(index.period), number(index.indexValue), text(index.sourceUrl), text(index.publishedAt)

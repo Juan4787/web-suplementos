@@ -41,7 +41,7 @@ export default defineConfig({
     : {
         command: 'VITE_APP_MODE=demo npm run dev',
         url: baseURL,
-        reuseExistingServer: false,
+        reuseExistingServer: true,
         timeout: 120000
       }
 });

@@ -1,4 +1,4 @@
-# Decisiones de dominio v1
+# Decisiones de dominio v2
 
 Estas reglas cierran las ambigüedades detectadas en la especificación inicial. Cambiarlas exige migración, pruebas de transición y actualización de los contratos visibles.
 
@@ -37,13 +37,20 @@ Los estados son ortogonales:
 
 - Cada ítem de pedido congela nombre, presentación, precio unitario y costo unitario.
 - Cada pedido congela envío, tasa de impuesto e importe calculado.
-- La métrica es `margen después de costo de mercadería e impuesto`; nunca se etiqueta como ganancia neta.
+- El `margen comercial = facturación - costo de mercadería - impuesto aplicado a las ventas`.
+- La `ganancia neta = margen comercial - gastos varios` cuyas ocurrencias caen dentro del período consultado.
+- Un gasto puntual impacta una sola vez en la fecha elegida. Uno semanal se repite cada siete días desde la primera fecha. Uno mensual conserva el número de día elegido; si un mes es más corto usa su último día y al mes siguiente recupera el día original.
+- La fecha de finalización de una recurrencia es opcional e inclusiva. Sin finalización, continúa hasta que la dueña la edite o anule.
+- Corregir título, monto, frecuencia o fechas recalcula todos los períodos alcanzados y deja un evento de auditoría. Si el importe cambia sólo desde ahora, se finaliza la regla anterior y se crea otra; no se reescribe la anterior.
+- Anular es una baja lógica auditada: quita toda la regla del cálculo, también en períodos anteriores, pero conserva el registro y sus cambios en el respaldo.
+- La tasa porcentual de la tienda ya integra el impuesto de cada venta. No se registra el mismo impuesto otra vez como gasto varios; esa sección se usa sólo para obligaciones o importes adicionales.
+- Los gastos generales no se reparten arbitrariamente entre pedidos o productos: esas vistas muestran margen comercial y la ganancia neta existe a nivel período.
 - Facturación se reconoce al marcar el pago como `paid`.
 - El IPC mensual se carga únicamente desde un dato oficial publicado. Sin índice, la métrica ajustada es `null` y la UI dice “IPC pendiente de publicación”.
 
 ## Permisos
 
-- Dueña: acceso completo.
+- Dueña: acceso completo, incluida la lectura y administración de gastos varios.
 - Personal: operación, catálogo público y precio de venta visible; no puede leer costo, impuesto, margen, facturación, exportación global, IA ni gestión de usuarios.
 - El costo vive en una tabla separada de los datos públicos del producto.
 - El personal puede editar nombre, presentación, descripción, imágenes y publicación. El precio de venta requiere permiso de dueña en v1.
@@ -60,4 +67,3 @@ Los estados son ortogonales:
 - La hoja histórica `PENDIENTES` no se implementa hasta confirmar su significado y reglas.
 - La migración del Excel requiere el archivo original, auditoría de calidad y fecha de corte. No se inventa un importador sin esos datos.
 - ARCA, pasarela de pago, WhatsApp Business API, SMS, email transaccional, múltiples sucursales y escritura por IA quedan fuera.
-

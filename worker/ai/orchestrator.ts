@@ -84,7 +84,7 @@ const toolsForMessage = (message: string): typeof TOOL_DEFINITIONS => {
   if (/\b(?:rindio|rendimiento|desempeno|performance|unidades?)\b/u.test(text)) {
     add('get_product_performance');
   }
-  if (/\b(?:ventas?|facturacion|margen|costos?|impuestos?|pedidos?|ticket|ganancia)\b/u.test(text)) {
+  if (/\b(?:ventas?|facturacion|margen|costos?|gastos?|impuestos?|pedidos?|ticket|ganancia)\b/u.test(text)) {
     add('get_sales_summary');
   }
 

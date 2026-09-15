@@ -119,11 +119,16 @@ export default function DashboardPage() {
                 </div>
                 <div className="border-white/15 sm:border-l sm:pl-6">
                   <span className="text-[10px] font-black uppercase tracking-wider text-white/60">
-                    Margen estimado
+                    Ganancia neta del mes
                   </span>
                   <p className="font-display text-2xl font-black text-brand-300">
                     {formatMoney(summaryQuery.data.estimatedMarginMonthCents ?? 0)}
                   </p>
+                  {(summaryQuery.data.miscExpensesMonthCents ?? 0) > 0 ? (
+                    <p className="mt-0.5 text-[10px] font-bold text-white/60">
+                      Incluye {formatMoney(summaryQuery.data.miscExpensesMonthCents ?? 0)} en gastos varios
+                    </p>
+                  ) : null}
                 </div>
               </div>
               <Link

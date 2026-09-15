@@ -6,7 +6,7 @@ Hay tres capas distintas. Ninguna reemplaza a las demás.
 
 La dueña usa **Exportar todos mis datos** al final de cada jornada con movimientos importantes y conserva copias fuera de Supabase.
 
-El contrato `impulso-business-backup/v1` contiene 13 hojas: resumen/configuración, productos, stock, pedidos, detalle de pedidos, ventas, compras, detalle de compras, movimientos, reservas, clientes, IPC y usuarios. Incluye IDs, snapshots, permisos y referencias; no contiene fórmulas ni macros.
+El contrato vigente `impulso-business-backup/v2` contiene 15 hojas: resumen/configuración, productos, stock, pedidos, detalle de pedidos, ventas, compras, detalle de compras, movimientos, reservas, clientes, gastos varios, historial de gastos, IPC y usuarios. Incluye IDs, snapshots, permisos y referencias; no contiene fórmulas ni macros. La versión `v1` anterior tenía 13 hojas y no incluía gastos.
 
 No incluye contraseñas, archivos binarios de imágenes, secretos, código ni esquema SQL. Por eso sirve como respaldo comercial legible y materia prima de reconstrucción, pero no restaura por sí solo una instancia Supabase.
 
@@ -14,7 +14,7 @@ Control mínimo de cada archivo:
 
 - el nombre contiene fecha y hora;
 - abre sin reparación en Excel o LibreOffice;
-- muestra 13 hojas;
+- muestra 15 hojas, incluidas `Gastos varios` e `Historial gastos`;
 - los conteos del Resumen son coherentes;
 - se copia a un medio independiente del proyecto.
 

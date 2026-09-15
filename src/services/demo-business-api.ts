@@ -14,6 +14,11 @@ import {
 import { AppError } from '@/domain/errors';
 import { availabilityFromQuantity } from '@/domain/inventory';
 import { calculateBasisPoints } from '@/domain/money';
+import {
+  countMiscExpenseOccurrences,
+  listMiscExpenseOccurrenceDates,
+  validateMiscExpense
+} from '@/domain/misc-expenses';
 import { availableOrderActions } from '@/domain/order-actions';
 import type {
   AdminProduct,
@@ -21,6 +26,9 @@ import type {
   Customer,
   ExportDataset,
   InflationIndex,
+  MiscExpense,
+  MiscExpenseAuditEntry,
+  MiscExpenseSnapshot,
   Order,
   ProductPerformance,
   Purchase,
@@ -47,6 +55,8 @@ const state: {
   customers: Customer[];
   users: Array<import('@/domain/types').AppUser>;
   inflation: InflationIndex[];
+  expenses: MiscExpense[];
+  expenseHistory: MiscExpenseAuditEntry[];
   importedProtocolIds: Set<string>;
   purchaseReceipts: Map<string, {
     purchaseId: string;
@@ -63,6 +73,8 @@ const state: {
   customers: structuredClone(demoCustomers),
   users: structuredClone([demoOwner, demoStaff]),
   inflation: structuredClone(demoInflation),
+  expenses: [],
+  expenseHistory: [],
   importedProtocolIds: new Set(),
   purchaseReceipts: new Map(),
   revision: 1
@@ -88,6 +100,25 @@ const refreshProductAvailability = (product: AdminProduct): void => {
 };
 
 const nextUuid = (): string => crypto.randomUUID();
+
+const expenseSnapshot = (expense: MiscExpense): MiscExpenseSnapshot => ({
+  title: expense.title,
+  amountCents: expense.amountCents,
+  frequency: expense.frequency,
+  startsOn: expense.startsOn,
+  endsOn: expense.endsOn,
+  deletedAt: expense.deletedAt
+});
+
+const sameExpenseValues = (
+  expense: MiscExpense,
+  values: Pick<MiscExpense, 'title' | 'amountCents' | 'frequency' | 'startsOn' | 'endsOn'>
+): boolean =>
+  expense.title === values.title &&
+  expense.amountCents === values.amountCents &&
+  expense.frequency === values.frequency &&
+  expense.startsOn === values.startsOn &&
+  expense.endsOn === values.endsOn;
 
 const paidOrdersInRange = (from: string, to: string): Order[] => {
   const fromTime = new Date(`${from}T00:00:00-03:00`).getTime();
@@ -143,6 +174,152 @@ export const demoBusinessApi: BusinessApi = {
     state.settings = structuredClone(settings);
     state.revision += 1;
     return latency(state.settings);
+  },
+
+  async listMiscExpenses(from, to) {
+    const items = state.expenses
+      .filter((expense) => expense.deletedAt === null)
+      .map((expense) => {
+        const occurrenceCount = countMiscExpenseOccurrences(expense, from, to);
+        return {
+          ...expense,
+          occurrenceCount,
+          periodAmountCents: occurrenceCount * expense.amountCents
+        };
+      })
+      .filter((expense) => expense.occurrenceCount > 0)
+      .sort((left, right) => right.startsOn.localeCompare(left.startsOn) || left.title.localeCompare(right.title));
+    return latency({
+      from,
+      to,
+      expenseCount: items.length,
+      occurrenceCount: items.reduce((sum, expense) => sum + expense.occurrenceCount, 0),
+      totalCents: items.reduce((sum, expense) => sum + expense.periodAmountCents, 0),
+      items
+    });
+  },
+
+  async saveMiscExpense(input) {
+    const title = input.title.trim();
+    const values = {
+      title,
+      amountCents: input.amountCents,
+      frequency: input.frequency,
+      startsOn: input.startsOn,
+      endsOn: input.frequency === 'once' ? null : input.endsOn
+    };
+    try {
+      validateMiscExpense(values);
+    } catch (cause) {
+      throw new AppError('validation', 'Hay datos del gasto que necesitan una revisión.', {
+        cause,
+        nextAction: 'Revisá el título, el monto, la frecuencia y las fechas.'
+      });
+    }
+
+    if (!input.id) {
+      if (!input.operationId) {
+        throw new AppError('validation', 'No pudimos preparar este gasto.', {
+          nextAction: 'Cerrá el formulario y volvé a abrirlo antes de guardar.'
+        });
+      }
+      const existing = state.expenses.find((expense) => expense.operationId === input.operationId);
+      if (existing) {
+        if (existing.deletedAt === null && sameExpenseValues(existing, values)) return latency(existing);
+        throw new AppError('business', 'Este intento ya se usó con otros datos.', {
+          nextAction: 'Cerrá el formulario, volvé a abrirlo y revisá el gasto antes de guardar.'
+        });
+      }
+      const now = new Date().toISOString();
+      const created: MiscExpense = {
+        id: nextUuid(),
+        operationId: input.operationId,
+        ...values,
+        createdAt: now,
+        updatedAt: now,
+        deletedAt: null,
+        createdByName: demoOwner.displayName,
+        updatedByName: demoOwner.displayName
+      };
+      state.expenses.push(created);
+      state.expenseHistory.push({
+        id: String(state.expenseHistory.length + 1),
+        expenseId: created.id,
+        action: 'created',
+        previous: null,
+        current: expenseSnapshot(created),
+        changedAt: now,
+        changedByName: demoOwner.displayName
+      });
+      state.revision += 1;
+      return latency(created);
+    }
+
+    const existing = state.expenses.find((expense) => expense.id === input.id && expense.deletedAt === null);
+    if (!existing) {
+      throw new AppError('business', 'No encontramos ese gasto activo.', {
+        nextAction: 'Actualizá la lista para revisar si otra persona lo anuló.'
+      });
+    }
+    if (!input.expectedUpdatedAt) {
+      throw new AppError('validation', 'No pudimos comprobar la versión de este gasto.', {
+        nextAction: 'Cerrá la edición y volvé a abrirla desde la lista actualizada.'
+      });
+    }
+    if (existing.updatedAt !== input.expectedUpdatedAt) {
+      if (sameExpenseValues(existing, values)) return latency(existing);
+      throw new AppError('business', 'Este gasto cambió mientras lo estabas editando.', {
+        nextAction: 'Cerrá la edición, actualizá la lista y revisá los cambios antes de volver a guardar.'
+      });
+    }
+    if (sameExpenseValues(existing, values)) return latency(existing);
+
+    const previous = expenseSnapshot(existing);
+    Object.assign(existing, values, {
+      updatedAt: new Date().toISOString(),
+      updatedByName: demoOwner.displayName
+    });
+    state.expenseHistory.push({
+      id: String(state.expenseHistory.length + 1),
+      expenseId: existing.id,
+      action: 'updated',
+      previous,
+      current: expenseSnapshot(existing),
+      changedAt: existing.updatedAt,
+      changedByName: demoOwner.displayName
+    });
+    state.revision += 1;
+    return latency(existing);
+  },
+
+  async deleteMiscExpense(expenseId, expectedUpdatedAt) {
+    const existing = state.expenses.find((expense) => expense.id === expenseId);
+    if (!existing) {
+      throw new AppError('business', 'No encontramos ese gasto.', {
+        nextAction: 'Actualizá la lista y volvé a intentarlo.'
+      });
+    }
+    if (existing.deletedAt !== null) return latency(existing);
+    if (existing.updatedAt !== expectedUpdatedAt) {
+      throw new AppError('business', 'Este gasto cambió antes de que pudieras anularlo.', {
+        nextAction: 'Cerrá la confirmación, actualizá la lista y revisalo otra vez.'
+      });
+    }
+    const previous = expenseSnapshot(existing);
+    existing.deletedAt = new Date().toISOString();
+    existing.updatedAt = existing.deletedAt;
+    existing.updatedByName = demoOwner.displayName;
+    state.expenseHistory.push({
+      id: String(state.expenseHistory.length + 1),
+      expenseId: existing.id,
+      action: 'deleted',
+      previous,
+      current: expenseSnapshot(existing),
+      changedAt: existing.updatedAt,
+      changedByName: demoOwner.displayName
+    });
+    state.revision += 1;
+    return latency(existing);
   },
 
   async listStorefrontProducts() {
@@ -261,6 +438,15 @@ export const demoBusinessApi: BusinessApi = {
     const revenue = activeThisMonth.reduce((sum, order) => sum + order.totalCents, 0);
     const costs = activeThisMonth.reduce((sum, order) => sum + (order.costTotalCents ?? 0), 0);
     const taxes = activeThisMonth.reduce((sum, order) => sum + (order.taxAmountCents ?? 0), 0);
+    const expenseFrom = '2026-08-01';
+    const expenseTo = '2026-08-28';
+    const miscExpenses = state.expenses
+      .filter((expense) => expense.deletedAt === null)
+      .reduce(
+        (sum, expense) =>
+          sum + countMiscExpenseOccurrences(expense, expenseFrom, expenseTo) * expense.amountCents,
+        0
+      );
     return latency({
       pendingPreparation: state.orders.filter(
         (order) =>
@@ -280,7 +466,8 @@ export const demoBusinessApi: BusinessApi = {
       incomingPurchases: state.purchases.filter((purchase) => purchase.state === 'ordered').length,
       paidRevenueMonthCents: revenue,
       paidOrdersMonth: activeThisMonth.filter((o) => o.paymentState === 'paid').length,
-      estimatedMarginMonthCents: revenue - costs - taxes,
+      estimatedMarginMonthCents: revenue - costs - taxes - miscExpenses,
+      miscExpensesMonthCents: miscExpenses,
       recentOrders: state.orders
         .filter((order) => {
           if (order.orderState === 'cancelled') return false;
@@ -1145,6 +1332,15 @@ export const demoBusinessApi: BusinessApi = {
     const revenueCents = orders.reduce((sum, order) => sum + order.totalCents, 0);
     const costCents = orders.reduce((sum, order) => sum + (order.costTotalCents ?? 0), 0);
     const taxCents = orders.reduce((sum, order) => sum + (order.taxAmountCents ?? 0), 0);
+    const expenseOccurrences = state.expenses
+      .filter((expense) => expense.deletedAt === null)
+      .flatMap((expense) =>
+        listMiscExpenseOccurrenceDates(expense, from, to)
+          .filter((date) => cutoffDay === null || Number(date.slice(8, 10)) <= cutoffDay)
+          .map(() => expense.amountCents)
+      );
+    const miscExpensesCents = expenseOccurrences.reduce((sum, amount) => sum + amount, 0);
+    const commercialMarginCents = revenueCents - costCents - taxCents;
     const units = orders.flatMap((order) => order.items).reduce((sum, item) => sum + item.quantity, 0);
     const byMonth = new Map<string, Order[]>();
     for (const order of orders) {
@@ -1174,7 +1370,10 @@ export const demoBusinessApi: BusinessApi = {
       revenueCents,
       costCents,
       taxCents,
-      estimatedMarginCents: revenueCents - costCents - taxCents,
+      commercialMarginCents,
+      miscExpensesCents,
+      miscExpenseOccurrences: expenseOccurrences.length,
+      estimatedMarginCents: commercialMarginCents - miscExpensesCents,
       averageTicketCents: paidOrders.length ? Math.round(revenueCents / paidOrders.length) : 0,
       orders: paidOrders.length,
       units,
@@ -1216,6 +1415,8 @@ export const demoBusinessApi: BusinessApi = {
         createdAt: customer.firstOrderAt
       })),
       inflation: state.inflation,
+      expenses: state.expenses,
+      expenseHistory: state.expenseHistory,
       reservations: state.orders.flatMap((order) => order.items.map((item) => ({
         id: item.id.replace(/^21/u, '60'),
         orderId: order.id,

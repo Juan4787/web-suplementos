@@ -19,7 +19,7 @@ const WRITE_INTENT_PATTERN =
 // read tool. It is intentionally based on broad business concepts, not on
 // answer templates or individual colloquialisms.
 const BUSINESS_DATA_PATTERN =
-  /\b(?:stock|inventario|reposici[oó]n|rotaci[oó]n|precio|precios|caro|costos?|m[aá]rgenes?|facturaci[oó]n|pedidos?|ventas?|vendido|vendi[oó]|producto(?:s)?|cat[aá]logo|compras?|cu[aá]nt[oa]s?|sale|cuesta|vale|valor|creatina|glutamina|omega|magnesio|prote[ií]na|col[aá]geno)\b/u;
+  /\b(?:stock|inventario|reposici[oó]n|rotaci[oó]n|precio|precios|caro|costos?|gastos?|m[aá]rgenes?|ganancia|facturaci[oó]n|pedidos?|ventas?|vendido|vendi[oó]|producto(?:s)?|cat[aá]logo|compras?|cu[aá]nt[oa]s?|sale|cuesta|vale|valor|creatina|glutamina|omega|magnesio|prote[ií]na|col[aá]geno)\b/u;
 const BUSINESS_CONTEXT_PATTERN =
   /\b(?:mi|mis|tengo|hay|queda|quedan|disponible|disponibles|deber[ií]a|prioriz|compar|per[ií]odo|mes|semana|a[nñ]o|fecha|rindi[oó]|rendimiento|m[aá]s|cu[aá]l|qu[eé]|cu[aá]nt[oa]s?)\b/u;
 const GENERAL_ADVICE_PATTERN =
@@ -80,13 +80,13 @@ const buildComparisonTemplate = (result: SafeToolResult): string | null => {
   if (!result.periods?.first || !result.periods.second) return null;
   return [
     'Período base ({{fact:period.first.from}} a {{fact:period.first.to}}): ',
-    'facturación {{fact:first.revenue_cents}}, margen {{fact:first.estimated_margin_cents}}, ',
+    'facturación {{fact:first.revenue_cents}}, ganancia neta {{fact:first.estimated_margin_cents}}, ',
     'pedidos {{fact:first.order_count}} y unidades {{fact:first.units}}. ',
     'Período comparado ({{fact:period.second.from}} a {{fact:period.second.to}}): ',
-    'facturación {{fact:second.revenue_cents}}, margen {{fact:second.estimated_margin_cents}}, ',
+    'facturación {{fact:second.revenue_cents}}, ganancia neta {{fact:second.estimated_margin_cents}}, ',
     'pedidos {{fact:second.order_count}} y unidades {{fact:second.units}}. ',
     'Cambio del segundo respecto del primero: facturación {{fact:change.revenue_cents}} ',
-    '({{fact:change.revenue_percent}}), margen {{fact:change.margin_cents}} ',
+    '({{fact:change.revenue_percent}}), ganancia neta {{fact:change.margin_cents}} ',
     '({{fact:change.margin_percent}}), pedidos {{fact:change.order_count}} y ',
     'unidades {{fact:change.units}}.'
   ].join('');
@@ -168,11 +168,17 @@ const buildPerformanceTemplate = (result: SafeToolResult): string | null => {
 
 const buildSalesSummaryTemplate = (result: SafeToolResult): string | null => {
   if (result.tool !== 'get_sales_summary') return null;
+  const netProfitFact = hasFact(result, 'sales.net_profit_cents')
+    ? 'sales.net_profit_cents'
+    : 'sales.estimated_margin_cents';
   const details = [
     ['facturación cobrada', 'sales.revenue_cents'],
     ['costo registrado', 'sales.cost_cents'],
     ['impuesto estimado', 'sales.tax_cents'],
-    ['margen estimado', 'sales.estimated_margin_cents'],
+    ['margen comercial', 'sales.commercial_margin_cents'],
+    ['gastos varios', 'sales.misc_expenses_cents'],
+    ['fechas de gastos incluidas', 'sales.misc_expense_occurrence_count'],
+    ['ganancia neta', netProfitFact],
     ['ticket promedio', 'sales.average_ticket_cents'],
     ['pedidos cobrados', 'sales.order_count'],
     ['unidades vendidas', 'sales.units']

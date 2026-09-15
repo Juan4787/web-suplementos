@@ -24,18 +24,22 @@ test.describe('Pilar 11: Exportación y Verificación de Excel (.xlsx)', () => {
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.readFile(filePath!);
 
-    // Verifica que el libro contenga las 13 hojas del modelo
+    // Verifica que el libro contenga las 15 hojas del modelo
     const sheetNames = workbook.worksheets.map((sheet) => sheet.name);
-    expect(sheetNames).toHaveLength(13);
+    expect(sheetNames).toHaveLength(15);
 
     // Valida que existan hojas clave del negocio
     const hasProductsSheet = sheetNames.some((name) => /productos/i.test(name));
     const hasOrdersSheet = sheetNames.some((name) => /pedidos/i.test(name));
     const hasStockSheet = sheetNames.some((name) => /stock/i.test(name));
+    const hasExpensesSheet = sheetNames.some((name) => /gastos varios/i.test(name));
+    const hasExpenseHistorySheet = sheetNames.some((name) => /historial gastos/i.test(name));
 
     expect(hasProductsSheet).toBe(true);
     expect(hasOrdersSheet).toBe(true);
     expect(hasStockSheet).toBe(true);
+    expect(hasExpensesSheet).toBe(true);
+    expect(hasExpenseHistorySheet).toBe(true);
 
     // Valida que ninguna celda comience con fórmulas ejecutables peligrosas sin sanitizar
     for (const worksheet of workbook.worksheets) {

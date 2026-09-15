@@ -35,13 +35,13 @@ export default function ExportPage() {
   return (
     <RoleGate capability="export_data">
       <div className="page-enter">
-        <PageHeader title="Exportar todos mis datos" description="Una planilla de Excel completa con todos tus datos de productos, stock, ventas, compras y clientes." />
+        <PageHeader title="Exportar todos mis datos" description="Una planilla de Excel completa con tus productos, stock, ventas, compras, gastos y clientes." />
         <div className="grid gap-6 xl:grid-cols-[1fr_22rem]">
           <section className="rounded-[2rem] bg-white p-6 shadow-card sm:p-8">
             <span className="grid size-14 place-items-center rounded-[1.25rem] bg-brand-100 text-brand-700"><FileSpreadsheet className="size-7" /></span>
-            <h2 className="mt-6 font-display text-3xl font-black">Un archivo. Trece hojas.</h2>
+            <h2 className="mt-6 font-display text-3xl font-black">Un archivo. Quince hojas.</h2>
             <p className="mt-3 max-w-2xl leading-7 text-ink-600">La planilla organiza cada área en su propia hoja con valores históricos y formato limpio para que puedas abrirla en Excel sin errores.</p>
-            <div className="mt-7 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{['Resumen', 'Productos', 'Stock', 'Pedidos', 'Detalle pedidos', 'Ventas', 'Compras', 'Detalle compras', 'Movimientos', 'Reservas', 'Clientes', 'Índices y ajustes', 'Usuarios'].map((sheet) => <div key={sheet} className="flex items-center gap-2 rounded-2xl bg-cream-100 px-4 py-3 text-sm font-bold"><CheckCircle2 className="size-4 text-brand-600" /> {sheet}</div>)}</div>
+            <div className="mt-7 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{['Resumen', 'Productos', 'Stock', 'Pedidos', 'Detalle pedidos', 'Ventas', 'Compras', 'Detalle compras', 'Movimientos', 'Reservas', 'Clientes', 'Gastos varios', 'Historial de gastos', 'Índices y ajustes', 'Usuarios'].map((sheet) => <div key={sheet} className="flex items-center gap-2 rounded-2xl bg-cream-100 px-4 py-3 text-sm font-bold"><CheckCircle2 className="size-4 text-brand-600" /> {sheet}</div>)}</div>
             {error ? <div className="mt-6"><ErrorState error={error} /></div> : null}
             {phase === 'done' ? <div className="mt-6 rounded-2xl bg-emerald-50 p-4 text-sm font-semibold text-emerald-900">El respaldo se creó correctamente{lastSize ? ` (${new Intl.NumberFormat('es-AR').format(Math.ceil(lastSize / 1024))} KB)` : ''}. Guardalo en un lugar seguro.</div> : null}
             <Button className="mt-7" size="lg" loading={busy} onClick={() => void exportData()}><HardDriveDownload className="size-5" /> {phaseLabel[phase]}</Button>

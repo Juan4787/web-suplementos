@@ -252,6 +252,52 @@ export type StoreSettings = {
   currency: 'ARS';
 };
 
+export type MiscExpenseFrequency = 'once' | 'weekly' | 'monthly';
+
+export type MiscExpense = {
+  id: string;
+  operationId: string;
+  title: string;
+  amountCents: number;
+  frequency: MiscExpenseFrequency;
+  startsOn: string;
+  endsOn: string | null;
+  createdAt: string;
+  updatedAt: string;
+  deletedAt: string | null;
+  createdByName: string;
+  updatedByName: string;
+};
+
+export type MiscExpensePeriodItem = MiscExpense & {
+  occurrenceCount: number;
+  periodAmountCents: number;
+};
+
+export type MiscExpensePeriod = {
+  from: string;
+  to: string;
+  expenseCount: number;
+  occurrenceCount: number;
+  totalCents: number;
+  items: MiscExpensePeriodItem[];
+};
+
+export type MiscExpenseSnapshot = Pick<
+  MiscExpense,
+  'title' | 'amountCents' | 'frequency' | 'startsOn' | 'endsOn' | 'deletedAt'
+>;
+
+export type MiscExpenseAuditEntry = {
+  id: string;
+  expenseId: string;
+  action: 'created' | 'updated' | 'deleted';
+  previous: MiscExpenseSnapshot | null;
+  current: MiscExpenseSnapshot | null;
+  changedAt: string;
+  changedByName: string;
+};
+
 export type DashboardSummary = {
   pendingPreparation: number;
   readyForDelivery: number;
@@ -260,6 +306,7 @@ export type DashboardSummary = {
   paidRevenueMonthCents: number | null;
   paidOrdersMonth: number | null;
   estimatedMarginMonthCents: number | null;
+  miscExpensesMonthCents: number | null;
   recentOrders: Order[];
   priorityInventory: InventoryItem[];
 };
@@ -289,6 +336,9 @@ export type AnalyticsSummary = {
   revenueCents: number;
   costCents: number;
   taxCents: number;
+  commercialMarginCents: number;
+  miscExpensesCents: number;
+  miscExpenseOccurrences: number;
   estimatedMarginCents: number;
   averageTicketCents: number;
   orders: number;
@@ -347,6 +397,8 @@ export type ExportDataset = {
   movements: StockMovement[];
   customers: Array<Customer & { createdAt: string }>;
   inflation: InflationIndex[];
+  expenses: MiscExpense[];
+  expenseHistory: MiscExpenseAuditEntry[];
   reservations: Array<{
     id: string;
     orderId: string | null;

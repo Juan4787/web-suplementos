@@ -2,6 +2,14 @@
 
 Este archivo existe para que una compactación de contexto no convierta decisiones firmes en suposiciones.
 
+## Cambio local pendiente de publicación: gastos varios — 15/09/2026
+
+Se implementó localmente Configuración → Tienda → Gastos varios con gastos puntuales, semanales y mensuales, primera fecha y finalización opcional. Cada ocurrencia del período se descuenta de la ganancia neta; pedidos y productos siguen mostrando margen comercial porque los gastos generales no se distribuyen entre ellos. Altas, correcciones y anulaciones son exclusivas de Dueña, idempotentes, protegidas contra ediciones desactualizadas y auditadas. El respaldo pasa a `impulso-business-backup/v2`, con 15 hojas y trazabilidad completa de gastos.
+
+La migración nueva es `20260915120000_misc_expenses.sql`. Compiló y aprobó pruebas en Supabase local, pero **no fue aplicada al proyecto Supabase remoto, no se hizo push, no se publicó el frontend y no se desplegó el Worker**. La publicación futura debe aplicar primero la migración y verificar sus RPC antes de servir este frontend; invertir el orden dejaría Configuración y Ventas sin contrato de datos.
+
+Durante la prueba local se confirmó que `20260909170000_opening_reservations.sql` ya estaba materialmente aplicada pero faltaba en el historial local; se reparó únicamente esa fila local después de verificar columna, restricción, tabla, funciones, trigger, permisos y exportación. No se modificó el historial remoto.
+
 ## Estado actual: carga de stock real del 09/09/2026
 
 Consultar [la preparación de entrega con stock real](ENTREGA_STOCK_REAL_2026-09-09.md). El usuario terminó las pruebas y autorizó reemplazar todas sus operaciones, incluida la compra #2033. Se cargaron **49 unidades físicas reales en 16 productos**, sin alterar catálogo, costos, imágenes, configuración ni cuentas. No repetir la limpieza: las nuevas operaciones que se creen después de esta carga deben preservarse.

@@ -133,8 +133,9 @@ Con cuentas reales de dueña y personal:
 5. Marcar pago, preparación y entrega/envío en orden; comprobar reservas, stock y movimientos.
 6. Crear y recibir una compra; comprobar stock en camino, costo actual y conservación del costo histórico de la venta.
 7. Verificar que personal no vea ni obtenga importes financieros.
-8. Exportar Excel, abrirlo y revisar sus 13 hojas.
-9. Cerrar sesión y repetir el ingreso en otro dispositivo.
+8. Crear un gasto puntual y uno recurrente; verificar el período en Ventas y que la ganancia neta sea margen comercial menos gastos varios.
+9. Exportar Excel, abrirlo y revisar sus 15 hojas, incluidas las dos de gastos.
+10. Cerrar sesión y repetir el ingreso en otro dispositivo.
 
 ## 8. Operación en Supabase Free
 

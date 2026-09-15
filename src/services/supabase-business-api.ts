@@ -6,6 +6,8 @@ import type {
   AvailabilityCheck,
   DashboardSummary,
   ExportDataset,
+  MiscExpense,
+  MiscExpensePeriod,
   Order,
   Purchase,
   QuoteCartEtaResult,
@@ -136,6 +138,26 @@ export const translateDatabaseError = (error: { message?: string; code?: string 
       nextAction: 'Elegí una fecha inicial anterior o igual a la final.'
     });
   }
+  if (/MISC_EXPENSE_CHANGED/i.test(diagnostic)) {
+    return new AppError('business', 'Este gasto cambió mientras lo estabas editando.', {
+      nextAction: 'Cerrá la edición, actualizá la lista y revisá los cambios antes de volver a guardar.'
+    });
+  }
+  if (/MISC_EXPENSE_NOT_FOUND/i.test(diagnostic)) {
+    return new AppError('business', 'No encontramos ese gasto activo.', {
+      nextAction: 'Actualizá la lista para revisar si otra persona lo anuló.'
+    });
+  }
+  if (/MISC_EXPENSE_OPERATION_REUSED/i.test(diagnostic)) {
+    return new AppError('business', 'Este intento ya se usó con otros datos.', {
+      nextAction: 'Cerrá el formulario, volvé a abrirlo y revisá el gasto antes de guardar.'
+    });
+  }
+  if (/INVALID_MISC_EXPENSE/i.test(diagnostic)) {
+    return new AppError('validation', 'Hay datos del gasto que necesitan una revisión.', {
+      nextAction: 'Revisá el título, el monto, la frecuencia y las fechas.'
+    });
+  }
   if (/INVALID_SETTINGS/i.test(diagnostic)) {
     return new AppError('validation', 'Hay datos de configuración que necesitan una revisión.', {
       nextAction: 'Comprobá teléfono, importes, impuesto y campos obligatorios.'
@@ -198,6 +220,23 @@ const invokeAi = async (
 
 export const supabaseBusinessApi: BusinessApi = {
   getSettings: () => rpc<StoreSettings>('get_public_store_settings'),
+  listMiscExpenses: async (from, to) => {
+    const data = await rpc<MiscExpensePeriod>('list_misc_expenses', { p_from: from, p_to: to });
+    return {
+      from: data?.from ?? from,
+      to: data?.to ?? to,
+      expenseCount: data?.expenseCount ?? 0,
+      occurrenceCount: data?.occurrenceCount ?? 0,
+      totalCents: data?.totalCents ?? 0,
+      items: data?.items ?? []
+    };
+  },
+  saveMiscExpense: (input) => rpc<MiscExpense>('save_misc_expense', { p_expense: input }),
+  deleteMiscExpense: (expenseId, expectedUpdatedAt) =>
+    rpc<MiscExpense>('delete_misc_expense', {
+      p_expense_id: expenseId,
+      p_expected_updated_at: expectedUpdatedAt
+    }),
   listCustomerOrders: async (customerId, page = 1, pageSize = 20) => {
     const data = await rpc<Page<Order>>('list_customer_orders', { p_customer_id: customerId, p_page: page, p_page_size: pageSize });
     return {
@@ -222,6 +261,7 @@ export const supabaseBusinessApi: BusinessApi = {
     const data = await rpc<DashboardSummary & { priorities?: DashboardSummary['priorityInventory'] }>('get_dashboard_summary');
     return {
       ...data,
+      miscExpensesMonthCents: data.miscExpensesMonthCents ?? 0,
       priorityInventory: data.priorityInventory ?? data.priorities ?? [],
       recentOrders: (data.recentOrders ?? []).map((o) => ({ ...o, items: o.items ?? [] }))
     };
@@ -376,6 +416,11 @@ export const supabaseBusinessApi: BusinessApi = {
       revenueCents: res?.revenueCents ?? 0,
       costCents: res?.costCents ?? 0,
       taxCents: res?.taxCents ?? 0,
+      commercialMarginCents:
+        res?.commercialMarginCents ??
+        ((res?.revenueCents ?? 0) - (res?.costCents ?? 0) - (res?.taxCents ?? 0)),
+      miscExpensesCents: res?.miscExpensesCents ?? 0,
+      miscExpenseOccurrences: res?.miscExpenseOccurrences ?? 0,
       estimatedMarginCents: res?.estimatedMarginCents ?? 0,
       averageTicketCents: res?.averageTicketCents ?? 0,
       orders: res?.orders ?? 0,

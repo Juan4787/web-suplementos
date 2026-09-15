@@ -163,7 +163,7 @@ export default function SalesPage() {
     });
   }, [analyticsQuery.data?.topProducts, analyticsQuery.data?.revenueCents, productSortField, productSortAsc]);
 
-  // Ganancia real por producto: consume el margen snapshot real de cada producto calculado por la analítica
+  // Margen comercial por producto. Los gastos generales no se distribuyen arbitrariamente entre productos.
   const gainByProduct = useMemo(() => {
     const raw = analyticsQuery.data?.topProducts ?? [];
     if (raw.length === 0) return [];
@@ -257,14 +257,12 @@ export default function SalesPage() {
                 accent="coral"
               />
               <MetricCard
-                label="Ganancia estimada"
+                label="Ganancia neta"
                 value={formatMoney(analyticsQuery.data.estimatedMarginCents)}
                 detail={
-                  analyticsQuery.data.giftOrders && analyticsQuery.data.giftOrders > 0
-                    ? `Incluye -${formatMoney(analyticsQuery.data.giftCostCents ?? 0)} por ${analyticsQuery.data.giftOrders} ${analyticsQuery.data.giftOrders === 1 ? 'regalo' : 'regalos'}`
-                    : analyticsQuery.data.costSaleOrders && analyticsQuery.data.costSaleOrders > 0
-                      ? `Incluye ${analyticsQuery.data.costSaleOrders} ${analyticsQuery.data.costSaleOrders === 1 ? 'venta al costo' : 'ventas al costo'} (margen neutral $0)`
-                      : 'Ventas menos mercadería e impuestos'
+                  analyticsQuery.data.miscExpensesCents > 0
+                    ? `${formatMoney(analyticsQuery.data.commercialMarginCents)} de margen comercial · ${formatMoney(analyticsQuery.data.miscExpensesCents)} en gastos varios`
+                    : 'Ventas menos mercadería e impuestos'
                 }
                 icon={TrendingUp}
                 accent="blue"
@@ -328,7 +326,14 @@ export default function SalesPage() {
 
                 {showGiftDetails ? (
                   <div className="mt-4 pt-4 border-t border-purple-200/70 space-y-3 animate-in fade-in slide-in-from-top-1 duration-200">
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div
+                      className={cn(
+                        'grid grid-cols-1 gap-3',
+                        analyticsQuery.data.miscExpensesCents > 0
+                          ? 'sm:grid-cols-2 xl:grid-cols-4'
+                          : 'sm:grid-cols-3'
+                      )}
+                    >
                       <div className="rounded-xl bg-white/95 p-3.5 border border-purple-100 shadow-2xs">
                         <span className="block text-[11px] font-black uppercase tracking-wider text-ink-500">
                           Margen ventas cobradas
@@ -357,15 +362,29 @@ export default function SalesPage() {
                         </span>
                       </div>
 
+                      {analyticsQuery.data.miscExpensesCents > 0 ? (
+                        <div className="rounded-xl border border-blue-200/90 bg-blue-50/90 p-3.5 shadow-2xs">
+                          <span className="block text-[11px] font-black uppercase tracking-wider text-blue-700">
+                            Gastos varios
+                          </span>
+                          <span className="mt-1 block text-lg font-black text-blue-800">
+                            -{formatMoney(analyticsQuery.data.miscExpensesCents)}
+                          </span>
+                          <span className="mt-0.5 block text-[11px] text-blue-800/80">
+                            {analyticsQuery.data.miscExpenseOccurrences} {analyticsQuery.data.miscExpenseOccurrences === 1 ? 'fecha incluida' : 'fechas incluidas'}
+                          </span>
+                        </div>
+                      ) : null}
+
                       <div className="rounded-xl bg-purple-100/70 p-3.5 border border-purple-200 shadow-2xs">
                         <span className="block text-[11px] font-black uppercase tracking-wider text-purple-800">
-                          Ganancia neta real final
+                          Ganancia neta del período
                         </span>
                         <span className="mt-1 block text-lg font-black text-purple-950">
                           {formatMoney(analyticsQuery.data.estimatedMarginCents)}
                         </span>
                         <span className="mt-0.5 block text-[11px] text-purple-800/80">
-                          Rentabilidad final exacta del período
+                          Resultado según los datos registrados
                         </span>
                       </div>
                     </div>
@@ -473,7 +492,7 @@ export default function SalesPage() {
                     <th className="px-6 py-4">Cliente</th>
                     <th className="px-6 py-4">Fecha de cobro</th>
                     <th className="px-6 py-4 text-right">Total</th>
-                    <th className="px-6 py-4 text-right">Ganancia</th>
+                    <th className="px-6 py-4 text-right">Margen comercial</th>
                     <th className="px-4 py-4 text-center"></th>
                   </tr>
                 </thead>
@@ -573,7 +592,7 @@ export default function SalesPage() {
                                     )}
                                   >
                                     {isGift
-                                      ? `Pérdida neta por regalo / cortesía: ${formatMoney(margin)}`
+                                      ? `Pérdida comercial por regalo / cortesía: ${formatMoney(margin)}`
                                       : isCost
                                         ? `Margen comercial: $ 0 (Venta al costo · Ganancia neutral)`
                                         : `Margen después de mercadería e impuestos: ${formatMoney(margin)}`}
@@ -714,14 +733,12 @@ export default function SalesPage() {
             {/* 3 Tarjetas Superiores */}
             <div className="grid gap-4 sm:grid-cols-3">
               <div className="rounded-2xl border border-ink-950/8 bg-white p-6 shadow-sm">
-                <span className="text-[13.5px] font-black uppercase tracking-wider text-ink-700">Ganancia estimada</span>
+                <span className="text-[13.5px] font-black uppercase tracking-wider text-ink-700">Ganancia neta</span>
                 <p className="mt-2 font-display text-4xl font-black text-brand-700">
                   {formatMoney(analyticsQuery.data.estimatedMarginCents)}
                 </p>
                 <p className="mt-1.5 text-[14px] font-medium text-ink-700">
-                  {analyticsQuery.data.giftOrders && analyticsQuery.data.giftOrders > 0
-                    ? `Ventas menos costos. Incluye -${formatMoney(analyticsQuery.data.giftCostCents ?? 0)} por ${analyticsQuery.data.giftOrders} ${analyticsQuery.data.giftOrders === 1 ? 'regalo' : 'regalos'}`
-                    : 'Ventas menos costos e impuestos'}
+                  Margen comercial {formatMoney(analyticsQuery.data.commercialMarginCents)} menos gastos varios {formatMoney(analyticsQuery.data.miscExpensesCents)}
                 </p>
               </div>
 
@@ -736,12 +753,12 @@ export default function SalesPage() {
               </div>
 
               <div className="rounded-2xl border border-ink-950/8 bg-white p-6 shadow-sm">
-                <span className="text-[13.5px] font-black uppercase tracking-wider text-ink-700">Mercadería e impuestos</span>
+                <span className="text-[13.5px] font-black uppercase tracking-wider text-ink-700">Costos y gastos</span>
                 <p className="mt-2 font-display text-4xl font-black text-ink-950">
-                  {formatMoney(analyticsQuery.data.costCents + analyticsQuery.data.taxCents)}
+                  {formatMoney(analyticsQuery.data.costCents + analyticsQuery.data.taxCents + analyticsQuery.data.miscExpensesCents)}
                 </p>
                 <p className="mt-1.5 text-[14px] font-medium text-ink-700">
-                  Mercadería {formatMoney(analyticsQuery.data.costCents)} · Impuestos {formatMoney(analyticsQuery.data.taxCents)}
+                  Mercadería {formatMoney(analyticsQuery.data.costCents)} · Impuestos {formatMoney(analyticsQuery.data.taxCents)} · Gastos varios {formatMoney(analyticsQuery.data.miscExpensesCents)}
                 </p>
               </div>
             </div>
@@ -765,7 +782,14 @@ export default function SalesPage() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm mt-3">
+                <div
+                  className={cn(
+                    'mt-3 grid grid-cols-1 gap-3 text-sm',
+                    analyticsQuery.data.miscExpensesCents > 0
+                      ? 'sm:grid-cols-2 xl:grid-cols-4'
+                      : 'sm:grid-cols-3'
+                  )}
+                >
                   <div className="rounded-xl bg-white/95 p-3.5 border border-purple-100 shadow-2xs">
                     <span className="text-[11px] font-black uppercase tracking-wider text-ink-500 block">Margen ventas cobradas</span>
                     <span className="mt-1 block text-lg font-black text-ink-950">
@@ -786,12 +810,24 @@ export default function SalesPage() {
                     <span className="mt-0.5 block text-[11px] text-rose-800/80">Costo asumido por la tienda</span>
                   </div>
 
+                  {analyticsQuery.data.miscExpensesCents > 0 ? (
+                    <div className="rounded-xl border border-blue-200/90 bg-blue-50/90 p-3.5 shadow-2xs">
+                      <span className="block text-[11px] font-black uppercase tracking-wider text-blue-700">Gastos varios</span>
+                      <span className="mt-1 block text-lg font-black text-blue-800">
+                        -{formatMoney(analyticsQuery.data.miscExpensesCents)}
+                      </span>
+                      <span className="mt-0.5 block text-[11px] text-blue-800/80">
+                        {analyticsQuery.data.miscExpenseOccurrences} {analyticsQuery.data.miscExpenseOccurrences === 1 ? 'fecha incluida' : 'fechas incluidas'}
+                      </span>
+                    </div>
+                  ) : null}
+
                   <div className="rounded-xl bg-purple-100/70 p-3.5 border border-purple-200 shadow-2xs">
-                    <span className="text-[11px] font-black uppercase tracking-wider text-purple-800 block">Ganancia neta real final</span>
+                    <span className="text-[11px] font-black uppercase tracking-wider text-purple-800 block">Ganancia neta del período</span>
                     <span className="mt-1 block text-lg font-black text-purple-950">
                       {formatMoney(analyticsQuery.data.estimatedMarginCents)}
                     </span>
-                    <span className="mt-0.5 block text-[11px] text-purple-800/80">Resultado contable definitivo</span>
+                    <span className="mt-0.5 block text-[11px] text-purple-800/80">Resultado según los datos registrados</span>
                   </div>
                 </div>
 
@@ -822,12 +858,12 @@ export default function SalesPage() {
               </div>
             ) : null}
 
-            {/* Tabla de Ganancia por Producto Reconciliada */}
+            {/* Tabla de margen comercial por producto; no asigna gastos generales arbitrariamente. */}
             <div className="overflow-hidden rounded-2xl border border-ink-950/8 bg-white shadow-sm">
               <div className="border-b border-ink-950/8 p-5 sm:p-6">
-                <h3 className="font-display text-xl font-black text-ink-950">Ganancia por producto</h3>
+                <h3 className="font-display text-xl font-black text-ink-950">Margen comercial por producto</h3>
                 <p className="mt-1 text-[14.5px] font-semibold text-ink-700">
-                  Cuánto dejó cada producto en el período seleccionado.
+                  Ventas menos costo de mercadería. Los gastos generales se descuentan únicamente del total del período.
                 </p>
               </div>
               <div className="overflow-x-auto">
@@ -837,8 +873,8 @@ export default function SalesPage() {
                       <th className="px-6 py-4">Producto</th>
                       <th className="px-6 py-4 text-right">Ventas</th>
                       <th className="px-6 py-4 text-right">Costo</th>
-                      <th className="px-6 py-4 text-right">Ganancia</th>
-                      <th className="px-6 py-4 text-right">% de ganancia</th>
+                      <th className="px-6 py-4 text-right">Margen comercial</th>
+                      <th className="px-6 py-4 text-right">% de margen</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-ink-950/8">

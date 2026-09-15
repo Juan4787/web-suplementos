@@ -29,12 +29,13 @@ import { ErrorState, LoadingState } from '@/components/ui/DataState';
 import { Field, Input, Select, Textarea } from '@/components/ui/Field';
 import { StatusChip } from '@/components/ui/StatusChip';
 import { Toast } from '@/components/ui/Toast';
-import { sanitizeDecimalInput, sanitizeIntegerInput } from '@/domain/inventory';
+import { sanitizeDecimalInput } from '@/domain/inventory';
 import { validateStoreSettings } from '@/domain/settings';
 import type { StoreSettings, UserRole } from '@/domain/types';
 import { cn } from '@/lib/cn';
 import { getBusinessApi } from '@/services/business-api';
 import { useAuth } from '@/features/auth/AuthProvider';
+import { MiscExpensesSection } from '@/features/expenses/MiscExpensesSection';
 
 type DraftSettings = {
   storeName: string;
@@ -108,7 +109,7 @@ function BackupsTab() {
         </span>
         <h3 className="mt-4 font-display text-2xl font-black text-ink-950">Respaldo completo en Excel</h3>
         <p className="mt-2 text-sm text-ink-600 leading-relaxed">
-          Descargá un archivo de Excel con 13 hojas que contiene toda tu información comercial (productos, stock, pedidos, ventas, compras, clientes e índices).
+          Descargá un archivo de Excel con 15 hojas que contiene toda tu información comercial (productos, stock, pedidos, ventas, compras, gastos, clientes e índices).
         </p>
 
         <div className="mt-6 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
@@ -124,6 +125,8 @@ function BackupsTab() {
             'Movimientos físicos',
             'Reservas de stock',
             'Libreta de clientes',
+            'Gastos varios',
+            'Historial de gastos',
             'Índices y ajustes',
             'Usuarios y roles'
           ].map((sheet) => (
@@ -419,7 +422,7 @@ export default function SettingsPage() {
       <div className="page-enter">
         <PageHeader
           title="Configuración"
-          description="Ajustá los datos de tu tienda, tarifas de envío, respaldos de datos en Excel y permisos de usuarios."
+          description="Ajustá los datos de tu tienda, gastos, respaldos en Excel y permisos de usuarios."
         />
 
         {/* Tabs Bar */}
@@ -581,6 +584,8 @@ export default function SettingsPage() {
                     )}
                   </Button>
                 </div>
+
+                <MiscExpensesSection onNotify={showToast} />
               </div>
             ) : null}
           </div>

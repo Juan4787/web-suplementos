@@ -47,7 +47,8 @@ Puerta: tests SQL de invariantes, permisos y concurrencia.
 
 - [x] Inicio orientado a la siguiente acción.
 - [x] Historiales crecientes paginados en servidor: pedidos, ventas, compras, movimientos y clientes; catálogo/stock permanecen como conjuntos operativos acotados.
-- [x] Métricas nominales, unidades, operaciones, costos, impuesto y margen estimado.
+- [x] Métricas nominales, unidades, operaciones, costos, impuesto, margen comercial y ganancia neta.
+- [x] Gastos varios puntuales, semanales o mensuales con fecha opcional de finalización, baja lógica, auditoría y concurrencia optimista.
 - [x] IPC oficial manual con fuente y fecha; nunca estimado.
 - [x] Comparaciones parciales con el mismo día de corte.
 
@@ -55,7 +56,7 @@ Puerta: rol personal no obtiene datos financieros por API ni UI.
 
 ## Fase 5 — respaldo XLSX
 
-- [x] Contrato `impulso-business-backup/v1` con 13 hojas y columnas versionadas.
+- [x] Contrato vigente `impulso-business-backup/v2` con 15 hojas y columnas versionadas; conserva gastos activos, anulados e historial.
 - [x] Exportación solo dueña, con revisión de consistencia.
 - [x] Web Worker y librería lazy.
 - [x] Cero fórmulas/macros; texto controlado siempre tipado como texto.

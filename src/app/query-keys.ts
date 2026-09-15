@@ -1,5 +1,7 @@
 export const queryKeys = {
   settings: ['settings'] as const,
+  miscExpensesRoot: ['misc-expenses'] as const,
+  miscExpenses: (from: string, to: string) => ['misc-expenses', from, to] as const,
   storefrontProducts: ['storefront-products'] as const,
   storefrontProduct: (slug: string) => ['storefront-product', slug] as const,
   dashboard: ['dashboard'] as const,

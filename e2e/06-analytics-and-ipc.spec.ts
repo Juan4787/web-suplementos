@@ -20,7 +20,7 @@ test.describe('Pilar 10: Analíticas, Pestañas e IPC Oficial', () => {
     const profitTab = page.getByRole('button', { name: /ganancia|rentabilidad/i });
     await profitTab.click();
     await page.waitForTimeout(200);
-    await expect(page.getByText(/ganancia estimada|margen estimado/i).first()).toBeVisible();
+    await expect(page.getByText(/ganancia neta/i).first()).toBeVisible();
 
     // Pestaña: [Evolución]
     const evolutionTab = page.getByRole('button', { name: /evolución/i });
