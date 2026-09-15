@@ -28,6 +28,7 @@ import { PageHeader } from '@/components/layout/AdminShell';
 import { Button, buttonStyles } from '@/components/ui/Button';
 import { ErrorState, LoadingState } from '@/components/ui/DataState';
 import { Field, Input } from '@/components/ui/Field';
+import { parseShippingAddress } from '@/domain/checkout';
 import { AppError } from '@/domain/errors';
 import { formatMoney } from '@/domain/money';
 import type {
@@ -344,7 +345,7 @@ export default function CreateOrderPage() {
       isSantaFeOrNearby: deliveryMethod === 'shipping' ? isSantaFeOrNearby : null,
       email: deliveryMethod === 'shipping' && isSantaFeOrNearby === false ? email.trim() : null,
       address: finalAddress,
-      addressNumber: deliveryMethod === 'shipping' ? addressNumber.trim() : null,
+      addressNumber: null,
       paymentMethod: finalPaymentMethod
     };
 
@@ -455,14 +456,29 @@ export default function CreateOrderPage() {
                     : 'Envío a domicilio'}
                 </span>
               </div>
-              {createdOrder.shippingAddress ? (
-                <div className="flex justify-between font-medium">
-                  <span className="text-ink-600">Dirección:</span>
-                  <span className="font-bold text-ink-950 text-right">
-                    {createdOrder.shippingAddress}
-                  </span>
-                </div>
-              ) : null}
+              {createdOrder.shippingAddress ? (() => {
+                const shippingInfo = parseShippingAddress(createdOrder.shippingAddress);
+                return (
+                  <>
+                    {shippingInfo.streetAddress ? (
+                      <div className="flex justify-between font-medium">
+                        <span className="text-ink-600">Dirección:</span>
+                        <span className="font-bold text-ink-950 text-right">
+                          {shippingInfo.streetAddress}
+                        </span>
+                      </div>
+                    ) : null}
+                    {shippingInfo.trackingEmail ? (
+                      <div className="flex justify-between font-medium">
+                        <span className="text-ink-600">Email de seguimiento:</span>
+                        <span className="font-bold text-ink-950 text-right break-all">
+                          {shippingInfo.trackingEmail}
+                        </span>
+                      </div>
+                    ) : null}
+                  </>
+                );
+              })() : null}
               <div className="flex justify-between font-medium">
                 <span className="text-ink-600">Modalidad:</span>
                 <span className="font-bold text-ink-950">

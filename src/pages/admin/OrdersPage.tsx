@@ -1,11 +1,14 @@
 import { Link, useSearch } from '@tanstack/react-router';
 import {
   AlertTriangle,
+  Banknote,
   Check,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   Gift,
+  Mail,
+  MapPin,
   MessageCircle,
   MoreHorizontal,
   Package,
@@ -13,7 +16,9 @@ import {
   Plus,
   Search,
   ShoppingBasket,
+  Store,
   Tag,
+  Truck,
   X
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -25,6 +30,7 @@ import { PageHeader } from '@/components/layout/AdminShell';
 import { Button, buttonStyles } from '@/components/ui/Button';
 import { ErrorState, LoadingState } from '@/components/ui/DataState';
 import { Modal } from '@/components/ui/Modal';
+import { parseShippingAddress } from '@/domain/checkout';
 import { formatMoney } from '@/domain/money';
 import {
   availableOrderActions,
@@ -415,20 +421,26 @@ export default function OrdersPage() {
 
                           {/* Resumen de Pago y Entrega */}
                           <div className="grid gap-3 sm:grid-cols-2">
-                            <div className="rounded-xl bg-white p-4 border border-ink-950/6 text-[14px] space-y-1.5">
-                              <p className="text-[13px] font-black uppercase tracking-wider text-ink-700">Pago</p>
-                              <p className="font-bold text-ink-950">
-                                Estado:{' '}
+                            {/* Card Pago */}
+                            <div className="rounded-2xl bg-white p-4 sm:p-5 border border-ink-950/8 text-[14px] space-y-3 shadow-xs">
+                              <div className="flex items-center justify-between border-b border-ink-950/6 pb-2.5">
+                                <div className="flex items-center gap-2">
+                                  <span className="grid size-7 place-items-center rounded-lg bg-emerald-50 text-emerald-700">
+                                    <Banknote className="size-4" />
+                                  </span>
+                                  <p className="text-[12px] font-black uppercase tracking-wider text-ink-600">Pago</p>
+                                </div>
                                 <span
-                                  className={
+                                  className={cn(
+                                    'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-black border',
                                     order.paymentState === 'gifted'
-                                      ? 'text-purple-800 font-black'
+                                      ? 'bg-purple-50 text-purple-900 border-purple-200'
                                       : order.paymentState === 'paid'
-                                        ? 'text-emerald-800 font-black'
+                                        ? 'bg-emerald-50 text-emerald-900 border-emerald-200'
                                         : order.paymentState === 'refunded'
-                                          ? 'text-ink-600 font-black'
-                                          : 'text-amber-900 font-black'
-                                  }
+                                          ? 'bg-ink-100 text-ink-700 border-ink-200'
+                                          : 'bg-amber-50 text-amber-900 border-amber-200'
+                                  )}
                                 >
                                   {order.paymentState === 'gifted'
                                     ? 'Regalo / Cortesía'
@@ -440,29 +452,100 @@ export default function OrdersPage() {
                                           ? 'Reembolsado'
                                           : 'Pendiente de cobro'}
                                 </span>
-                              </p>
-                              <p className="text-ink-700 font-medium">
-                                Medio:{' '}
-                                {order.paymentMethod === 'gift'
-                                  ? 'Regalo / Cortesía'
-                                  : order.paymentMethod === 'cash'
-                                    ? 'Efectivo'
-                                    : 'Transferencia bancaria'}
-                              </p>
+                              </div>
+                              <div className="space-y-1">
+                                <span className="text-[11px] font-black uppercase tracking-wider text-ink-500 block">
+                                  Medio de pago
+                                </span>
+                                <p className="font-black text-ink-950 text-[15px]">
+                                  {order.paymentMethod === 'gift'
+                                    ? 'Regalo / Cortesía'
+                                    : order.paymentMethod === 'cash'
+                                      ? 'Efectivo'
+                                      : 'Transferencia bancaria'}
+                                </p>
+                              </div>
                             </div>
 
-                            <div className="rounded-xl bg-white p-4 border border-ink-950/6 text-[14px] space-y-1.5">
-                              <p className="text-[13px] font-black uppercase tracking-wider text-ink-700">Entrega</p>
-                              <p className="font-bold text-ink-950">
-                                {order.deliveryMethod === 'pickup' ? 'Retiro en local' : 'Envío a domicilio'}
-                              </p>
-                              {order.shippingAddress ? (
-                                <p className="text-ink-700 font-medium truncate">{order.shippingAddress}</p>
-                              ) : null}
-                              {order.shippingType ? (
-                                <p className="text-ink-700 font-medium">Tipo: {order.shippingType === 'express' ? 'Express' : 'Estándar'}</p>
-                              ) : null}
-                            </div>
+                            {/* Card Entrega */}
+                            {(() => {
+                              const shippingInfo = parseShippingAddress(order.shippingAddress);
+                              return (
+                                <div className="rounded-2xl bg-white p-4 sm:p-5 border border-ink-950/8 text-[14px] space-y-3 shadow-xs">
+                                  <div className="flex items-center justify-between border-b border-ink-950/6 pb-2.5">
+                                    <div className="flex items-center gap-2">
+                                      <span className="grid size-7 place-items-center rounded-lg bg-brand-50 text-brand-700">
+                                        {order.deliveryMethod === 'pickup' ? (
+                                          <Store className="size-4" />
+                                        ) : (
+                                          <Truck className="size-4" />
+                                        )}
+                                      </span>
+                                      <p className="text-[12px] font-black uppercase tracking-wider text-ink-600">Entrega</p>
+                                    </div>
+                                    <span
+                                      className={cn(
+                                        'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-black border',
+                                        order.deliveryMethod === 'pickup'
+                                          ? 'bg-cream-100 text-ink-800 border-ink-950/8'
+                                          : 'bg-brand-50 text-brand-900 border-brand-200'
+                                      )}
+                                    >
+                                      {order.deliveryMethod === 'pickup' ? 'Retiro en local' : 'Envío a domicilio'}
+                                    </span>
+                                  </div>
+
+                                  {order.deliveryMethod === 'shipping' ? (
+                                    <div className="space-y-2.5">
+                                      {shippingInfo.streetAddress ? (
+                                        <div>
+                                          <span className="text-[11px] font-black uppercase tracking-wider text-ink-500 block">
+                                            Dirección de entrega
+                                          </span>
+                                          <p className="font-black text-ink-950 text-[15px] mt-0.5 leading-snug">
+                                            {shippingInfo.streetAddress}
+                                          </p>
+                                        </div>
+                                      ) : null}
+
+                                      {shippingInfo.trackingEmail ? (
+                                        <div className="rounded-xl bg-sky-50/90 border border-sky-200/80 p-2.5 flex items-start gap-2.5">
+                                          <span className="grid size-6 shrink-0 place-items-center rounded-lg bg-sky-200/70 text-sky-800 mt-0.5">
+                                            <Mail className="size-3.5" />
+                                          </span>
+                                          <div className="min-w-0 flex-1">
+                                            <span className="text-[10.5px] font-black uppercase tracking-wider text-sky-800 block">
+                                              Email de seguimiento (Nacional)
+                                            </span>
+                                            <p className="text-xs font-bold text-sky-950 select-all break-all mt-0.5">
+                                              {shippingInfo.trackingEmail}
+                                            </p>
+                                          </div>
+                                        </div>
+                                      ) : (
+                                        <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-800">
+                                          <span className="size-1.5 rounded-full bg-emerald-600" />
+                                          <span>Zona local (Santa Fe y cercanías)</span>
+                                        </div>
+                                      )}
+
+                                      {order.shippingType ? (
+                                        <div className="flex items-center justify-between text-xs pt-1.5 border-t border-ink-950/6">
+                                          <span className="text-ink-500 font-semibold">Tipo de servicio:</span>
+                                          <span className="inline-flex items-center rounded-md bg-cream-100 px-2 py-0.5 font-bold text-ink-800 text-[11.5px]">
+                                            {order.shippingType === 'express' ? 'Express prioritario' : 'Estándar'}
+                                          </span>
+                                        </div>
+                                      ) : null}
+                                    </div>
+                                  ) : (
+                                    <p className="text-xs font-medium text-ink-600">
+                                      El cliente retira personalmente por el local.
+                                    </p>
+                                  )}
+                                </div>
+                              );
+                            })()}
                           </div>
 
                           {/* Datos del Cliente y Botón WhatsApp */}

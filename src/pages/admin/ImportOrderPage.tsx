@@ -291,31 +291,41 @@ export default function ImportOrderPage() {
             </div>
 
             {/* Metadatos compactos: Cliente, Pago y Entrega en jerarquía secundaria */}
-            <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-cream-50/90 px-4 py-3 border border-ink-950/6 text-[14.5px]">
-              <div className="flex items-center gap-2">
-                <span className="font-black text-ink-950">{review.customerName}</span>
+            <div className="mt-4 grid gap-3 sm:grid-cols-3 rounded-2xl bg-cream-50/90 p-3.5 border border-ink-950/6 text-[13.5px]">
+              <div className="flex flex-col gap-0.5 min-w-0">
+                <span className="text-[11px] font-black uppercase tracking-wider text-ink-500">Cliente</span>
+                <p className="font-black text-ink-950 truncate">{review.customerName}</p>
                 {review.source.phone ? (
-                  <span className="text-ink-600 font-semibold">· {review.source.phone}</span>
+                  <p className="text-xs text-ink-600 font-semibold">{review.source.phone}</p>
                 ) : null}
               </div>
-              <div className="flex items-center gap-2 text-ink-700 font-semibold">
-                <span>{review.source.paymentMethod === 'cash' ? 'Efectivo' : 'Transferencia'}</span>
-                <span className="text-ink-400">·</span>
-                <span>
+
+              <div className="flex flex-col gap-0.5 min-w-0">
+                <span className="text-[11px] font-black uppercase tracking-wider text-ink-500">Pago</span>
+                <p className="font-bold text-ink-900">
+                  {review.source.paymentMethod === 'cash' ? 'Efectivo' : 'Transferencia bancaria'}
+                </p>
+              </div>
+
+              <div className="flex flex-col gap-1 min-w-0">
+                <span className="text-[11px] font-black uppercase tracking-wider text-ink-500">Entrega</span>
+                <p className="font-bold text-ink-900">
                   {review.source.deliveryMethod === 'pickup'
-                    ? 'Retiro'
-                    : `Envío ${review.source.shippingType === 'express' ? 'express' : 'tradicional'}`}
-                </span>
+                    ? 'Retiro en local'
+                    : `Envío ${review.source.shippingType === 'express' ? 'express' : 'estándar'}`}
+                </p>
                 {review.source.address ? (
-                  <span className="text-ink-600">({review.source.address} {review.source.addressNumber ?? ''})</span>
+                  <p className="text-xs text-ink-700 font-medium leading-snug">
+                    {[review.source.address, review.source.addressNumber].filter(Boolean).join(' ')}
+                  </p>
                 ) : null}
                 {review.source.deliveryMethod === 'shipping' && review.source.isSantaFeOrNearby !== null && review.source.isSantaFeOrNearby !== undefined ? (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-cream-100 px-2.5 py-0.5 text-xs font-bold text-ink-700">
-                    {review.source.isSantaFeOrNearby ? 'Santa Fe / Cercanías' : 'Fuera de Santa Fe (Nacional)'}
+                  <span className="inline-flex items-center gap-1 text-[11px] font-bold text-ink-600">
+                    {review.source.isSantaFeOrNearby ? '• Santa Fe / Cercanías' : '• Fuera de Santa Fe (Nacional)'}
                   </span>
                 ) : null}
                 {review.source.email ? (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-brand-50 border border-brand-200/60 px-2.5 py-0.5 text-xs font-bold text-brand-800">
+                  <span className="inline-flex items-center gap-1 text-[11px] font-bold text-sky-800 bg-sky-50 border border-sky-200/70 rounded-md px-1.5 py-0.5 break-all">
                     Seguimiento: {review.source.email}
                   </span>
                 ) : null}
@@ -653,12 +663,16 @@ export default function ImportOrderPage() {
                   shippingType: review.source.shippingType,
                   isSantaFeOrNearby: review.source.isSantaFeOrNearby,
                   email: review.source.email,
-                  address: review.source.address
-                    ? review.source.isSantaFeOrNearby === false && review.source.email?.trim()
-                      ? `${review.source.address} · Seguimiento: ${review.source.email.trim()}`
-                      : review.source.address
-                    : null,
-                  addressNumber: review.source.addressNumber,
+                  address: (() => {
+                    const fullStreet = [review.source.address?.trim(), review.source.addressNumber?.trim()]
+                      .filter(Boolean)
+                      .join(' ');
+                    if (!fullStreet) return null;
+                    return review.source.isSantaFeOrNearby === false && review.source.email?.trim()
+                      ? `${fullStreet} · Seguimiento: ${review.source.email.trim()}`
+                      : fullStreet;
+                  })(),
+                  addressNumber: null,
                   phone: review.source.phone,
                   lines: review.lines,
                   shippingFeeCents: totals.shipping,

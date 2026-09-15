@@ -301,3 +301,44 @@ export const prepareCheckoutSubmission = async (
     whatsappUrl
   };
 };
+
+export type ParsedShippingAddress = {
+  rawAddress: string | null;
+  streetAddress: string | null;
+  trackingEmail: string | null;
+};
+
+/**
+ * Parsea y separa limpiamente la dirección física del correo de seguimiento,
+ * resolviendo cualquier concatenación o anomalía de orden (ej: número al final del email).
+ */
+export const parseShippingAddress = (raw: string | null | undefined): ParsedShippingAddress => {
+  if (!raw || !raw.trim()) {
+    return { rawAddress: null, streetAddress: null, trackingEmail: null };
+  }
+  const text = raw.trim();
+
+  const emailMatch = text.match(/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/);
+  const trackingEmail = emailMatch?.[1]?.trim() ?? null;
+
+  if (!trackingEmail) {
+    return {
+      rawAddress: text,
+      streetAddress: text,
+      trackingEmail: null
+    };
+  }
+
+  let cleaned = text;
+  cleaned = cleaned.replace(/·?\s*Seguimiento:\s*[^\s]+(\s*)/i, ' ');
+  cleaned = cleaned.replace(trackingEmail, ' ');
+  cleaned = cleaned.replace(/·?\s*Email(\s*de\s*seguimiento)?:\s*/i, ' ');
+  cleaned = cleaned.replace(/^[·\s-]+|[·\s-]+$/g, '').replace(/\s+/g, ' ').trim();
+
+  return {
+    rawAddress: text,
+    streetAddress: cleaned || text,
+    trackingEmail
+  };
+};
+
