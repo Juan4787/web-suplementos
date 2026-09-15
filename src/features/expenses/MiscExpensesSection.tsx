@@ -6,6 +6,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Edit3,
+  Info,
   Plus,
   ReceiptText,
   Repeat2,
@@ -186,15 +187,15 @@ const todayInBusinessTimezone = (): string =>
   }).format(new Date());
 
 const recurrenceDescription = (expense: Pick<MiscExpense, 'frequency' | 'startsOn' | 'endsOn'>): string => {
-  if (expense.frequency === 'once') return `Una vez · ${longDate(expense.startsOn)}`;
-  const end = expense.endsOn ? ` · hasta ${longDate(expense.endsOn)}` : ' · sin fecha de finalización';
+  if (expense.frequency === 'once') return longDate(expense.startsOn);
+  const end = expense.endsOn ? ` · hasta ${longDate(expense.endsOn)}` : '';
   if (expense.frequency === 'weekly') {
     const weekday = format(parseISO(expense.startsOn), 'EEEE', { locale: es });
-    return `Semanal · cada ${weekday} desde ${longDate(expense.startsOn)}${end}`;
+    return `Cada ${weekday} desde ${longDate(expense.startsOn)}${end}`;
   }
   const day = Number(expense.startsOn.slice(8, 10));
   const shortMonth = day >= 29 ? ' (o último día del mes)' : '';
-  return `Mensual · el día ${day}${shortMonth} desde ${longDate(expense.startsOn)}${end}`;
+  return `El día ${day}${shortMonth} de cada mes desde ${longDate(expense.startsOn)}${end}`;
 };
 
 function ExpenseFormModal({
@@ -556,13 +557,24 @@ function ExpenseRow({
   onEdit: () => void;
   onDelete: () => void;
 }) {
+  const isPuntual = expense.frequency === 'once';
+
   return (
-    <article className="grid gap-4 p-4 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-center sm:p-5">
+    <article className="grid gap-4 p-4 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-center sm:p-5 transition hover:bg-cream-50/40">
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
           <h4 className="break-words text-base font-black text-ink-950">{expense.title}</h4>
-          <span className="rounded-full bg-cream-100 px-2.5 py-1 text-[11px] font-black uppercase tracking-wide text-ink-700">
-            {expense.frequency === 'once' ? 'Puntual' : expense.frequency === 'weekly' ? 'Semanal' : 'Mensual'}
+          <span
+            className={cn(
+              'rounded-full px-2.5 py-0.5 text-[11px] font-black uppercase tracking-wide',
+              isPuntual
+                ? 'bg-cream-100 text-ink-700'
+                : expense.frequency === 'weekly'
+                  ? 'bg-blue-50 text-blue-700'
+                  : 'bg-purple-50 text-purple-700'
+            )}
+          >
+            {isPuntual ? 'Puntual' : expense.frequency === 'weekly' ? 'Semanal' : 'Mensual'}
           </span>
         </div>
         <p className="mt-1 text-sm font-medium leading-5 text-ink-600">{recurrenceDescription(expense)}</p>
@@ -572,11 +584,11 @@ function ExpenseRow({
         <p className="font-display text-xl font-black tabular-nums text-ink-950">
           {formatMoney(expense.periodAmountCents)}
         </p>
-        <p className="mt-0.5 text-xs font-semibold text-ink-600">
-          {expense.occurrenceCount === 1
-            ? '1 vez en el período'
-            : `${formatMoney(expense.amountCents)} × ${expense.occurrenceCount} veces`}
-        </p>
+        {!isPuntual && expense.occurrenceCount > 1 ? (
+          <p className="mt-0.5 text-xs font-semibold text-ink-500">
+            {formatMoney(expense.amountCents)} × {expense.occurrenceCount} veces
+          </p>
+        ) : null}
       </div>
 
       <div className="flex items-center justify-end gap-1 border-t border-ink-950/6 pt-3 sm:border-0 sm:pt-0">
@@ -652,53 +664,64 @@ export function MiscExpensesSection({ onNotify }: { onNotify: Notify }) {
           </Button>
         </div>
 
-        <div className="mt-5 grid gap-3 rounded-2xl bg-cream-50 p-3 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:items-center sm:p-4">
-          <div className="relative flex items-center gap-1">
-            <button
-              type="button"
-              onClick={() => moveMonth(-1)}
-              disabled={selectedMonth === '2000-01'}
-              className="grid size-11 place-items-center rounded-full text-ink-700 transition hover:bg-white hover:text-brand-700 disabled:pointer-events-none disabled:opacity-35"
-              aria-label="Ver mes anterior"
-            >
-              <ChevronLeft className="size-5" />
-            </button>
-            <label className="sr-only" htmlFor="misc-expenses-month">Mes a revisar</label>
-            <input
-              id="misc-expenses-month"
-              type="month"
-              min="2000-01"
-              max="2100-12"
-              value={selectedMonth}
-              onChange={(event) => { if (event.target.value) setSelectedMonth(event.target.value); }}
-              className="min-h-11 min-w-0 rounded-xl border border-ink-950/12 bg-white px-3 text-sm font-black text-ink-950 shadow-xs focus:border-brand-600 focus:ring-2 focus:ring-brand-500/20"
-            />
-            <button
-              type="button"
-              onClick={() => moveMonth(1)}
-              disabled={selectedMonth === '2100-12'}
-              className="grid size-11 place-items-center rounded-full text-ink-700 transition hover:bg-white hover:text-brand-700 disabled:pointer-events-none disabled:opacity-35"
-              aria-label="Ver mes siguiente"
-            >
-              <ChevronRight className="size-5" />
-            </button>
+        <div className="mt-5 flex flex-col gap-4 rounded-2xl border border-ink-950/8 bg-cream-50/70 p-3 sm:flex-row sm:items-center sm:justify-between sm:p-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="inline-flex items-center rounded-xl border border-ink-950/10 bg-white p-0.5 shadow-xs">
+              <button
+                type="button"
+                onClick={() => moveMonth(-1)}
+                disabled={selectedMonth === '2000-01'}
+                className="grid size-9 place-items-center rounded-lg text-ink-600 transition hover:bg-cream-100 hover:text-ink-950 disabled:pointer-events-none disabled:opacity-30"
+                aria-label="Ver mes anterior"
+              >
+                <ChevronLeft className="size-4" />
+              </button>
+              <div className="relative flex items-center gap-2 px-3 py-1.5">
+                <CalendarRange className="size-4 text-ink-500" aria-hidden="true" />
+                <span className="text-sm font-black capitalize text-ink-950">
+                  {monthName}
+                </span>
+                <input
+                  id="misc-expenses-month"
+                  type="month"
+                  min="2000-01"
+                  max="2100-12"
+                  value={selectedMonth}
+                  onChange={(event) => { if (event.target.value) setSelectedMonth(event.target.value); }}
+                  className="absolute inset-0 cursor-pointer opacity-0"
+                  title="Cambiar mes"
+                  aria-label="Mes a revisar"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => moveMonth(1)}
+                disabled={selectedMonth === '2100-12'}
+                className="grid size-9 place-items-center rounded-lg text-ink-600 transition hover:bg-cream-100 hover:text-ink-950 disabled:pointer-events-none disabled:opacity-30"
+                aria-label="Ver mes siguiente"
+              >
+                <ChevronRight className="size-4" />
+              </button>
+            </div>
+
+            {selectedMonth !== today.slice(0, 7) ? (
+              <button
+                type="button"
+                onClick={() => setSelectedMonth(today.slice(0, 7))}
+                className="rounded-lg px-2.5 py-1 text-xs font-bold text-brand-700 transition hover:bg-brand-50 hover:text-brand-900"
+              >
+                Mes actual
+              </button>
+            ) : null}
           </div>
 
-          <p className="text-center text-sm font-semibold capitalize text-ink-700 sm:text-left">
-            Impacto programado para {monthName}
-          </p>
-
-          <div className="rounded-xl bg-ink-950 px-4 py-3 text-white sm:min-w-48 sm:text-right">
-            <p className="text-[10px] font-black uppercase tracking-wider text-white/60">Total del mes</p>
-            <p className="mt-0.5 font-display text-2xl font-black tabular-nums text-brand-300">
+          <div className="flex items-center gap-2 sm:text-right">
+            <span className="text-xs font-bold text-ink-500">Total del mes:</span>
+            <span className="font-display text-xl font-black tabular-nums text-ink-950">
               {formatMoney(expenses.data?.totalCents ?? 0)}
-            </p>
+            </span>
           </div>
         </div>
-        <p className="mt-2 text-xs font-medium text-ink-600">
-          En Ventas se descuentan únicamente las fechas incluidas en el período que estés consultando.
-          La tasa porcentual configurada arriba ya se descuenta por venta: no vuelvas a cargar aquí ese mismo impuesto.
-        </p>
       </div>
 
       {expenses.isPending ? <LoadingState label="Calculando gastos del período…" /> : null}
@@ -730,6 +753,11 @@ export function MiscExpensesSection({ onNotify }: { onNotify: Notify }) {
           ))}
         </div>
       ) : null}
+
+      <div className="flex items-center gap-2 border-t border-ink-950/6 bg-cream-50/40 px-5 py-3 text-xs font-medium text-ink-600">
+        <Info className="size-4 shrink-0 text-ink-400" aria-hidden="true" />
+        <span>Los gastos de este mes se descuentan automáticamente de la ganancia neta en la sección de Ventas.</span>
+      </div>
 
       {formDraft ? (
         <ExpenseFormModal
