@@ -508,7 +508,7 @@ export function MiscExpensesSection({ onNotify }: { onNotify: Notify }) {
         </div>
 
         <div className="mt-5 grid gap-3 rounded-2xl bg-cream-50 p-3 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:items-center sm:p-4">
-          <div className="flex items-center gap-1">
+          <div className="relative flex items-center gap-1">
             <button
               type="button"
               onClick={() => moveMonth(-1)}

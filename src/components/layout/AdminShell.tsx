@@ -205,8 +205,8 @@ export function AdminShell() {
   if (loading && !user) return <LoadingState label="Comprobando tu acceso…" />;
   if (!user) return <Navigate to="/ingresar" />;
   return (
-    <div className="min-h-screen bg-cream-100">
-      <div className="flex h-screen min-h-[42rem]">
+    <div className="h-screen overflow-hidden bg-cream-100">
+      <div className="flex h-full min-h-[42rem]">
         <Sidebar />
         <div className="flex min-w-0 flex-1 flex-col">
           <header className="flex h-16 shrink-0 items-center justify-between border-b border-ink-950/8 bg-cream-50 px-4 lg:hidden">
@@ -222,8 +222,8 @@ export function AdminShell() {
               <Menu className="size-5" />
             </Button>
           </header>
-          <main className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
-            <div className="mx-auto w-full max-w-[94rem] px-4 py-6 sm:px-6 sm:py-8 xl:px-10">
+          <main className="relative min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
+            <div className="mx-auto w-full max-w-[94rem] px-4 py-6 sm:px-6 sm:py-8 xl:px-10 pb-16">
               <Outlet />
             </div>
           </main>
