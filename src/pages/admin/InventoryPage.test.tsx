@@ -4,9 +4,24 @@ import type { PropsWithChildren } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { demoProducts, demoOwner, toDemoInventory } from '@/data/demo-data';
 import type { Purchase } from '@/domain/types';
-import InventoryPage, { PurchaseFormModal } from './InventoryPage';
+import InventoryPage, { PurchaseFormModal, ReceivePurchaseModal } from './InventoryPage';
 
-const api = vi.hoisted(() => ({ listAdminProducts: vi.fn(), createPurchase: vi.fn(), updatePurchase: vi.fn(), listInventory: vi.fn(), listMovements: vi.fn(), listPurchases: vi.fn(), adjustStock: vi.fn(), listOpeningReservations: vi.fn() }));
+const api = vi.hoisted(() => ({
+  listAdminProducts: vi.fn(),
+  createPurchase: vi.fn(),
+  updatePurchase: vi.fn(),
+  listInventory: vi.fn(),
+  listMovements: vi.fn(),
+  listPurchases: vi.fn(),
+  adjustStock: vi.fn(),
+  listOpeningReservations: vi.fn(),
+  getPurchaseImpact: vi.fn(),
+  receivePurchase: vi.fn(),
+  declareItemShortage: vi.fn(),
+  reassignPurchaseReservations: vi.fn(),
+  transitionOrder: vi.fn(),
+  getSettings: vi.fn()
+}));
 const auth = vi.hoisted(() => ({ staff: false }));
 vi.mock('@/services/business-api', () => ({ getBusinessApi: async () => api }));
 vi.mock('@/features/auth/AuthProvider', () => ({ useAuth: () => ({ user: { ...demoOwner, role: auth.staff ? 'staff' : 'owner' } }) }));
@@ -133,5 +148,216 @@ describe('Carga de compras', () => {
     expect(purchase).toBeVisible();
     fireEvent.keyDown(window, { key: 'Escape' });
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('Recepción asistida de compras (ReceivePurchaseModal)', () => {
+  const samplePurchase: Purchase = {
+    id: 'purch-2042',
+    number: 2042,
+    supplierName: 'Sophos',
+    state: 'ordered',
+    orderedAt: '2026-09-10T12:00:00Z',
+    expectedAt: '2026-09-25T12:00:00Z',
+    receivedAt: null,
+    totalCostCents: 3500000,
+    notes: null,
+    items: [
+      {
+        id: 'pi-1',
+        productId: demoProducts[0]!.id,
+        productName: demoProducts[0]!.name,
+        quantity: 10,
+        receivedQuantity: 0,
+        shortageQuantity: 0,
+        unitCostCents: 150000
+      },
+      {
+        id: 'pi-2',
+        productId: demoProducts[1]!.id,
+        productName: demoProducts[1]!.name,
+        quantity: 4,
+        receivedQuantity: 0,
+        shortageQuantity: 0,
+        unitCostCents: 200000
+      }
+    ]
+  };
+
+  afterEach(cleanup);
+  beforeEach(() => {
+    vi.resetAllMocks();
+    auth.staff = false;
+    api.listAdminProducts.mockResolvedValue(demoProducts);
+    api.listOpeningReservations.mockResolvedValue([]);
+    api.getSettings.mockResolvedValue({ storeName: 'Sophos Suplementos' });
+    api.getPurchaseImpact.mockResolvedValue([
+      {
+        purchaseItemId: 'pi-1',
+        productId: demoProducts[0]!.id,
+        productName: demoProducts[0]!.name,
+        totalQuantity: 10,
+        receivedQuantity: 0,
+        shortageQuantity: 0,
+        pendingQuantity: 10,
+        reservedOrders: [],
+        openingReservationsQuantity: 0
+      },
+      {
+        purchaseItemId: 'pi-2',
+        productId: demoProducts[1]!.id,
+        productName: demoProducts[1]!.name,
+        totalQuantity: 4,
+        receivedQuantity: 0,
+        shortageQuantity: 0,
+        pendingQuantity: 4,
+        reservedOrders: [
+          {
+            orderId: 'ord-2504',
+            orderNumber: 2504,
+            customerName: 'María Soledad Tur',
+            customerPhone: '+5491112345678',
+            reservedQuantity: 1,
+            paymentState: 'paid',
+            fulfillmentState: 'pending',
+            totalCents: 43000
+          }
+        ],
+        openingReservationsQuantity: 0
+      }
+    ]);
+  });
+
+  it('muestra los dos caminos visuales gigantes al abrir la recepción', async () => {
+    render(<ReceivePurchaseModal purchase={samplePurchase} onClose={vi.fn()} onUnblocked={vi.fn()} />, { wrapper: Wrapper });
+    expect(await screen.findByText('¿Cómo llegó el pedido #2042 de Sophos?')).toBeVisible();
+    expect(screen.getByText('Llegó TODO completo')).toBeVisible();
+    expect(screen.getByText('Llegó con faltante / parte')).toBeVisible();
+  });
+
+  it('camino "Llegó TODO completo": ingresa el 100% de las unidades pendientes', async () => {
+    const onClose = vi.fn();
+    const onUnblocked = vi.fn();
+    api.receivePurchase.mockResolvedValue({ purchase: { ...samplePurchase, state: 'received' }, unblockedOrders: [{ id: 'ord-2504', number: 2504 }] });
+    render(<ReceivePurchaseModal purchase={samplePurchase} onClose={onClose} onUnblocked={onUnblocked} />, { wrapper: Wrapper });
+    fireEvent.click(await screen.findByText('Llegó TODO completo'));
+    expect(await screen.findByText('Confirmar ingreso completo')).toBeVisible();
+    expect(screen.getByText('Ingreso del 100% de la mercadería')).toBeVisible();
+
+    fireEvent.click(screen.getByRole('button', { name: /Confirmar ingreso completo/ }));
+    await waitFor(() => expect(api.receivePurchase).toHaveBeenCalledWith('purch-2042', [
+      { purchaseItemId: 'pi-1', receivedQuantity: 10 },
+      { purchaseItemId: 'pi-2', receivedQuantity: 4 }
+    ], expect.any(String)));
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+    expect(onUnblocked).toHaveBeenCalledWith([{ id: 'ord-2504', number: 2504 }]);
+  });
+
+  it('camino "Llegó con faltante": parte con todos desmarcados e indicación "Marcá los que falten"', async () => {
+    render(<ReceivePurchaseModal purchase={samplePurchase} onClose={vi.fn()} onUnblocked={vi.fn()} />, { wrapper: Wrapper });
+    fireEvent.click(await screen.findByText('Llegó con faltante / parte'));
+
+    expect(await screen.findByText('¿Qué productos faltan en esta entrega?')).toBeVisible();
+    expect(screen.getByText('👉 Marcá los que falten')).toBeVisible();
+
+    const checkboxes = screen.getAllByRole('checkbox');
+    expect(checkboxes.length).toBe(2);
+    expect((checkboxes[0] as HTMLInputElement).checked).toBe(false);
+    expect((checkboxes[1] as HTMLInputElement).checked).toBe(false);
+
+    const continueBtn = screen.getByRole('button', { name: /Continuar/ });
+    expect(continueBtn).toBeDisabled();
+
+    fireEvent.click(checkboxes[1]!);
+    expect((checkboxes[1] as HTMLInputElement).checked).toBe(true);
+    expect(continueBtn).toBeEnabled();
+  });
+
+  it('diagnóstico con "SÍ, viene después": permite finalizar sin bloqueos', async () => {
+    const onClose = vi.fn();
+    api.receivePurchase.mockResolvedValue({ purchase: samplePurchase, unblockedOrders: [] });
+    render(<ReceivePurchaseModal purchase={samplePurchase} onClose={onClose} onUnblocked={vi.fn()} />, { wrapper: Wrapper });
+    fireEvent.click(await screen.findByText('Llegó con faltante / parte'));
+
+    const checkboxes = await screen.findAllByRole('checkbox');
+    fireEvent.click(checkboxes[1]!);
+    fireEvent.click(screen.getByRole('button', { name: /Continuar/ }));
+
+    expect(await screen.findByText('Diagnóstico de productos con faltante')).toBeVisible();
+    expect(screen.getByRole('button', { name: /SÍ, viene después/ })).toBeVisible();
+
+    const finalizeBtn = screen.getByRole('button', { name: /Finalizar recepción/ });
+    expect(finalizeBtn).toBeEnabled();
+
+    fireEvent.click(finalizeBtn);
+    await waitFor(() => expect(api.receivePurchase).toHaveBeenCalledWith('purch-2042', [
+      { purchaseItemId: 'pi-1', receivedQuantity: 10 }
+    ], expect.any(String)));
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+  });
+
+  it('diagnóstico con "NO (Faltante definitivo)" y clientes reservados: guía a resolver en app', async () => {
+    const onClose = vi.fn();
+    api.transitionOrder.mockResolvedValue({});
+    api.receivePurchase.mockResolvedValue({ purchase: samplePurchase, unblockedOrders: [] });
+    api.declareItemShortage.mockResolvedValue({ ...samplePurchase, state: 'received' });
+
+    render(<ReceivePurchaseModal purchase={samplePurchase} onClose={onClose} onUnblocked={vi.fn()} />, { wrapper: Wrapper });
+    fireEvent.click(await screen.findByText('Llegó con faltante / parte'));
+
+    const checkboxes = await screen.findAllByRole('checkbox');
+    fireEvent.click(checkboxes[1]!);
+    fireEvent.click(screen.getByRole('button', { name: /Continuar/ }));
+
+    fireEvent.click(await screen.findByRole('button', { name: /NO \(Faltante definitivo\)/ }));
+
+    expect(await screen.findByText('1 clientes esperando este producto')).toBeVisible();
+    expect(screen.getByText('· María Soledad Tur')).toBeVisible();
+
+    const finalizeBtn = screen.getByRole('button', { name: /Finalizar recepción/ });
+    expect(finalizeBtn).toBeDisabled();
+
+    const resolveBtn = screen.getByRole('button', { name: 'Reembolsar y cancelar en app' });
+    fireEvent.click(resolveBtn);
+
+    await waitFor(() => expect(api.transitionOrder).toHaveBeenCalledWith('ord-2504', 'mark_refunded'));
+    await waitFor(() => expect(api.transitionOrder).toHaveBeenCalledWith('ord-2504', 'cancel'));
+    expect(await screen.findByText(/Registrado en sistema \(reembolsado y cancelado\)/)).toBeVisible();
+
+    expect(finalizeBtn).toBeEnabled();
+    fireEvent.click(finalizeBtn);
+
+    await waitFor(() => expect(api.receivePurchase).toHaveBeenCalled());
+    await waitFor(() => expect(api.declareItemShortage).toHaveBeenCalledWith('pi-2', 4, expect.any(String)));
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+  });
+
+  it('permite pedir reposición a otro proveedor y traslada automáticamente las reservas', async () => {
+    api.createPurchase.mockResolvedValue({ id: 'purch-new-99', number: 2050, items: [{ id: 'new-pi-1', productId: demoProducts[1]!.id }] });
+    api.reassignPurchaseReservations.mockResolvedValue({ transferredReservations: 1 });
+
+    render(<ReceivePurchaseModal purchase={samplePurchase} onClose={vi.fn()} onUnblocked={vi.fn()} />, { wrapper: Wrapper });
+    fireEvent.click(await screen.findByText('Llegó con faltante / parte'));
+
+    const checkboxes = await screen.findAllByRole('checkbox');
+    fireEvent.click(checkboxes[1]!);
+    fireEvent.click(screen.getByRole('button', { name: /Continuar/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /NO \(Faltante definitivo\)/ }));
+
+    fireEvent.click(await screen.findByRole('button', { name: /Pedir reposición a otro proveedor/ }));
+    expect(await screen.findByText('Crear pedido de reposición a otro proveedor')).toBeVisible();
+
+    fireEvent.change(screen.getByLabelText(/Nombre del nuevo proveedor/), { target: { value: 'Distribuidora Natulab' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar reposición' }));
+
+    await waitFor(() => expect(api.createPurchase).toHaveBeenCalledWith(expect.objectContaining({
+      supplierName: 'Distribuidora Natulab',
+      items: [{ productId: demoProducts[1]!.id, quantity: 4, unitCostCents: 200000 }]
+    })));
+    await waitFor(() => expect(api.reassignPurchaseReservations).toHaveBeenCalledWith('pi-2', 'purch-new-99'));
+
+    expect(await screen.findByText(/Reposición creada en/)).toBeVisible();
+    expect(screen.getByText(/2050/)).toBeVisible();
+    expect(screen.getByRole('button', { name: /Finalizar recepción/ })).toBeEnabled();
   });
 });

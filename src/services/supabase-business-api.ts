@@ -10,6 +10,7 @@ import type {
   MiscExpensePeriod,
   Order,
   Purchase,
+  PurchaseImpactItem,
   QuoteCartEtaResult,
   ReceivePurchaseResult,
   StockMovement,
@@ -383,6 +384,37 @@ export const supabaseBusinessApi: BusinessApi = {
       p_purchase_id: purchaseId,
       p_notes: notes ?? 'Cerrado con faltante definitivo de distribuidor'
     }),
+  getPurchaseImpact: async (purchaseId) => {
+    const res = await rpc<PurchaseImpactItem[]>('get_purchase_impact', {
+      p_purchase_id: purchaseId
+    });
+    return (res ?? []).map((item) => ({
+      ...item,
+      reservedOrders: item.reservedOrders ?? []
+    }));
+  },
+  declareItemShortage: async (purchaseItemId, quantity, notes) => {
+    const res = await rpc<Purchase>('declare_item_shortage', {
+      p_purchase_item_id: purchaseItemId,
+      p_quantity: quantity,
+      p_notes: notes || null
+    });
+    return { ...res, items: res?.items ?? [] };
+  },
+  reassignPurchaseReservations: async (oldPurchaseItemId, newPurchaseId) => {
+    const res = await rpc<{ oldPurchase: Purchase; newPurchase: Purchase; transferredReservations: number }>(
+      'reassign_purchase_reservations',
+      {
+        p_old_purchase_item_id: oldPurchaseItemId,
+        p_new_purchase_id: newPurchaseId
+      }
+    );
+    return {
+      oldPurchase: { ...res.oldPurchase, items: res?.oldPurchase?.items ?? [] },
+      newPurchase: { ...res.newPurchase, items: res?.newPurchase?.items ?? [] },
+      transferredReservations: res?.transferredReservations ?? 0
+    };
+  },
   listMovements: async (page = 1, pageSize = 30, search = '', filter = 'all') => {
     const res = await rpc<Page<StockMovement>>('list_stock_movements', {
       p_page: page,

@@ -85,34 +85,45 @@ describe('Compras reflejadas en Productos', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Guardar pedido' }));
       await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     };
-    const openReceipt = async () => {
+    const receive = async (quantity: number, isComplete = false) => {
       await purchases();
       const supplier = await screen.findByText('Proveedor de cruce');
       fireEvent.click(within(supplier.closest('article')!).getByRole('button', { name: 'Recibir mercadería' }));
-      return screen.getByLabelText('Unidades a ingresar en esta entrega:');
-    };
-    const receive = async (quantity: number) => {
-      const input = await openReceipt();
-      fireEvent.change(input, { target: { value: String(quantity) } });
-      fireEvent.click(screen.getByRole('button', { name: `Ingresar ${quantity} unidades` }));
+      if (isComplete) {
+        fireEvent.click(await screen.findByText('Llegó TODO completo'));
+        fireEvent.click(screen.getByRole('button', { name: /Confirmar ingreso completo/ }));
+      } else {
+        fireEvent.click(await screen.findByText('Llegó con faltante / parte'));
+        const checkbox = await screen.findByRole('checkbox');
+        fireEvent.click(checkbox);
+        const spinInput = screen.getByRole('spinbutton');
+        fireEvent.change(spinInput, { target: { value: String(quantity) } });
+        fireEvent.click(screen.getByRole('button', { name: /Continuar/ }));
+        fireEvent.click(screen.getByRole('button', { name: /Finalizar recepción/ }));
+      }
       await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     };
 
     await stock(0, 0);
     await create(30);
     await stock(0, 30);
-    await receive(5);
+    await receive(5, false);
     await stock(5, 25);
-    await receive(25);
+    await receive(25, true);
     await stock(30, 0);
 
     // An additional purchase is visible even with physical stock already available.
     await create(1);
     await stock(30, 1);
-    const input = await openReceipt();
-    fireEvent.change(input, { target: { value: '0' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Declarar faltante' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Confirmar cierre definitivo' }));
+    await purchases();
+    const supplier = await screen.findByText('Proveedor de cruce');
+    fireEvent.click(within(supplier.closest('article')!).getByRole('button', { name: 'Recibir mercadería' }));
+    fireEvent.click(await screen.findByText('Llegó con faltante / parte'));
+    const checkbox = await screen.findByRole('checkbox');
+    fireEvent.click(checkbox);
+    fireEvent.click(screen.getByRole('button', { name: /Continuar/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /NO \(Faltante definitivo\)/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Finalizar recepción/ }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     await stock(30, 0);
 

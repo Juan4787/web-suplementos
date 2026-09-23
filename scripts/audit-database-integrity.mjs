@@ -24,7 +24,7 @@ for (const line of envContent.split('\n')) {
 const password = (process.env.SUPABASE_DB_PASSWORD || envVars.SUPABASE_DB_PASSWORD)?.trim();
 const client = new Client({
   host: `aws-0-sa-east-1.pooler.supabase.com`,
-  port: 5432,
+  port: 6543,
   database: 'postgres',
   user: `postgres.mvtpidtuntvebyrxivue`,
   password,

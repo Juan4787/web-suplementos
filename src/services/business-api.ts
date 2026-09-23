@@ -18,6 +18,7 @@ import type {
   Order,
   OrderAction,
   Purchase,
+  PurchaseImpactItem,
   QuoteCartEtaResult,
   ReceivePurchaseItemInput,
   ReceivePurchaseResult,
@@ -146,6 +147,9 @@ export interface BusinessApi {
   updatePurchase(input: PurchaseUpdateInput): Promise<Purchase>;
   receivePurchase(purchaseId: string, items?: ReceivePurchaseItemInput[], operationId?: string): Promise<ReceivePurchaseResult>;
   closePurchaseWithShortage(purchaseId: string, notes?: string): Promise<ReceivePurchaseResult>;
+  getPurchaseImpact(purchaseId: string): Promise<PurchaseImpactItem[]>;
+  declareItemShortage(purchaseItemId: string, quantity: number, notes?: string): Promise<Purchase>;
+  reassignPurchaseReservations(oldPurchaseItemId: string, newPurchaseId: string): Promise<{ oldPurchase: Purchase; newPurchase: Purchase; transferredReservations: number }>;
   listMovements(page?: number, pageSize?: number, search?: string, filter?: 'all' | 'sales' | 'purchases' | 'adjustments'): Promise<Page<StockMovement>>;
   listCustomers(page?: number, pageSize?: number, search?: string): Promise<Page<Customer>>;
   listCustomerOrders(customerId: string, page?: number, pageSize?: number): Promise<Page<Order>>;

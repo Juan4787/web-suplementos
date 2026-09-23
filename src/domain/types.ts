@@ -206,6 +206,29 @@ export type ReceivePurchaseResult = {
   unblockedOrders: Array<{ id: string; number: number }>;
 };
 
+export type ReservedCustomerOrder = {
+  orderId: string;
+  orderNumber: number;
+  customerName: string;
+  customerPhone: string | null;
+  reservedQuantity: number;
+  paymentState: PaymentState;
+  fulfillmentState: FulfillmentState;
+  totalCents: number;
+};
+
+export type PurchaseImpactItem = {
+  purchaseItemId: string;
+  productId: string;
+  productName: string;
+  totalQuantity: number;
+  receivedQuantity: number;
+  shortageQuantity: number;
+  pendingQuantity: number;
+  reservedOrders: ReservedCustomerOrder[];
+  openingReservationsQuantity: number;
+};
+
 export type QuoteCartEtaResult = {
   ok: boolean;
   requiresIncoming: boolean;

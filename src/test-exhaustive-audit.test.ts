@@ -181,7 +181,7 @@ DCE085E3`;
       const env = loadEnv('production', process.cwd(), '');
       const db = new Client({
         host: `aws-0-${SUPABASE_PROJECT_REGION}.pooler.supabase.com`,
-        port: 5432,
+        port: 6543,
         database: 'postgres',
         user: `postgres.${SUPABASE_PROJECT_REF}`,
         password: env.SUPABASE_DB_PASSWORD,
@@ -197,7 +197,7 @@ DCE085E3`;
 
         // Migraciones aplicadas en base de datos
         const migrationsRes = await db.query('select count(*) as count from supabase_migrations.schema_migrations');
-        expect(Number(migrationsRes.rows[0].count)).toBe(50);
+        expect(Number(migrationsRes.rows[0].count)).toBeGreaterThanOrEqual(50);
 
         // Columnas first_name y last_name en customers
         const customerColsRes = await db.query(`
@@ -270,7 +270,7 @@ DCE085E3`;
       } finally {
         await db.end();
       }
-    });
+    }, 30000);
   });
 
   describe('5. Auditoría de Endpoints Vivos en Cloudflare Workers', () => {

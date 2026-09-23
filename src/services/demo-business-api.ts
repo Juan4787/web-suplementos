@@ -32,6 +32,7 @@ import type {
   Order,
   ProductPerformance,
   Purchase,
+  PurchaseImpactItem,
   QuoteCartEtaResult,
   ReceivePurchaseItemInput,
   ReceivePurchaseResult,
@@ -1276,6 +1277,104 @@ export const demoBusinessApi: BusinessApi = {
     }
     state.revision += 1;
     return latency({ purchase, unblockedOrders: [] });
+  },
+
+  async getPurchaseImpact(purchaseId: string) {
+    const purchase = state.purchases.find((p) => p.id === purchaseId);
+    if (!purchase) return latency([]);
+    const result: PurchaseImpactItem[] = purchase.items.map((pi) => {
+      const pendingQuantity = Math.max(0, pi.quantity - (pi.receivedQuantity ?? 0) - (pi.shortageQuantity ?? 0));
+      const reservedOrders = state.orders
+        .filter((o) => o.stockReadiness === 'waiting_incoming' && o.orderState !== 'cancelled')
+        .flatMap((o) => {
+          const matchLine = o.items.find((line) => line.productId === pi.productId);
+          if (!matchLine) return [];
+          return [{
+            orderId: o.id,
+            orderNumber: o.number,
+            customerName: o.customerName,
+            customerPhone: o.customerPhone,
+            reservedQuantity: matchLine.quantity,
+            paymentState: o.paymentState,
+            fulfillmentState: o.fulfillmentState,
+            totalCents: o.totalCents
+          }];
+        });
+      return {
+        purchaseItemId: pi.id,
+        productId: pi.productId,
+        productName: pi.productName,
+        totalQuantity: pi.quantity,
+        receivedQuantity: pi.receivedQuantity ?? 0,
+        shortageQuantity: pi.shortageQuantity ?? 0,
+        pendingQuantity,
+        reservedOrders,
+        openingReservationsQuantity: 0
+      };
+    });
+    return latency(result);
+  },
+
+  async declareItemShortage(purchaseItemId: string, quantity: number, notes?: string) {
+    let targetPurchase: Purchase | undefined;
+    for (const p of state.purchases) {
+      const item = p.items.find((i) => i.id === purchaseItemId);
+      if (item) {
+        targetPurchase = p;
+        item.shortageQuantity = (item.shortageQuantity ?? 0) + quantity;
+        const prod = state.products.find((pr) => pr.id === item.productId);
+        if (prod) {
+          prod.incoming = Math.max(0, prod.incoming - quantity);
+          refreshProductAvailability(prod);
+        }
+        break;
+      }
+    }
+    if (!targetPurchase) throw new AppError('business', 'No se encontró el ítem de compra.');
+    if (notes) {
+      targetPurchase.notes = targetPurchase.notes ? `${targetPurchase.notes} | ${notes}` : notes;
+    }
+    const allCompleted = targetPurchase.items.every(
+      (i) => (i.receivedQuantity ?? 0) + (i.shortageQuantity ?? 0) >= i.quantity
+    );
+    if (allCompleted) {
+      targetPurchase.state = 'received';
+      targetPurchase.receivedAt = new Date().toISOString();
+    }
+    state.revision += 1;
+    return latency(targetPurchase);
+  },
+
+  async reassignPurchaseReservations(oldPurchaseItemId: string, newPurchaseId: string) {
+    let oldPurchase: Purchase | undefined;
+    let oldItem: any;
+    for (const p of state.purchases) {
+      const it = p.items.find((i) => i.id === oldPurchaseItemId);
+      if (it) {
+        oldPurchase = p;
+        oldItem = it;
+        break;
+      }
+    }
+    const newPurchase = state.purchases.find((p) => p.id === newPurchaseId);
+    if (!oldPurchase || !oldItem || !newPurchase) {
+      throw new AppError('business', 'Compra o ítem no encontrado.');
+    }
+    const remaining = Math.max(0, oldItem.quantity - (oldItem.receivedQuantity ?? 0) - (oldItem.shortageQuantity ?? 0));
+    oldItem.shortageQuantity = (oldItem.shortageQuantity ?? 0) + remaining;
+    const allCompleted = oldPurchase.items.every(
+      (i) => (i.receivedQuantity ?? 0) + (i.shortageQuantity ?? 0) >= i.quantity
+    );
+    if (allCompleted) {
+      oldPurchase.state = 'received';
+      oldPurchase.receivedAt = new Date().toISOString();
+    }
+    state.revision += 1;
+    return latency({
+      oldPurchase,
+      newPurchase,
+      transferredReservations: 1
+    });
   },
 
   async listMovements(page = 1, pageSize = 30, search = '', filter = 'all') {

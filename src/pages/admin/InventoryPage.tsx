@@ -14,10 +14,13 @@ import {
   ChevronUp,
   History,
   Info,
+  MessageCircle,
   PackageCheck,
+  PackageMinus,
   PackagePlus,
   Pencil,
   Plus,
+  RotateCw,
   Search,
   SlidersHorizontal,
   Sparkles,
@@ -25,6 +28,7 @@ import {
   Truck,
   X
 } from 'lucide-react';
+import { buildWhatsAppUrl } from '@/lib/whatsapp-url';
 import { format, isBefore, isValid, parseISO, startOfDay } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
@@ -41,7 +45,7 @@ import { inventoryStatus, sanitizeDecimalInput, sanitizeIntegerInput } from '@/d
 import { formatMoney, pesosToCents } from '@/domain/money';
 import { can } from '@/domain/permissions';
 import { formatProducts, formatUnits } from '@/domain/quantity';
-import type { InventoryItem, Purchase } from '@/domain/types';
+import type { InventoryItem, Purchase, PurchaseItem, PurchaseImpactItem, ReservedCustomerOrder } from '@/domain/types';
 import { useAuth } from '@/features/auth/AuthProvider';
 import { cn } from '@/lib/cn';
 import { getBusinessApi } from '@/services/business-api';
@@ -358,7 +362,16 @@ export function PurchaseFormModal({
   );
 }
 
-function ReceivePurchaseModal({
+type WizardStep = 'choice' | 'complete_confirm' | 'missing_checklist' | 'missing_resolution';
+
+type MissingItemConfig = {
+  isMissing: boolean;
+  receivedQty: number;
+  delayedResolution: 'later' | 'definitive';
+  reassignedPurchaseNumber?: number;
+};
+
+export function ReceivePurchaseModal({
   purchase,
   onClose,
   onUnblocked
@@ -368,26 +381,212 @@ function ReceivePurchaseModal({
   onUnblocked: (orders: Array<{ id: string; number: number }>) => void;
 }) {
   const queryClient = useQueryClient();
-  const [quantities, setQuantities] = useState<Record<string, number>>(() => {
-    const initial: Record<string, number> = {};
-    for (const item of (purchase.items ?? [])) {
-      initial[item.id] = Math.max(0, item.quantity - (item.receivedQuantity ?? 0) - (item.shortageQuantity ?? 0));
-    }
-    return initial;
-  });
-  const [shortageNotes, setShortageNotes] = useState('');
-  const [confirmShortageMode, setConfirmShortageMode] = useState(false);
+  const [step, setStep] = useState<WizardStep>('choice');
   const [error, setError] = useState<unknown>(null);
   const [operationId] = useState(() => crypto.randomUUID());
 
-  const receive = useMutation({
+  // Consulta de impacto de reservas comprometidas con este pedido
+  const impactQuery = useBusinessQuery({
+    queryKey: ['purchase-impact', purchase.id],
+    queryFn: (api) => api.getPurchaseImpact(purchase.id)
+  });
+
+  const settingsQuery = useBusinessQuery({
+    queryKey: queryKeys.settings,
+    queryFn: (api) => api.getSettings()
+  });
+
+  // Configuración de faltantes por ítem de compra (todos parten desmarcados: isMissing = false)
+  const [missingConfig, setMissingConfig] = useState<Record<string, MissingItemConfig>>(() => {
+    const init: Record<string, MissingItemConfig> = {};
+    for (const item of purchase.items ?? []) {
+      const pending = Math.max(0, item.quantity - (item.receivedQuantity ?? 0) - (item.shortageQuantity ?? 0));
+      init[item.id] = {
+        isMissing: false,
+        receivedQty: pending,
+        delayedResolution: 'later'
+      };
+    }
+    return init;
+  });
+
+  // Seguimiento de pedidos de clientes resueltos (cancelados o reembolsados) en esta sesión
+  const [resolvedOrders, setResolvedOrders] = useState<Record<string, 'cancelled' | 'refunded'>>({});
+  const [actionLoadingOrder, setActionLoadingOrder] = useState<string | null>(null);
+
+  // Estado del mini-modal para crear reposición a otro proveedor
+  const [reorderingItem, setReorderingItem] = useState<{
+    item: PurchaseItem;
+    impact?: PurchaseImpactItem | undefined;
+    missingQty: number;
+  } | null>(null);
+  const [newSupplierName, setNewSupplierName] = useState('');
+  const [newExpectedAt, setNewExpectedAt] = useState('');
+  const [reorderLoading, setReorderLoading] = useState(false);
+
+  // Totales de unidades pendientes
+  const totalPendingUnits = useMemo(() => {
+    return (purchase.items ?? []).reduce(
+      (sum, item) => sum + Math.max(0, item.quantity - (item.receivedQuantity ?? 0) - (item.shortageQuantity ?? 0)),
+      0
+    );
+  }, [purchase.items]);
+
+  const missingItemsList = useMemo(() => {
+    return (purchase.items ?? []).filter((item) => missingConfig[item.id]?.isMissing);
+  }, [purchase.items, missingConfig]);
+
+  const missingCount = missingItemsList.length;
+
+  const totalReceivedUnits = useMemo(() => {
+    if (step === 'choice' || step === 'complete_confirm') {
+      return totalPendingUnits;
+    }
+    return (purchase.items ?? []).reduce((sum, item) => {
+      const pending = Math.max(0, item.quantity - (item.receivedQuantity ?? 0) - (item.shortageQuantity ?? 0));
+      const cfg = missingConfig[item.id];
+      const received = cfg?.isMissing ? (cfg.receivedQty ?? 0) : pending;
+      return sum + received;
+    }, 0);
+  }, [step, purchase.items, missingConfig, totalPendingUnits]);
+
+  // Verificar si hay clientes bloqueantes sin resolver (para faltante definitivo sin reposición y sin cancelar)
+  const hasUnresolvedBlockers = useMemo(() => {
+    if (step !== 'missing_resolution') return false;
+    for (const item of purchase.items ?? []) {
+      const cfg = missingConfig[item.id];
+      if (cfg?.isMissing && cfg.delayedResolution === 'definitive') {
+        if (cfg.reassignedPurchaseNumber) continue;
+        const impactItem = impactQuery.data?.find((i) => i.purchaseItemId === item.id);
+        const pendingOrders = (impactItem?.reservedOrders ?? []).filter(
+          (o) => !resolvedOrders[o.orderId]
+        );
+        if (pendingOrders.length > 0) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }, [step, purchase.items, missingConfig, impactQuery.data, resolvedOrders]);
+
+  // Acción: Cancelar o Reembolsar un pedido de cliente en 1 toque
+  const handleResolveOrder = async (order: ReservedCustomerOrder) => {
+    setActionLoadingOrder(order.orderId);
+    setError(null);
+    try {
+      const api = await getBusinessApi();
+      if (order.paymentState === 'paid') {
+        await api.transitionOrder(order.orderId, 'mark_refunded');
+      }
+      await api.transitionOrder(order.orderId, 'cancel');
+      setResolvedOrders((prev) => ({
+        ...prev,
+        [order.orderId]: order.paymentState === 'paid' ? 'refunded' : 'cancelled'
+      }));
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.ordersRoot }),
+        queryClient.invalidateQueries({ queryKey: ['purchase-impact', purchase.id] }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.inventory }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.dashboard })
+      ]);
+    } catch (err) {
+      setError(err);
+    } finally {
+      setActionLoadingOrder(null);
+    }
+  };
+
+  // Acción: Crear pedido de reposición a otro proveedor y transferir reservas
+  const handleCreateReplacement = async () => {
+    if (!reorderingItem || !newSupplierName.trim()) return;
+    setReorderLoading(true);
+    setError(null);
+    try {
+      const api = await getBusinessApi();
+      const newPurchase = await api.createPurchase({
+        supplierName: newSupplierName.trim(),
+        expectedAt: newExpectedAt ? newExpectedAt : null,
+        notes: `Reposición por faltante en compra #${purchase.number} de ${purchase.supplierName}`,
+        items: [
+          {
+            productId: reorderingItem.item.productId,
+            quantity: reorderingItem.missingQty,
+            unitCostCents: reorderingItem.item.unitCostCents
+          }
+        ]
+      });
+
+      await api.reassignPurchaseReservations(reorderingItem.item.id, newPurchase.id);
+
+      setMissingConfig((prev) => ({
+        ...prev,
+        [reorderingItem.item.id]: {
+          ...prev[reorderingItem.item.id]!,
+          reassignedPurchaseNumber: newPurchase.number
+        }
+      }));
+
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.purchasesRoot }),
+        queryClient.invalidateQueries({ queryKey: ['purchase-impact', purchase.id] }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.ordersRoot })
+      ]);
+      setReorderingItem(null);
+    } catch (err) {
+      setError(err);
+    } finally {
+      setReorderLoading(false);
+    }
+  };
+
+  // Mutación principal para registrar recepción
+  const receiveMutation = useMutation({
     mutationFn: async () => {
       const api = await getBusinessApi();
-      const itemsPayload = (purchase.items ?? []).map((item) => ({
-        purchaseItemId: item.id,
-        receivedQuantity: quantities[item.id] ?? 0
-      }));
-      return api.receivePurchase(purchase.id, itemsPayload, operationId);
+
+      if (step === 'complete_confirm') {
+        const itemsPayload = (purchase.items ?? []).map((item) => ({
+          purchaseItemId: item.id,
+          receivedQuantity: Math.max(0, item.quantity - (item.receivedQuantity ?? 0) - (item.shortageQuantity ?? 0))
+        })).filter((i) => i.receivedQuantity > 0);
+        if (itemsPayload.length === 0) {
+          return { purchase, unblockedOrders: [] };
+        }
+        return api.receivePurchase(purchase.id, itemsPayload, operationId);
+      }
+
+      const itemsPayload = (purchase.items ?? [])
+        .map((item) => {
+          const pending = Math.max(0, item.quantity - (item.receivedQuantity ?? 0) - (item.shortageQuantity ?? 0));
+          const cfg = missingConfig[item.id];
+          const received = cfg?.isMissing ? (cfg.receivedQty ?? 0) : pending;
+          return {
+            purchaseItemId: item.id,
+            receivedQuantity: received
+          };
+        })
+        .filter((item) => item.receivedQuantity > 0);
+
+      let receiveResult = null;
+      if (itemsPayload.length > 0) {
+        receiveResult = await api.receivePurchase(purchase.id, itemsPayload, operationId);
+      } else {
+        receiveResult = { purchase, unblockedOrders: [] };
+      }
+
+      // Asentar faltantes definitivos para aquellos ítems no reasignados
+      for (const item of purchase.items ?? []) {
+        const cfg = missingConfig[item.id];
+        if (cfg?.isMissing && cfg.delayedResolution === 'definitive' && !cfg.reassignedPurchaseNumber) {
+          const pending = Math.max(0, item.quantity - (item.receivedQuantity ?? 0) - (item.shortageQuantity ?? 0));
+          const missingQty = pending - cfg.receivedQty;
+          if (missingQty > 0) {
+            await api.declareItemShortage(item.id, missingQty, 'Faltante definitivo informado por el distribuidor');
+          }
+        }
+      }
+
+      return receiveResult;
     },
     onSuccess: async (data) => {
       await Promise.all([
@@ -411,67 +610,43 @@ function ReceivePurchaseModal({
     }
   });
 
-  const closeShortage = useMutation({
-    mutationFn: async () => {
-      const api = await getBusinessApi();
-      return api.closePurchaseWithShortage(
-        purchase.id,
-        shortageNotes.trim() || 'Cerrado con faltante definitivo de distribuidor'
-      );
-    },
-    onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: queryKeys.openingReservations }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.storefrontProducts }),
-        queryClient.invalidateQueries({ queryKey: ['storefront-product'] }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.purchasesRoot }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.inventory }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.ordersRoot }),
-        queryClient.invalidateQueries({ queryKey: ['movements'] }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.dashboard }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.products })
-      ]);
-      onClose();
-    },
-    onError: (err: unknown) => {
-      setError(err);
-    }
-  });
-
-  const totalToReceive = Object.values(quantities).reduce((sum, q) => sum + (q || 0), 0);
-  const totalRemaining = (purchase.items ?? []).reduce(
-    (sum, item) => sum + Math.max(0, item.quantity - (item.receivedQuantity ?? 0) - (item.shortageQuantity ?? 0)),
-    0
-  );
-  const isPartial = totalToReceive < totalRemaining;
-
   return (
     <Modal
       isOpen={true}
-      onClose={() => { if (!receive.isPending && !closeShortage.isPending) onClose(); }}
+      onClose={() => { if (!receiveMutation.isPending && !reorderLoading) onClose(); }}
       ariaLabelledBy="receive-modal-title"
       maxWidth="lg"
-      className="p-0 sm:p-0 flex flex-col max-h-[90vh] overflow-hidden"
+      className="p-0 sm:p-0 flex flex-col max-h-[92vh] overflow-hidden"
     >
+      {/* Header del modal */}
       <div className="flex items-start justify-between border-b border-ink-950/6 bg-white px-6 pt-6 pb-4 sm:px-8 sm:pt-8 shrink-0">
         <div>
-          <h2 id="receive-modal-title" className="font-display text-2xl sm:text-3xl font-black text-ink-950">
-            Recepción de Compra #{purchase.number}
+          <div className="flex items-center gap-2">
+            <span className="px-2.5 py-0.5 rounded-lg bg-cream-100 text-ink-800 text-xs font-black">
+              Compra #{purchase.number}
+            </span>
+            <span className="text-xs font-bold text-ink-500">
+              Proveedor: <strong className="text-ink-950">{purchase.supplierName}</strong>
+            </span>
+          </div>
+          <h2 id="receive-modal-title" className="mt-1 font-display text-2xl sm:text-3xl font-black text-ink-950">
+            {step === 'choice' && `¿Cómo llegó el pedido #${purchase.number}${purchase.supplierName ? ` de ${purchase.supplierName}` : ''}?`}
+            {step === 'complete_confirm' && `Confirmar ingreso completo`}
+            {step === 'missing_checklist' && `Control de faltantes`}
+            {step === 'missing_resolution' && `Resolución de faltantes`}
           </h2>
-          <p className="mt-1 text-[14.5px] font-medium text-ink-700">
-            Proveedor: <strong className="text-ink-950">{purchase.supplierName}</strong>
-          </p>
         </div>
         <button
           className="grid size-11 shrink-0 place-items-center rounded-full hover:bg-cream-100 text-ink-600 transition"
-          onClick={() => { if (!receive.isPending && !closeShortage.isPending) onClose(); }}
-          disabled={receive.isPending || closeShortage.isPending}
+          onClick={() => { if (!receiveMutation.isPending && !reorderLoading) onClose(); }}
+          disabled={receiveMutation.isPending || reorderLoading}
           aria-label="Cerrar modal"
         >
           <X className="size-5" />
         </button>
       </div>
 
+      {/* Cuerpo principal scrolleable */}
       <div className="flex-1 overflow-y-auto px-6 py-5 sm:px-8 space-y-5 custom-scrollbar">
         {error ? (
           <div className="rounded-xl bg-red-50 border border-red-200 p-3 text-sm font-semibold text-red-800">
@@ -479,138 +654,658 @@ function ReceivePurchaseModal({
           </div>
         ) : null}
 
-        <div className="rounded-2xl bg-cream-50 p-4 border border-ink-950/6 text-xs text-ink-700 space-y-1">
-          <p className="font-bold text-ink-900">Control de mercadería recibida:</p>
-          <p>
-            Verificá las unidades físicas recibidas del distribuidor. Al confirmar la recepción, el stock físico se incrementa y los pedidos que aguardaban reposición quedarán habilitados para entrega.
-          </p>
-        </div>
+        {/* ============================================================ */}
+        {/* PASO 0: DOS CAMINOS VISUALES GIGANTES                        */}
+        {/* ============================================================ */}
+        {step === 'choice' && (
+          <div className="space-y-6 py-2">
+            <div className="space-y-1">
+              <p className="text-sm font-medium text-ink-700">
+                Seleccioná cómo se recibió la mercadería del proveedor {purchase.supplierName}:
+              </p>
+            </div>
 
-        <div className="space-y-3">
-          <p className="text-xs font-black uppercase tracking-wider text-ink-500">
-            Productos a ingresar
-          </p>
-          {(purchase.items ?? []).map((item) => {
-            const pending = Math.max(0, item.quantity - (item.receivedQuantity ?? 0) - (item.shortageQuantity ?? 0));
-            const currentVal = quantities[item.id] ?? pending;
-
-            return (
-              <div
-                key={item.id}
-                className="rounded-2xl border border-ink-950/8 bg-white p-4 shadow-sm space-y-2"
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* Opción 1: Llegó TODO completo */}
+              <button
+                type="button"
+                onClick={() => setStep('complete_confirm')}
+                className="group relative flex flex-col items-start p-6 rounded-3xl border-2 border-emerald-500/30 bg-emerald-50/40 hover:bg-emerald-50 hover:border-emerald-500 transition-all shadow-sm text-left active:scale-[0.99] cursor-pointer"
               >
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <h4 className="text-[15px] font-black text-ink-950">{item.productName}</h4>
-                    <p className="text-xs font-semibold text-ink-600">
-                      Pedido total: {item.quantity} u.
-                      {item.receivedQuantity > 0 ? ` · Ya recibidas: ${item.receivedQuantity} u.` : ''}
-                      {item.shortageQuantity > 0 ? ` · Faltante previo: ${item.shortageQuantity} u.` : ''}
-                      {' '}(Pendientes: {pending} u.)
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    <span className="text-xs font-bold text-ink-500 block">Costo unitario</span>
-                    <span className="text-sm font-bold text-ink-800">{formatMoney(item.unitCostCents)}</span>
-                  </div>
+                <div className="size-12 rounded-2xl bg-emerald-600 text-white grid place-items-center mb-4 shadow-md group-hover:scale-105 transition-transform">
+                  <CheckCircle2 className="size-7" />
                 </div>
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-100/80 text-emerald-800 text-xs font-black mb-2">
+                  Todo correcto
+                </span>
+                <h3 className="text-lg sm:text-xl font-black text-ink-950 group-hover:text-emerald-950">
+                  Llegó TODO completo
+                </h3>
+                <p className="mt-1 text-xs font-medium text-ink-700 leading-relaxed">
+                  Llegaron todas las {totalPendingUnits} unidades pendientes de los {purchase.items?.length ?? 0} productos pedidos.
+                </p>
+                <div className="mt-5 pt-3 border-t border-emerald-200/60 w-full flex items-center justify-between text-xs font-bold text-emerald-800">
+                  <span>Ingresar todo a stock</span>
+                  <span className="font-black text-base">→</span>
+                </div>
+              </button>
 
-                <div className="flex items-center justify-between gap-4 pt-2 border-t border-ink-950/6">
-                  <label htmlFor={`receive-qty-${item.id}`} className="text-xs font-bold text-ink-800">
-                    Unidades a ingresar en esta entrega:
-                  </label>
-                  <input
-                    id={`receive-qty-${item.id}`}
-                    type="number"
-                    min="0"
-                    max={pending}
-                    disabled={receive.isPending || closeShortage.isPending}
-                    value={currentVal}
-                    onChange={(e) => {
-                      const val = Math.max(0, Math.min(pending, parseInt(e.target.value, 10) || 0));
-                      setQuantities((prev) => ({ ...prev, [item.id]: val }));
-                    }}
-                    className="h-10 w-24 rounded-xl border border-ink-950/15 text-center font-black text-ink-950 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
-                  />
+              {/* Opción 2: Llegó con faltante / parte */}
+              <button
+                type="button"
+                onClick={() => setStep('missing_checklist')}
+                className="group relative flex flex-col items-start p-6 rounded-3xl border-2 border-amber-500/30 bg-amber-50/40 hover:bg-amber-50 hover:border-amber-500 transition-all shadow-sm text-left active:scale-[0.99] cursor-pointer"
+              >
+                <div className="size-12 rounded-2xl bg-amber-500 text-white grid place-items-center mb-4 shadow-md group-hover:scale-105 transition-transform">
+                  <PackageMinus className="size-7" />
                 </div>
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-100/80 text-amber-900 text-xs font-black mb-2">
+                  Entrega parcial o quiebre
+                </span>
+                <h3 className="text-lg sm:text-xl font-black text-ink-950 group-hover:text-amber-950">
+                  Llegó con faltante / parte
+                </h3>
+                <p className="mt-1 text-xs font-medium text-ink-700 leading-relaxed">
+                  Faltó algún producto o vinieron menos unidades de las pedidas.
+                </p>
+                <div className="mt-5 pt-3 border-t border-amber-200/60 w-full flex items-center justify-between text-xs font-bold text-amber-900">
+                  <span>Controlar qué faltó</span>
+                  <span className="font-black text-base">→</span>
+                </div>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ============================================================ */}
+        {/* PASO COMPLETO: CONFIRMACIÓN DE INGRESO TOTAL                 */}
+        {/* ============================================================ */}
+        {step === 'complete_confirm' && (
+          <div className="space-y-4 py-1">
+            <div className="rounded-2xl bg-emerald-50 border border-emerald-200 p-4 space-y-2">
+              <div className="flex items-center gap-2 text-emerald-950 font-black text-sm">
+                <CheckCircle2 className="size-5 text-emerald-600 shrink-0" />
+                <span>Ingreso del 100% de la mercadería</span>
               </div>
-            );
-          })}
-        </div>
+              <p className="text-xs font-medium text-emerald-900 leading-relaxed">
+                Se ingresarán <strong>{totalPendingUnits} unidades</strong> a stock físico. Los pedidos de clientes que se encontraban aguardando reposición quedarán automáticamente habilitados para entrega.
+              </p>
+            </div>
 
-        {confirmShortageMode ? (
-          <div className="rounded-2xl bg-red-50 border border-red-200 p-4 space-y-3">
-            <h4 className="text-sm font-black text-red-950">Confirmar cierre con faltante definitivo</h4>
-            <p className="text-xs font-medium text-red-900 leading-relaxed">
-              Esta acción marcará las unidades pendientes como faltante definitivo de distribuidor y cerrará la compra. Si hay pedidos de clientes esperando estas unidades, quedarán marcados como faltante para acordar cambios.
-            </p>
-            <Field label="Aclaración del proveedor">
-              <Input
-                placeholder="Ej. Quiebre de stock en fábrica sin fecha de reingreso"
-                value={shortageNotes}
-                onChange={(e) => setShortageNotes(e.target.value)}
-              />
-            </Field>
-            <div className="flex items-center gap-2 pt-1">
-              <Button
-                variant="primary"
-                size="sm"
-                className="bg-red-600 hover:bg-red-700 text-white font-bold"
-                loading={closeShortage.isPending}
-                disabled={receive.isPending}
-                onClick={() => closeShortage.mutate()}
-              >
-                Confirmar cierre definitivo
-              </Button>
+            <div className="space-y-2.5">
+              <p className="text-xs font-black uppercase tracking-wider text-ink-500">
+                Detalle de productos a ingresar
+              </p>
+              <div className="space-y-2 max-h-[48vh] overflow-y-auto pr-1 custom-scrollbar">
+                {(purchase.items ?? []).map((item) => {
+                  const pending = Math.max(0, item.quantity - (item.receivedQuantity ?? 0) - (item.shortageQuantity ?? 0));
+                  return (
+                    <div
+                      key={item.id}
+                      className="rounded-xl border border-ink-950/8 bg-white p-3.5 flex items-center justify-between gap-3 text-xs"
+                    >
+                      <div>
+                        <h4 className="font-black text-sm text-ink-950">{item.productName}</h4>
+                        <p className="text-ink-600 font-semibold mt-0.5">
+                          Ingresan {pending} unidades
+                          {item.receivedQuantity > 0 ? ` · Ya recibidas previas: ${item.receivedQuantity} u.` : ''}
+                        </p>
+                      </div>
+                      <span className="font-black text-sm text-ink-900 shrink-0">
+                        {formatMoney(item.unitCostCents)} / u.
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ============================================================ */}
+        {/* PASO 1: CHECKLIST DE FALTANTES ("Marcá los que falten")       */}
+        {/* ============================================================ */}
+        {step === 'missing_checklist' && (
+          <div className="space-y-4 py-1">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-ink-950/8 pb-3">
+              <div>
+                <h3 className="text-lg sm:text-xl font-black text-ink-950">
+                  ¿Qué productos faltan en esta entrega?
+                </h3>
+                <p className="text-xs font-semibold text-ink-600 mt-0.5">
+                  Por defecto asumimos que todo vino completo. Tildá únicamente los productos que faltaron o vinieron incompletos.
+                </p>
+              </div>
+              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-100 text-amber-950 font-black text-xs shrink-0 self-start sm:self-auto">
+                👉 Marcá los que falten
+              </span>
+            </div>
+
+            <div className="space-y-3 max-h-[50vh] overflow-y-auto pr-1 custom-scrollbar">
+              {(purchase.items ?? []).map((item) => {
+                const pending = Math.max(0, item.quantity - (item.receivedQuantity ?? 0) - (item.shortageQuantity ?? 0));
+                const cfg = missingConfig[item.id] || { isMissing: false, receivedQty: pending, delayedResolution: 'later' };
+
+                return (
+                  <div
+                    key={item.id}
+                    className={cn(
+                      "rounded-2xl border p-4 transition-all space-y-3",
+                      cfg.isMissing
+                        ? "border-amber-400 bg-amber-50/50 shadow-sm"
+                        : "border-ink-950/8 bg-white hover:border-ink-950/20"
+                    )}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <label
+                        htmlFor={`check-missing-${item.id}`}
+                        className="flex items-start gap-3 cursor-pointer flex-1 select-none"
+                      >
+                        <input
+                          id={`check-missing-${item.id}`}
+                          type="checkbox"
+                          checked={cfg.isMissing}
+                          onChange={(e) => {
+                            const checked = e.target.checked;
+                            setMissingConfig((prev) => ({
+                              ...prev,
+                              [item.id]: {
+                                ...prev[item.id]!,
+                                isMissing: checked,
+                                receivedQty: checked ? 0 : pending
+                              }
+                            }));
+                          }}
+                          className="size-5 rounded-lg border-ink-950/20 text-amber-600 focus:ring-amber-500/20 mt-0.5"
+                        />
+                        <div>
+                          <h4 className="text-[15px] font-black text-ink-950 leading-snug">
+                            {item.productName}
+                          </h4>
+                          <p className="text-xs font-semibold text-ink-600 mt-0.5">
+                            Pedido total: {item.quantity} u.
+                            {item.receivedQuantity > 0 ? ` · Ya recibidas: ${item.receivedQuantity} u.` : ''}
+                            {' '}(Pendientes en esta entrega: {pending} u.)
+                          </p>
+                        </div>
+                      </label>
+
+                      {cfg.isMissing ? (
+                        <span className="shrink-0 px-2.5 py-1 rounded-xl bg-amber-200/80 text-amber-950 text-xs font-black">
+                          Con faltante
+                        </span>
+                      ) : (
+                        <span className="shrink-0 px-2.5 py-1 rounded-xl bg-emerald-100/70 text-emerald-800 text-xs font-black flex items-center gap-1">
+                          <Check className="size-3" /> Llega completo ({pending} u.)
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Si está marcado como que faltó, preguntar si faltó TODO o vino una parte */}
+                    {cfg.isMissing && (
+                      <div className="pt-2 border-t border-amber-200/60 flex flex-wrap items-center justify-between gap-3 text-xs">
+                        <span className="font-bold text-ink-800">
+                          ¿Llegó alguna unidad de este producto?
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setMissingConfig((prev) => ({
+                                ...prev,
+                                [item.id]: { ...prev[item.id]!, receivedQty: 0 }
+                              }));
+                            }}
+                            className={cn(
+                              "px-3 py-1.5 rounded-xl font-black text-xs transition cursor-pointer",
+                              cfg.receivedQty === 0
+                                ? "bg-rose-600 text-white shadow-xs"
+                                : "bg-white text-ink-700 border border-ink-950/10 hover:bg-cream-100"
+                            )}
+                          >
+                            No llegó nada (0 u.)
+                          </button>
+                          <div className="flex items-center gap-1.5 bg-white border border-ink-950/15 rounded-xl px-2.5 py-1">
+                            <span className="font-semibold text-ink-700">Llegaron:</span>
+                            <input
+                              type="number"
+                              min={0}
+                              max={pending - 1}
+                              value={cfg.receivedQty}
+                              onChange={(e) => {
+                                const val = Math.max(0, Math.min(pending - 1, parseInt(e.target.value, 10) || 0));
+                                setMissingConfig((prev) => ({
+                                  ...prev,
+                                  [item.id]: { ...prev[item.id]!, receivedQty: val }
+                                }));
+                              }}
+                              className="w-12 text-center font-black text-ink-950 focus:outline-none"
+                            />
+                            <span className="font-semibold text-ink-500">de {pending}</span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* ============================================================ */}
+        {/* PASO 2: DIAGNÓSTICO Y ASISTENCIA DE CLIENTES                */}
+        {/* ============================================================ */}
+        {step === 'missing_resolution' && (
+          <div className="space-y-5 py-1">
+            <div className="border-b border-ink-950/8 pb-3">
+              <h3 className="text-lg sm:text-xl font-black text-ink-950">
+                Diagnóstico de productos con faltante
+              </h3>
+              <p className="text-xs font-semibold text-ink-600 mt-0.5">
+                Por cada producto que faltó, indicá si el distribuidor lo mandará después o si es faltante definitivo.
+              </p>
+            </div>
+
+            <div className="space-y-4 max-h-[55vh] overflow-y-auto pr-1 custom-scrollbar">
+              {missingItemsList.map((item) => {
+                const pending = Math.max(0, item.quantity - (item.receivedQuantity ?? 0) - (item.shortageQuantity ?? 0));
+                const cfg = missingConfig[item.id]!;
+                const missingUnits = pending - cfg.receivedQty;
+                const impactItem = impactQuery.data?.find((i) => i.purchaseItemId === item.id);
+                const reservedOrders = impactItem?.reservedOrders ?? [];
+                const isDefinitive = cfg.delayedResolution === 'definitive';
+                const isReassigned = Boolean(cfg.reassignedPurchaseNumber);
+
+                return (
+                  <div
+                    key={item.id}
+                    className="rounded-2xl border border-ink-950/10 bg-white p-4 sm:p-5 shadow-sm space-y-4"
+                  >
+                    {/* Header del producto */}
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <h4 className="text-base font-black text-ink-950">{item.productName}</h4>
+                        <p className="text-xs font-bold text-rose-700 mt-0.5">
+                          Faltan {missingUnits} unidades {cfg.receivedQty > 0 ? `(llegaron ${cfg.receivedQty} de ${pending})` : `(no llegó ninguna de ${pending})`}
+                        </p>
+                      </div>
+                      <span className="text-xs font-bold text-ink-500">
+                        Costo: {formatMoney(item.unitCostCents)}
+                      </span>
+                    </div>
+
+                    {/* Pregunta: ¿El proveedor te lo envía después? */}
+                    <div className="rounded-xl bg-cream-50 p-3.5 border border-ink-950/6 space-y-2.5">
+                      <p className="text-xs font-black text-ink-900 uppercase tracking-wide">
+                        ¿El proveedor te lo envía después?
+                      </p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setMissingConfig((prev) => ({
+                              ...prev,
+                              [item.id]: { ...prev[item.id]!, delayedResolution: 'later' }
+                            }));
+                          }}
+                          className={cn(
+                            "p-3 rounded-xl text-left border transition cursor-pointer",
+                            !isDefinitive
+                              ? "border-brand-500 bg-brand-500/10 text-brand-950 shadow-xs"
+                              : "border-ink-950/10 bg-white text-ink-700 hover:bg-cream-100"
+                          )}
+                        >
+                          <p className="font-black text-xs flex items-center gap-1.5">
+                            <span>⏳</span> SÍ, viene después
+                          </p>
+                          <p className="text-[11px] font-medium text-ink-600 mt-0.5">
+                            Queda pendiente en esta misma compra.
+                          </p>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setMissingConfig((prev) => ({
+                              ...prev,
+                              [item.id]: { ...prev[item.id]!, delayedResolution: 'definitive' }
+                            }));
+                          }}
+                          className={cn(
+                            "p-3 rounded-xl text-left border transition cursor-pointer",
+                            isDefinitive
+                              ? "border-rose-500 bg-rose-500/10 text-rose-950 shadow-xs"
+                              : "border-ink-950/10 bg-white text-ink-700 hover:bg-cream-100"
+                          )}
+                        >
+                          <p className="font-black text-xs flex items-center gap-1.5">
+                            <span>🛑</span> NO (Faltante definitivo)
+                          </p>
+                          <p className="text-[11px] font-medium text-ink-600 mt-0.5">
+                            El distribuidor no lo entregará más.
+                          </p>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Si es Faltante Definitivo: Análisis de clientes reservados */}
+                    {isDefinitive && (
+                      <div className="space-y-3 pt-1">
+                        {isReassigned ? (
+                          <div className="rounded-xl bg-emerald-50 border border-emerald-200 p-3 text-xs font-semibold text-emerald-950 flex items-center gap-2">
+                            <Check className="size-4 text-emerald-600 shrink-0" />
+                            <span>
+                              Reposición creada en <strong>Compra #{cfg.reassignedPurchaseNumber}</strong>. Las reservas de los clientes se trasladaron automáticamente.
+                            </span>
+                          </div>
+                        ) : reservedOrders.length === 0 ? (
+                          <div className="rounded-xl bg-slate-50 border border-slate-200 p-3 text-xs text-slate-700 flex items-center gap-2">
+                            <Check className="size-4 text-slate-500 shrink-0" />
+                            <span>
+                              <strong>Sin clientes esperando:</strong> Este producto reponía stock general de tienda. Podés cerrarlo con faltante sin afectar ningún pedido.
+                            </span>
+                          </div>
+                        ) : (
+                          /* TIENE CLIENTES RESERVADOS: GUÍA PASO A PASO */
+                          <div className="rounded-2xl bg-rose-50/70 border border-rose-200 p-4 space-y-3">
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-rose-200 pb-2">
+                              <div>
+                                <h5 className="text-xs font-black uppercase tracking-wide text-rose-950 flex items-center gap-1.5">
+                                  <span>⚠️</span> {reservedOrders.length} clientes esperando este producto
+                                </h5>
+                                <p className="text-[11.5px] font-medium text-rose-900 mt-0.5">
+                                  Para no dejarlos en el aire, elegí cómo proceder con sus pedidos:
+                                </p>
+                              </div>
+
+                              {/* Opción 1: Crear pedido de reposición a otro proveedor */}
+                              <Button
+                                type="button"
+                                variant="secondary"
+                                size="sm"
+                                onClick={() => {
+                                  setReorderingItem({
+                                    item,
+                                    impact: impactItem,
+                                    missingQty: missingUnits
+                                  });
+                                  setNewSupplierName('');
+                                  setNewExpectedAt('');
+                                }}
+                                className="shrink-0 text-xs font-black rounded-xl bg-white hover:bg-cream-100 border border-rose-300 text-rose-950"
+                              >
+                                <RotateCw className="size-3.5" /> Pedir reposición a otro proveedor
+                              </Button>
+                            </div>
+
+                            {/* Lista guiada de clientes afectados */}
+                            <div className="space-y-2 pt-1">
+                              {reservedOrders.map((ord) => {
+                                const isResolved = resolvedOrders[ord.orderId];
+                                return (
+                                  <div
+                                    key={ord.orderId}
+                                    className={cn(
+                                      "rounded-xl border p-3 text-xs flex flex-wrap items-center justify-between gap-3 transition",
+                                      isResolved
+                                        ? "bg-emerald-50/70 border-emerald-200 text-emerald-950"
+                                        : "bg-white border-rose-200/80 text-ink-950 shadow-xs"
+                                    )}
+                                  >
+                                    <div>
+                                      <div className="flex items-center gap-2">
+                                        <span className="font-black text-sm">Pedido #{ord.orderNumber}</span>
+                                        <span className="font-bold text-ink-700">· {ord.customerName}</span>
+                                        <span className="px-2 py-0.5 rounded-lg bg-cream-100 font-extrabold text-[11px]">
+                                          {ord.reservedQuantity} u.
+                                        </span>
+                                      </div>
+                                      <div className="flex items-center gap-2 mt-1 text-[11.5px] font-medium text-ink-600">
+                                        <span>{formatMoney(ord.totalCents)}</span>
+                                        <span>·</span>
+                                        <span className={ord.paymentState === 'paid' ? "text-emerald-700 font-bold" : "text-amber-800 font-bold"}>
+                                          {ord.paymentState === 'paid' ? 'Pagado' : 'Pago pendiente'}
+                                        </span>
+                                        {ord.customerPhone && (
+                                          <>
+                                            <span>·</span>
+                                            <span>{ord.customerPhone}</span>
+                                          </>
+                                        )}
+                                      </div>
+                                    </div>
+
+                                    {/* Acciones para el cliente */}
+                                    <div className="flex flex-wrap items-center gap-2 shrink-0">
+                                      {isResolved ? (
+                                        <span className="inline-flex items-center gap-1 font-black text-xs text-emerald-700 px-3 py-1 bg-emerald-100 rounded-xl">
+                                          <Check className="size-3.5" /> Registrado en sistema ({isResolved === 'refunded' ? 'reembolsado y cancelado' : 'cancelado'})
+                                        </span>
+                                      ) : (
+                                        <>
+                                          {ord.customerPhone && (
+                                            <a
+                                              href={buildWhatsAppUrl(
+                                                ord.customerPhone,
+                                                `Hola ${ord.customerName}, te escribimos de ${settingsQuery.data?.storeName || 'Tienda de Suplementos'} sobre tu pedido #${ord.orderNumber}. El distribuidor nos notificó un faltante de fábrica en el producto ${item.productName}. ¿Preferís que lo cambiemos por otra opción o te reintegremos el dinero?`
+                                              )}
+                                              target="_blank"
+                                              rel="noreferrer"
+                                              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs transition"
+                                              title="Enviar mensaje por WhatsApp"
+                                            >
+                                              <MessageCircle className="size-3.5" /> WhatsApp
+                                            </a>
+                                          )}
+                                          <Button
+                                            type="button"
+                                            variant="secondary"
+                                            size="sm"
+                                            loading={actionLoadingOrder === ord.orderId}
+                                            onClick={() => handleResolveOrder(ord)}
+                                            className="text-rose-700 hover:bg-rose-100/70 border border-rose-200 font-black text-xs rounded-xl shadow-xs"
+                                            title="Registrar en la base de datos la cancelación/reembolso y liberar la reserva"
+                                          >
+                                            {ord.paymentState === 'paid' ? 'Reembolsar y cancelar en app' : 'Cancelar pedido en app'}
+                                          </Button>
+                                          <a
+                                            href={`/admin/pedidos?search=${ord.orderNumber}`}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            className="text-[11px] font-bold text-ink-600 hover:text-ink-950 underline px-1"
+                                            title="Abrir este pedido en una nueva pestaña"
+                                          >
+                                            Ver pedido ↗
+                                          </a>
+                                        </>
+                                      )}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Footer de navegación entre pasos */}
+      <div className="border-t border-ink-950/6 bg-white px-6 py-4 sm:px-8 shrink-0">
+        <div className="flex items-center justify-between gap-3">
+          {step === 'choice' && (
+            <>
+              <span className="text-xs font-semibold text-ink-500">
+                Paso 1 de 2: Selección de modo de ingreso
+              </span>
               <Button
                 variant="ghost"
-                size="sm"
-                onClick={() => setConfirmShortageMode(false)}
-                disabled={closeShortage.isPending}
+                size="md"
+                onClick={onClose}
+                disabled={receiveMutation.isPending}
               >
                 Cancelar
               </Button>
-            </div>
-          </div>
-        ) : isPartial ? (
-          <div className="rounded-xl bg-amber-50 border border-amber-200 p-3 text-xs text-amber-900 flex items-start justify-between gap-3">
-            <div>
-              <p className="font-bold">Recepción parcial ({totalToReceive} de {totalRemaining} pendientes)</p>
-              <p className="mt-0.5">
-                La compra permanecerá abierta esperando el resto de las unidades. Si el distribuidor no entregará el resto, podés cerrarla con faltante.
-              </p>
-            </div>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => setConfirmShortageMode(true)}
-              disabled={receive.isPending}
-              className="shrink-0 text-[11px] font-bold"
-            >
-              Declarar faltante
-            </Button>
-          </div>
-        ) : null}
-        {totalToReceive <= 0 && !confirmShortageMode ? (
-          <p role="status" className="text-sm font-bold text-amber-900">Ingresá al menos una unidad recibida. Si no llegará ninguna, elegí “Declarar faltante”.</p>
-        ) : null}
+            </>
+          )}
+
+          {step === 'complete_confirm' && (
+            <>
+              <Button
+                variant="ghost"
+                size="md"
+                onClick={() => setStep('choice')}
+                disabled={receiveMutation.isPending}
+              >
+                Volver
+              </Button>
+              <Button
+                variant="primary"
+                size="md"
+                loading={receiveMutation.isPending}
+                onClick={() => receiveMutation.mutate()}
+                className="font-black bg-emerald-600 hover:bg-emerald-700"
+              >
+                <CheckCircle2 className="size-4" /> Confirmar ingreso completo ({totalPendingUnits} u.)
+              </Button>
+            </>
+          )}
+
+          {step === 'missing_checklist' && (
+            <>
+              <Button
+                variant="ghost"
+                size="md"
+                onClick={() => setStep('choice')}
+                disabled={receiveMutation.isPending}
+              >
+                Volver
+              </Button>
+              <div className="flex items-center gap-3">
+                {missingCount === 0 && (
+                  <span className="text-xs font-bold text-amber-900 hidden sm:inline">
+                    Marcá al menos un producto con faltante, o volvé para ingresar todo completo.
+                  </span>
+                )}
+                <Button
+                  variant="primary"
+                  size="md"
+                  disabled={missingCount === 0 || receiveMutation.isPending}
+                  onClick={() => setStep('missing_resolution')}
+                  className="font-black"
+                >
+                  Continuar ({missingCount} con faltante) →
+                </Button>
+              </div>
+            </>
+          )}
+
+          {step === 'missing_resolution' && (
+            <>
+              <Button
+                variant="ghost"
+                size="md"
+                onClick={() => setStep('missing_checklist')}
+                disabled={receiveMutation.isPending}
+              >
+                Volver a la lista
+              </Button>
+              <div className="flex flex-col sm:flex-row items-end sm:items-center gap-2">
+                {hasUnresolvedBlockers && (
+                  <span className="text-xs font-bold text-rose-800 text-right">
+                    Resolvé los clientes esperando productos con faltante definitivo para finalizar.
+                  </span>
+                )}
+                <Button
+                  variant="primary"
+                  size="md"
+                  loading={receiveMutation.isPending}
+                  disabled={hasUnresolvedBlockers || receiveMutation.isPending}
+                  onClick={() => receiveMutation.mutate()}
+                  className="font-black bg-brand-500 hover:bg-brand-600"
+                >
+                  <CheckCircle2 className="size-4" /> Finalizar recepción ({totalReceivedUnits} u. a ingresar)
+                </Button>
+              </div>
+            </>
+          )}
+        </div>
       </div>
 
-      <div className="flex items-center justify-end gap-3 border-t border-ink-950/6 bg-white px-6 py-4 sm:px-8 shrink-0">
-        <Button variant="ghost" size="md" onClick={() => { if (!receive.isPending && !closeShortage.isPending) onClose(); }} disabled={receive.isPending || closeShortage.isPending}>
-          Cancelar
-        </Button>
-        <Button
-          variant="primary"
-          size="md"
-          loading={receive.isPending}
-          disabled={totalToReceive <= 0 || closeShortage.isPending || confirmShortageMode}
-          onClick={() => receive.mutate()}
-          className="font-black"
+      {/* Mini-Modal de Creación de Reposición a otro proveedor */}
+      {reorderingItem && (
+        <Modal
+          isOpen={true}
+          onClose={() => { if (!reorderLoading) setReorderingItem(null); }}
+          ariaLabelledBy="reorder-title"
+          maxWidth="sm"
         >
-          <CheckCircle2 className="size-4" /> Ingresar {totalToReceive} unidades
-        </Button>
-      </div>
+          <div className="space-y-4">
+            <div>
+              <span className="text-xs font-black uppercase tracking-wider text-brand-600">
+                {reorderingItem.item.productName}
+              </span>
+              <h3 id="reorder-title" className="text-lg font-black text-ink-950 mt-0.5">
+                Crear pedido de reposición a otro proveedor
+              </h3>
+              <p className="text-xs font-medium text-ink-600 mt-1">
+                Se creará una nueva orden de compra por <strong>{reorderingItem.missingQty} unidades</strong> y se trasladarán automáticamente las reservas de los clientes.
+              </p>
+            </div>
+
+            <div className="space-y-3">
+              <Field label="Nombre del nuevo proveedor / distribuidor" hint="Ej: SupleAr, Natulab, etc.">
+                <Input
+                  placeholder="Distribuidor..."
+                  value={newSupplierName}
+                  onChange={(e) => setNewSupplierName(e.target.value)}
+                  disabled={reorderLoading}
+                />
+              </Field>
+
+              <Field label="Fecha estimada de entrega (opcional)">
+                <DatePicker
+                  value={newExpectedAt}
+                  onChange={(val) => setNewExpectedAt(val)}
+                  disabled={reorderLoading}
+                />
+              </Field>
+
+              <div className="rounded-xl bg-amber-50 border border-amber-200 p-3 text-xs text-amber-950 font-semibold">
+                Al confirmar, los clientes que estaban esperando este producto quedarán asignados a la nueva compra sin perder su prioridad.
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-ink-950/8">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setReorderingItem(null)}
+                disabled={reorderLoading}
+              >
+                Cancelar
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                loading={reorderLoading}
+                disabled={!newSupplierName.trim()}
+                onClick={handleCreateReplacement}
+                className="font-black"
+              >
+                Confirmar reposición
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </Modal>
   );
 }
