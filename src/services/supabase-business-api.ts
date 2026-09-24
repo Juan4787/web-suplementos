@@ -365,10 +365,12 @@ export const supabaseBusinessApi: BusinessApi = {
       const purchasePage = await rpc<PurchasesPage>('list_purchases', { p_page: 1, p_page_size: 100 });
       const current = purchasePage?.items?.find((p) => p.id === purchaseId);
       if (current) {
-        itemsPayload = (current.items ?? []).map((pi) => ({
-          purchaseItemId: pi.id,
-          receivedQuantity: Math.max(0, pi.quantity - (pi.receivedQuantity ?? 0) - (pi.shortageQuantity ?? 0))
-        }));
+        itemsPayload = (current.items ?? [])
+          .map((pi) => ({
+            purchaseItemId: pi.id,
+            receivedQuantity: Math.max(0, pi.quantity - (pi.receivedQuantity ?? 0) - (pi.shortageQuantity ?? 0))
+          }))
+          .filter((pi) => pi.receivedQuantity > 0);
       } else {
         itemsPayload = [];
       }
