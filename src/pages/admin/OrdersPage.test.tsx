@@ -151,7 +151,7 @@ it('pide la misma verificación al enviar un pedido histórico listo', async () 
   client.clear();
 });
 
-it('guía una sola vez a recibir mercadería y oculta el armado cuando no hay unidades físicas', async () => {
+it('mantiene visible la tarjeta de bolsita con estado bloqueado e invitación a Inventario cuando toda la mercadería está en camino', async () => {
   const order: Order = {
     ...demoOrders[0]!, orderState: 'confirmed', paymentState: 'gifted', paymentMethod: 'gift',
     preparationState: 'pending', fulfillmentState: 'pending', stockReadiness: 'waiting_incoming',
@@ -175,7 +175,10 @@ it('guía una sola vez a recibir mercadería y oculta el armado cuando no hay un
   expect(screen.queryByText('Falta preparar')).not.toBeInTheDocument();
   expect(screen.getAllByText('Mercadería en camino')).toHaveLength(1);
   expect(screen.getByText(/Recibí la compra en Inventario\. Después completá el armado/)).toBeInTheDocument();
-  expect(screen.queryByRole('region', { name: `Armado del pedido ${order.number}` })).not.toBeInTheDocument();
+  expect(screen.getByRole('region', { name: `Armado del pedido ${order.number}` })).toBeInTheDocument();
+  expect(screen.getByText('0 en bolsita')).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: /Recibir compra en Inventario/i })).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Guardar armado' })).not.toBeInTheDocument();
   expect(screen.queryByText('Medio de pago')).not.toBeInTheDocument();
   expect(screen.queryByText(/Stock descontado/)).not.toBeInTheDocument();
   client.clear();

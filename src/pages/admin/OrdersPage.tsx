@@ -405,8 +405,7 @@ export default function OrdersPage() {
                             </div>
                           </div>
 
-                          {order.orderState === 'confirmed' && order.fulfillmentState === 'pending' &&
-                           (hasPhysicalUnitsToPack || (order.stockReadiness !== 'waiting_incoming' && order.stockReadiness !== 'uncovered')) ? (
+                          {order.orderState === 'confirmed' && order.fulfillmentState === 'pending' ? (
                             <OrderPackingEditor order={order} />
                           ) : null}
 
