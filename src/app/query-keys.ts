@@ -7,6 +7,8 @@ export const queryKeys = {
   dashboard: ['dashboard'] as const,
   products: ['admin-products'] as const,
   inventory: ['inventory'] as const,
+  productReservationsRoot: ['product-reservations'] as const,
+  productReservations: (productId: string) => ['product-reservations', productId] as const,
   openingReservations: ['opening-reservations'] as const,
   ordersRoot: ['orders'] as const,
   orders: (page = 1) => ['orders', page] as const,

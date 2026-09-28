@@ -170,6 +170,54 @@ describe('order actions state machine', () => {
     expect(actions).toContain('cancel');
   });
 
+  it('requires a checked bag before marking an unverified pending order ready', () => {
+    const order: Order = {
+      ...baseOrder,
+      packingTracked: false,
+      items: [{
+        id: 'line-1', productId: 'product-1', sku: 'SKU', productName: 'Producto',
+        presentation: '1 u.', quantity: 2, packedQuantity: null,
+        physicalReservedQuantity: 1, incomingQuantity: 1, uncoveredQuantity: 0,
+        unitPriceCents: 100, unitCostCents: null, costTotalCents: null, subtotalCents: 200
+      }]
+    };
+    const actions = availableOrderActions(order);
+    expect(actions).not.toContain('mark_ready');
+    expect(actions).not.toContain('mark_delivered');
+    expect(actions).toContain('mark_paid');
+    expect(actions).toContain('cancel');
+  });
+
+  it('allows an already ready unverified order to be handed over during migration', () => {
+    const order: Order = {
+      ...baseOrder,
+      preparationState: 'ready',
+      packingTracked: false,
+      items: [{
+        id: 'line-1', productId: 'product-1', sku: 'SKU', productName: 'Producto',
+        presentation: '1 u.', quantity: 1, packedQuantity: null,
+        physicalReservedQuantity: 1, incomingQuantity: 0, uncoveredQuantity: 0,
+        unitPriceCents: 100, unitCostCents: null, costTotalCents: null, subtotalCents: 100
+      }]
+    };
+    expect(availableOrderActions(order)).toContain('mark_delivered');
+  });
+
+  it('keeps a packed refunded order from appearing cancellable', () => {
+    const order: Order = {
+      ...baseOrder,
+      paymentState: 'refunded',
+      packingTracked: true,
+      items: [{
+        id: 'line-1', productId: 'product-1', sku: 'SKU', productName: 'Producto',
+        presentation: '1 u.', quantity: 1, packedQuantity: 1,
+        physicalReservedQuantity: 1, incomingQuantity: 0, uncoveredQuantity: 0,
+        unitPriceCents: 100, unitCostCents: null, costTotalCents: null, subtotalCents: 100
+      }]
+    };
+    expect(availableOrderActions(order)).not.toContain('cancel');
+  });
+
   it('has human-friendly Spanish labels for all actions', () => {
     expect(ORDER_ACTION_LABELS.mark_ready).toBe('Listo para entregar');
     expect(ORDER_ACTION_LABELS.mark_paid).toBe('Marcar como cobrado');

@@ -4,6 +4,13 @@ import type { Order } from '@/domain/types';
 
 export function OrderStatus({ order, compact = false }: { order: Order; compact?: boolean }) {
   const isCost = order.isCostSale || order.saleType === 'cost';
+  const noPhysicalUnits = order.items.every(item =>
+    (item.physicalReservedQuantity ?? item.quantity) === 0 && (item.packedQuantity ?? 0) === 0
+  );
+  const waitingWithoutPhysical = order.fulfillmentState === 'pending' &&
+    order.preparationState !== 'ready' && noPhysicalUnits && order.stockReadiness === 'waiting_incoming';
+  const uncoveredWithoutPhysical = order.fulfillmentState === 'pending' &&
+    order.preparationState !== 'ready' && noPhysicalUnits && order.stockReadiness === 'uncovered';
 
   if (order.orderState === 'cancelled') {
     return (
@@ -20,9 +27,19 @@ export function OrderStatus({ order, compact = false }: { order: Order; compact?
         <span className="inline-flex items-center gap-1.5 rounded-full bg-purple-50 border border-purple-300 px-3 py-1 text-[13.5px] font-black text-purple-800 select-none">
           <Gift className="size-4 text-purple-600" /> Regalo / Cortesía
         </span>
-        {order.fulfillmentState !== 'delivered' && (
+        {order.fulfillmentState === 'delivered' ? (
+          <StatusChip key="delivered" label="Entregado" tone="success" />
+        ) : order.fulfillmentState === 'shipped' ? (
+          <StatusChip key="shipped" label="Enviado" tone="info" />
+        ) : waitingWithoutPhysical ? (
+          <StatusChip key="waiting" label="Esperando mercadería" tone="info" />
+        ) : uncoveredWithoutPhysical ? (
+          <StatusChip key="uncovered" label="Faltante proveedor" tone="danger" />
+        ) : (
           order.preparationState === 'ready' ? (
             <StatusChip key="ready" label="Listo para entrega" tone="info" />
+          ) : order.preparationState === 'preparing' ? (
+            <StatusChip key="preparing" label="En preparación" tone="info" />
           ) : (
             <StatusChip key="pending-prep" label="Falta preparar" tone="warning" />
           )
@@ -64,6 +81,12 @@ export function OrderStatus({ order, compact = false }: { order: Order; compact?
     chips.push(<StatusChip key="ship" label="Enviado" tone="info" />);
   } else if (order.preparationState === 'ready') {
     chips.push(<StatusChip key="ready" label="Listo para entrega" tone="info" />);
+  } else if (waitingWithoutPhysical) {
+    chips.push(<StatusChip key="waiting" label="Esperando mercadería" tone="info" />);
+  } else if (uncoveredWithoutPhysical) {
+    chips.push(<StatusChip key="uncovered" label="Faltante proveedor" tone="danger" />);
+  } else if (order.preparationState === 'preparing') {
+    chips.push(<StatusChip key="preparing" label="En preparación" tone="info" />);
   } else {
     chips.push(<StatusChip key="pending-prep" label="Falta preparar" tone="warning" />);
   }
@@ -78,12 +101,12 @@ export function OrderStatus({ order, compact = false }: { order: Order; compact?
   }
 
   // 3. Estado de Stock / Reposición
-  if (order.stockReadiness === 'waiting_incoming') {
+  if (order.stockReadiness === 'waiting_incoming' && !waitingWithoutPhysical) {
     const etaFormatted = order.expectedArrivalAt
       ? ` · ${new Intl.DateTimeFormat('es-AR', { day: '2-digit', month: '2-digit' }).format(new Date(order.expectedArrivalAt))}`
       : '';
     chips.push(<StatusChip key="stock-incoming" label={`En camino${etaFormatted}`} tone="info" />);
-  } else if (order.stockReadiness === 'uncovered') {
+  } else if (order.stockReadiness === 'uncovered' && !uncoveredWithoutPhysical) {
     chips.push(<StatusChip key="stock-uncovered" label="Faltante proveedor" tone="danger" />);
   }
 

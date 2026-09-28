@@ -9,6 +9,7 @@ import type {
   MiscExpense,
   MiscExpensePeriod,
   Order,
+  ProductReservation,
   Purchase,
   PurchaseImpactItem,
   QuoteCartEtaResult,
@@ -51,7 +52,14 @@ export const translateDatabaseError = (error: { message?: string; code?: string 
     INVALID_PRODUCT: ['El producto tiene datos incompletos o inválidos.', 'Revisá nombre, presentación, precio y campos marcados en el formulario.'],
     INVALID_PRODUCT_IMAGE: ['La imagen del producto no es válida.', 'Elegí nuevamente una imagen y esperá a que termine de cargarse.'],
     CANNOT_CANCEL_SHIPPED_ORDER: ['No se puede cancelar un pedido que ya fue entregado.', 'Verificá el estado del pedido en la lista.'],
-    CANNOT_READY_ORDER_WAITING_FOR_STOCK: ['No se puede marcar como listo un pedido con mercadería en camino.', 'Recepcioná la compra correspondiente en Inventario antes de preparar el pedido.']
+    CANNOT_READY_ORDER_WAITING_FOR_STOCK: ['No se puede marcar como listo un pedido con mercadería en camino.', 'Recepcioná la compra correspondiente en Inventario antes de preparar el pedido.'],
+    ORDER_PACKING_INCOMPLETE: ['Todavía faltan productos por preparar en este pedido.', 'Revisá la bolsita del pedido y registrá todas las unidades antes de marcarlo listo o entregarlo.'],
+    CANNOT_CANCEL_PACKED_ORDER: ['El pedido tiene productos guardados en una bolsita.', 'Devolvelos físicamente al estante y registrá cero unidades guardadas antes de cancelarlo.'],
+    ORDER_PACKING_CHANGED: ['Otra persona actualizó el armado de este pedido.', 'Actualizá el pedido y revisá las cantidades antes de guardar.'],
+    PACKING_EXCEEDS_PHYSICAL_RESERVATION: ['Hay más unidades indicadas en la bolsita que unidades físicas reservadas.', 'Revisá el pedido y la mercadería recibida antes de guardar.'],
+    PACKED_RESERVATION_CHANGED: ['Una reserva física está guardada en una bolsita y no se puede liberar todavía.', 'Revisá el pedido y devolvé primero esas unidades al estante si corresponde.'],
+    INVALID_ORDER_PACKING_STATE: ['El armado de este pedido ya no se puede modificar.', 'Actualizá la lista y revisá si el pedido fue entregado o cancelado.'],
+    INVALID_ORDER_PACKING: ['El detalle de la bolsita está incompleto o tiene cantidades inválidas.', 'Ingresá una cantidad entera para cada producto del pedido.']
   };
   const specific = businessMessages[error.message ?? ''];
   if (specific) return new AppError('business', specific[0], { nextAction: specific[1] });
@@ -286,6 +294,8 @@ export const supabaseBusinessApi: BusinessApi = {
     const data = await rpc<DashboardSummary['priorityInventory']>('list_inventory_status');
     return data ?? [];
   },
+  listProductReservations: async (productId) =>
+    (await rpc<ProductReservation[]>('list_product_reservations', { p_product_id: productId })) ?? [],
   adjustStock: async (productId, delta, reason, expectedOnHand) => {
     await rpc(expectedOnHand === undefined ? 'adjust_product_stock' : 'adjust_product_stock_checked', {
       p_product_id: productId,
@@ -308,6 +318,8 @@ export const supabaseBusinessApi: BusinessApi = {
       total: res?.total ?? 0,
       pendingTotal: res?.pendingTotal ?? 0,
       completedTotal: res?.completedTotal ?? 0,
+      preparingTotal: res?.preparingTotal ?? 0,
+      readyPickupTotal: res?.readyPickupTotal ?? 0,
       items: (res?.items ?? []).map((o) => ({ ...o, items: o.items ?? [] }))
     };
   },
@@ -326,6 +338,14 @@ export const supabaseBusinessApi: BusinessApi = {
   },
   transitionOrder: async (orderId, action) => {
     const order = await rpc<Order>('transition_order', { p_order_id: orderId, p_action: action });
+    return { ...order, items: order?.items ?? [] };
+  },
+  saveOrderPacking: async (orderId, items, expectedRevision) => {
+    const order = await rpc<Order>('save_order_packing', {
+      p_order_id: orderId,
+      p_items: items,
+      p_expected_revision: expectedRevision
+    });
     return { ...order, items: order?.items ?? [] };
   },
   listPurchases: async (page = 1, pageSize = 20, state = 'all') => {

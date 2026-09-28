@@ -49,6 +49,7 @@ it.each(['entrega', 'cancelación', 'regalo'])('confirma %s fuera de la tarjeta 
   fireEvent.click(screen.getByRole('button', { name: 'Ver pedido' }));
   await waitFor(() => expect(api.listOrders).toHaveBeenLastCalledWith(1, 50, String(order.number), 'completed'));
   expect(await screen.findByText('Productos pedidos')).toBeInTheDocument();
+  if (variant === 'regalo') expect(screen.getByText('Entregado')).toBeInTheDocument();
   client.clear();
 });
 
@@ -94,5 +95,110 @@ it('permite marcar un pedido como listo para entregar desde las acciones operati
   expect(
     await screen.findByText(`Pedido #${order.number} marcado como listo para entrega.`)
   ).toBeInTheDocument();
+  client.clear();
+});
+
+it('pide revisar físicamente una bolsita histórica lista antes de descontar su stock', async () => {
+  const order: Order = {
+    ...demoOrders[0]!,
+    orderState: 'confirmed',
+    paymentState: 'paid',
+    preparationState: 'ready',
+    fulfillmentState: 'pending',
+    packingTracked: false,
+    stockReadiness: 'ready',
+    items: demoOrders[0]!.items.map(item => ({ ...item, packedQuantity: null }))
+  };
+  api.listOrders.mockResolvedValue({
+    items: [order], total: 1, page: 1, pageSize: 50,
+    pendingTotal: 1, completedTotal: 0, preparingTotal: 0, readyPickupTotal: 0
+  });
+  api.transitionOrder.mockResolvedValue({ ...order, fulfillmentState: 'delivered' });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+  render(<QueryClientProvider client={client}><OrdersPage /></QueryClientProvider>);
+
+  fireEvent.click(await screen.findByRole('button', { name: /Ver pedido y acciones/ }));
+  fireEvent.click(screen.getByRole('button', { name: 'Marcar como entregado' }));
+  expect(api.transitionOrder).not.toHaveBeenCalled();
+  expect(screen.getByText(/La bolsita figura sin verificar en la app/)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Sí, ya verifiqué y entregar' }));
+  await waitFor(() => expect(api.transitionOrder).toHaveBeenCalledWith(order.id, 'mark_delivered'));
+  client.clear();
+});
+
+it('pide la misma verificación al enviar un pedido histórico listo', async () => {
+  const order: Order = {
+    ...demoOrders[0]!,
+    orderState: 'confirmed', paymentState: 'paid', preparationState: 'ready',
+    fulfillmentState: 'pending', packingTracked: false, stockReadiness: 'ready',
+    items: demoOrders[0]!.items.map(item => ({ ...item, packedQuantity: null }))
+  };
+  api.listOrders.mockResolvedValue({
+    items: [order], total: 1, page: 1, pageSize: 50,
+    pendingTotal: 1, completedTotal: 0, preparingTotal: 0, readyPickupTotal: 0
+  });
+  api.transitionOrder.mockResolvedValue({ ...order, fulfillmentState: 'shipped' });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+  render(<QueryClientProvider client={client}><OrdersPage /></QueryClientProvider>);
+
+  fireEvent.click(await screen.findByRole('button', { name: /Ver pedido y acciones/ }));
+  fireEvent.click(screen.getByRole('button', { name: 'Más opciones' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Marcar como enviado' }));
+  expect(api.transitionOrder).not.toHaveBeenCalled();
+  expect(screen.getByText(/La bolsita figura sin verificar en la app/)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Sí, ya verifiqué y enviar' }));
+  await waitFor(() => expect(api.transitionOrder).toHaveBeenCalledWith(order.id, 'mark_shipped'));
+  client.clear();
+});
+
+it('guía una sola vez a recibir mercadería y oculta el armado cuando no hay unidades físicas', async () => {
+  const order: Order = {
+    ...demoOrders[0]!, orderState: 'confirmed', paymentState: 'gifted', paymentMethod: 'gift',
+    preparationState: 'pending', fulfillmentState: 'pending', stockReadiness: 'waiting_incoming',
+    expectedArrivalAt: '2026-09-29T12:00:00Z',
+    items: [{
+      ...demoOrders[0]!.items[0]!, quantity: 1, packedQuantity: null,
+      physicalReservedQuantity: 0, incomingQuantity: 1, uncoveredQuantity: 0
+    }]
+  };
+  api.listOrders.mockResolvedValue({
+    items: [order], total: 1, page: 1, pageSize: 50,
+    pendingTotal: 1, completedTotal: 0, preparingTotal: 0, readyPickupTotal: 0
+  });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+  render(<QueryClientProvider client={client}><OrdersPage /></QueryClientProvider>);
+
+  fireEvent.click(await screen.findByRole('button', { name: /Ver pedido y acciones/ }));
+  expect(screen.getByText('Qué sigue')).toBeInTheDocument();
+  expect(screen.getAllByText('Regalo / Cortesía')).toHaveLength(1);
+  expect(screen.getByText('Esperando mercadería')).toBeInTheDocument();
+  expect(screen.queryByText('Falta preparar')).not.toBeInTheDocument();
+  expect(screen.getAllByText('Mercadería en camino')).toHaveLength(1);
+  expect(screen.getByText(/Recibí la compra en Inventario\. Después completá el armado/)).toBeInTheDocument();
+  expect(screen.queryByRole('region', { name: `Armado del pedido ${order.number}` })).not.toBeInTheDocument();
+  expect(screen.queryByText('Medio de pago')).not.toBeInTheDocument();
+  expect(screen.queryByText(/Stock descontado/)).not.toBeInTheDocument();
+  client.clear();
+});
+
+it('mantiene el formulario cuando hay unidades físicas para un armado parcial', async () => {
+  const order: Order = {
+    ...demoOrders[0]!, orderState: 'confirmed', paymentState: 'paid',
+    preparationState: 'preparing', fulfillmentState: 'pending', stockReadiness: 'waiting_incoming',
+    items: [{
+      ...demoOrders[0]!.items[0]!, quantity: 2, packedQuantity: 1,
+      physicalReservedQuantity: 1, incomingQuantity: 1, uncoveredQuantity: 0
+    }]
+  };
+  api.listOrders.mockResolvedValue({
+    items: [order], total: 1, page: 1, pageSize: 50,
+    pendingTotal: 1, completedTotal: 0, preparingTotal: 1, readyPickupTotal: 0
+  });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+  render(<QueryClientProvider client={client}><OrdersPage /></QueryClientProvider>);
+
+  fireEvent.click(await screen.findByRole('button', { name: /Ver pedido y acciones/ }));
+  expect(screen.getByRole('region', { name: `Armado del pedido ${order.number}` })).toBeInTheDocument();
+  expect(screen.getAllByText('Mercadería en camino')).toHaveLength(1);
   client.clear();
 });

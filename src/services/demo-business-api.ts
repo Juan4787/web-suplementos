@@ -30,6 +30,7 @@ import type {
   MiscExpenseAuditEntry,
   MiscExpenseSnapshot,
   Order,
+  OrderItem,
   ProductPerformance,
   Purchase,
   PurchaseImpactItem,
@@ -68,7 +69,19 @@ const state: {
 } = {
   settings: structuredClone(demoSettings),
   products: structuredClone(demoProducts),
-  orders: structuredClone(demoOrders),
+  orders: structuredClone(demoOrders).map(order => ({
+    ...order,
+    packingRevision: 0,
+    packingTracked: false,
+    stockReadiness: order.stockReadiness ?? 'ready',
+    items: order.items.map(item => ({
+      ...item,
+      packedQuantity: null,
+      physicalReservedQuantity: order.fulfillmentState === 'pending' ? item.quantity : 0,
+      incomingQuantity: 0,
+      uncoveredQuantity: 0
+    }))
+  })),
   purchases: structuredClone(demoPurchases),
   movements: structuredClone(demoMovements),
   customers: structuredClone(demoCustomers),
@@ -627,8 +640,36 @@ export const demoBusinessApi: BusinessApi = {
       o.orderState === 'cancelled' ||
       (o.fulfillmentState === 'delivered' && (o.paymentState === 'paid' || o.paymentState === 'gifted'));
     const matched = state.orders.filter(o => !term || o.customerName.toLowerCase().includes(term) || String(o.number).includes(term) || (digits.length >= 3 && (o.customerPhone ?? '').replace(/\D/g, '').includes(digits)));
-    const selected = matched.filter(o => filter === 'all' || (filter === 'completed') === completed(o));
-    return latency({ ...paginate(selected, page, pageSize), pendingTotal: matched.filter(o => !completed(o)).length, completedTotal: matched.filter(completed).length });
+    const preparing = (o: Order) => o.orderState === 'confirmed' && o.fulfillmentState === 'pending' && o.preparationState === 'preparing';
+    const readyPickup = (o: Order) => o.orderState === 'confirmed' && o.fulfillmentState === 'pending' && o.preparationState === 'ready' && o.deliveryMethod === 'pickup';
+    const selected = matched.filter(o => filter === 'all' ||
+      (filter === 'pending' && !completed(o)) ||
+      (filter === 'completed' && completed(o)) ||
+      (filter === 'preparing' && preparing(o)) ||
+      (filter === 'ready_pickup' && readyPickup(o)));
+    return latency({ ...paginate(selected, page, pageSize),
+      pendingTotal: matched.filter(o => !completed(o)).length,
+      completedTotal: matched.filter(completed).length,
+      preparingTotal: matched.filter(preparing).length,
+      readyPickupTotal: matched.filter(readyPickup).length
+    });
+  },
+
+  async listProductReservations(productId) {
+    return latency(state.orders.flatMap(order => {
+      if (order.orderState !== 'confirmed' || order.fulfillmentState !== 'pending') return [];
+      const item = order.items.find(line => line.productId === productId);
+      if (!item) return [];
+      const physicalQuantity = item.physicalReservedQuantity ?? (order.stockReadiness === 'ready' ? item.quantity : 0);
+      return physicalQuantity > 0 ? [{
+        orderId: order.id,
+        orderNumber: order.number,
+        physicalQuantity,
+        packedQuantity: item.packedQuantity ?? null,
+        preparationState: order.preparationState,
+        paymentState: order.paymentState
+      }] : [];
+    }).sort((a, b) => a.orderNumber - b.orderNumber));
   },
 
   async listPaidOrders(page = 1, pageSize = 20, from, to) {
@@ -653,7 +694,7 @@ export const demoBusinessApi: BusinessApi = {
     }
     const isCost = input.saleType === 'cost';
     const isGift = input.paymentMethod === 'gift' || input.saleType === 'gift';
-    const items = input.lines.map((line) => {
+    const items: OrderItem[] = input.lines.map((line) => {
       const product = state.products.find((candidate) => candidate.id === line.productId)!;
       const unitPriceCents = isCost ? (product.currentCostCents ?? line.unitPriceCents) : line.unitPriceCents;
       return {
@@ -710,6 +751,10 @@ export const demoBusinessApi: BusinessApi = {
     for (const item of items) {
       const product = state.products.find((candidate) => candidate.id === item.productId)!;
       const physAvail = Math.max(0, product.onHand - product.reserved);
+      item.packedQuantity = null;
+      item.physicalReservedQuantity = Math.min(item.quantity, physAvail);
+      item.incomingQuantity = item.quantity - item.physicalReservedQuantity;
+      item.uncoveredQuantity = 0;
       if (item.quantity > physAvail) {
         requiresIncoming = true;
         const pu = state.purchases.find(
@@ -742,6 +787,8 @@ export const demoBusinessApi: BusinessApi = {
       paymentState: isGift ? 'gifted' : 'pending',
       preparationState: isGift ? 'ready' : 'pending',
       fulfillmentState: isGift ? 'delivered' : 'pending',
+      packingRevision: 0,
+      packingTracked: false,
       stockReadiness: requiresIncoming ? 'waiting_incoming' : 'ready',
       expectedArrivalAt,
       subtotalCents: isGift ? 0 : isCost ? costTotalCents : subtotalCents,
@@ -830,6 +877,24 @@ export const demoBusinessApi: BusinessApi = {
     const order = state.orders.find((candidate) => candidate.id === orderId);
     if (!order) throw new AppError('business', 'No encontramos el pedido.');
 
+    const hasKnownPacking = order.items.some(item => item.packedQuantity !== null && item.packedQuantity !== undefined);
+    const packingComplete = order.items.every(item => item.packedQuantity === item.quantity);
+    const compatibilityOrder = { ...order };
+    if (!hasKnownPacking) delete compatibilityOrder.packingTracked;
+    const exitsNow = action === 'mark_ready' || action === 'mark_shipped' ||
+      (action === 'mark_delivered' && order.fulfillmentState === 'pending') ||
+      (action === 'mark_gifted' && order.fulfillmentState === 'pending');
+    if (exitsNow && hasKnownPacking && !packingComplete) {
+      throw new AppError('business', 'Todavía faltan productos por preparar en este pedido.', {
+        nextAction: 'Revisá la bolsita y registrá todas las unidades antes de continuar.'
+      });
+    }
+    if (action === 'cancel' && order.items.some(item => (item.packedQuantity ?? 0) > 0)) {
+      throw new AppError('business', 'El pedido tiene productos guardados en una bolsita.', {
+        nextAction: 'Devolvelos al estante y registrá cero unidades guardadas antes de cancelarlo.'
+      });
+    }
+
     if (action === 'mark_gifted') {
       if (order.paymentState === 'gifted') {
         return latency(order);
@@ -848,7 +913,7 @@ export const demoBusinessApi: BusinessApi = {
           nextAction: 'Solo se pueden cobrar al costo pedidos con cobro pendiente que no hayan sido pagados ni cancelados.'
         });
       }
-    } else if (!availableOrderActions(order).includes(action)) {
+    } else if (!availableOrderActions(compatibilityOrder).includes(action)) {
       throw new AppError('business', 'Ese paso ya no está disponible para el pedido.', {
         nextAction: 'Actualizá la lista para ver su estado actual.'
       });
@@ -1008,6 +1073,39 @@ export const demoBusinessApi: BusinessApi = {
         });
       }
     }
+    state.revision += 1;
+    return latency(order);
+  },
+
+  async saveOrderPacking(orderId, items, expectedRevision) {
+    const order = state.orders.find(candidate => candidate.id === orderId);
+    if (!order) throw new AppError('business', 'No encontramos ese pedido.');
+    if (order.orderState !== 'confirmed' || order.fulfillmentState !== 'pending') {
+      throw new AppError('business', 'El armado de este pedido ya no se puede modificar.');
+    }
+    if ((order.packingRevision ?? 0) !== expectedRevision) {
+      throw new AppError('business', 'Otra persona actualizó el armado de este pedido.');
+    }
+    const unique = new Set(items.map(item => item.orderItemId));
+    if (items.length !== order.items.length || unique.size !== items.length ||
+      items.some(item => !Number.isInteger(item.packedQuantity) || item.packedQuantity < 0 ||
+        !order.items.some(line => line.id === item.orderItemId &&
+          item.packedQuantity <= line.quantity &&
+          item.packedQuantity <= (line.physicalReservedQuantity ?? line.quantity)))) {
+      throw new AppError('business', 'Revisá las cantidades guardadas de cada producto.');
+    }
+    const changed = items.some(item => order.items.find(line => line.id === item.orderItemId)?.packedQuantity !== item.packedQuantity);
+    if (!changed) return latency(order);
+    for (const item of items) {
+      const line = order.items.find(candidate => candidate.id === item.orderItemId)!;
+      line.packedQuantity = item.packedQuantity;
+    }
+    order.packingTracked = true;
+    order.packingRevision = (order.packingRevision ?? 0) + 1;
+    const allFull = order.items.every(item => item.packedQuantity === item.quantity);
+    const anyPacked = order.items.some(item => (item.packedQuantity ?? 0) > 0);
+    order.preparationState = order.preparationState === 'ready' && allFull
+      ? 'ready' : anyPacked ? 'preparing' : 'pending';
     state.revision += 1;
     return latency(order);
   },
@@ -1232,9 +1330,17 @@ export const demoBusinessApi: BusinessApi = {
     if (allCompleted) {
       for (const order of state.orders) {
         if (order.stockReadiness === 'waiting_incoming') {
-          order.stockReadiness = 'ready';
-          order.expectedArrivalAt = null;
-          unblockedOrders.push({ id: order.id, number: order.number });
+          for (const line of order.items) {
+            if (purchase.items.some(item => item.productId === line.productId)) {
+              line.physicalReservedQuantity = line.quantity;
+              line.incomingQuantity = 0;
+            }
+          }
+          if (order.items.every(line => (line.incomingQuantity ?? 0) === 0 && (line.uncoveredQuantity ?? 0) === 0)) {
+            order.stockReadiness = 'ready';
+            order.expectedArrivalAt = null;
+            unblockedOrders.push({ id: order.id, number: order.number });
+          }
         }
       }
     }

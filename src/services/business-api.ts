@@ -17,6 +17,7 @@ import type {
   OpeningReservation,
   Order,
   OrderAction,
+  ProductReservation,
   Purchase,
   PurchaseImpactItem,
   QuoteCartEtaResult,
@@ -34,7 +35,9 @@ export type Page<T> = {
   total: number;
 };
 
-export type OrdersPage = Page<Order> & { pendingTotal: number; completedTotal: number };
+export type OrdersPage = Page<Order> & { pendingTotal: number; completedTotal: number; preparingTotal: number; readyPickupTotal: number };
+
+export type OrderListFilter = 'all' | 'pending' | 'completed' | 'preparing' | 'ready_pickup';
 
 export type PurchasesPage = Page<Purchase> & {
   pendingTotal?: number;
@@ -134,12 +137,14 @@ export interface BusinessApi {
   deleteProduct(productId: string): Promise<void>;
   archiveProduct(productId: string, archived: boolean): Promise<AdminProduct>;
   listInventory(): Promise<InventoryItem[]>;
+  listProductReservations(productId: string): Promise<ProductReservation[]>;
   adjustStock(productId: string, delta: number, reason: string, expectedOnHand?: number): Promise<void>;
   updateStockThresholds(input: UpdateStockThresholdsInput): Promise<void>;
-  listOrders(page?: number, pageSize?: number, search?: string, state?: 'all' | 'pending' | 'completed'): Promise<OrdersPage>;
+  listOrders(page?: number, pageSize?: number, search?: string, state?: OrderListFilter): Promise<OrdersPage>;
   listPaidOrders(page?: number, pageSize?: number, from?: string, to?: string): Promise<Page<Order>>;
   confirmImportedOrder(input: ImportOrderInput): Promise<Order>;
   transitionOrder(orderId: string, action: OrderAction): Promise<Order>;
+  saveOrderPacking(orderId: string, items: Array<{ orderItemId: string; packedQuantity: number }>, expectedRevision: number): Promise<Order>;
   listPurchases(page?: number, pageSize?: number, state?: 'ordered' | 'received' | 'all'): Promise<PurchasesPage>;
   listOpeningReservations(): Promise<OpeningReservation[]>;
   resolveOpeningReservation(purchaseItemId: string, quantity: number, action: 'deliver' | 'release', operationId: string): Promise<{ quantity: number; action: 'deliver' | 'release' }>;

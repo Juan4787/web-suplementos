@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { OpeningReservations } from '@/features/inventory/OpeningReservations';
-import { useSearch } from '@tanstack/react-router';
+import { Link, useSearch } from '@tanstack/react-router';
 import {
   AlertTriangle,
   ArrowDown,
@@ -63,6 +63,19 @@ const statusTones = {
   critical: 'danger',
   out: 'danger'
 } as const;
+
+const stockStatus = (item: InventoryItem) => {
+  if (item.available <= 0 && item.onHand < item.reserved) {
+    return { label: 'RESERVAS SIN CUBRIR', tone: 'danger' } as const;
+  }
+  if (item.available <= 0 && item.onHand > 0) {
+    return { label: 'TODO RESERVADO', tone: 'warning' } as const;
+  }
+  if (item.available <= 0 && item.incoming > 0) {
+    return { label: 'EN CAMINO', tone: 'info' } as const;
+  }
+  return { label: statusLabels[item.status], tone: statusTones[item.status] };
+};
 
 const movementKindLabels = {
   sale: 'Venta',
@@ -1367,6 +1380,16 @@ function StockDetailDrawer({
     queryKey: queryKeys.movements(1),
     queryFn: (api) => api.listMovements(1, 100)
   });
+  const reservationsQuery = useBusinessQuery({
+    queryKey: queryKeys.productReservations(item.id),
+    queryFn: (api) => api.listProductReservations(item.id)
+  });
+  const orderReservations = reservationsQuery.data ?? [];
+  const inOrders = orderReservations.reduce((sum, reservation) => sum + reservation.physicalQuantity, 0);
+  const packedKnown = orderReservations.reduce((sum, reservation) => sum + (reservation.packedQuantity ?? 0), 0);
+  const unverified = orderReservations.reduce((sum, reservation) => sum + (reservation.packedQuantity === null ? reservation.physicalQuantity : 0), 0);
+  const reservedWithoutBag = inOrders - packedKnown - unverified;
+  const otherReservations = Math.max(0, item.reserved - inOrders);
 
   const reorderPoint = reorderPointStr === '' ? 0 : parseInt(reorderPointStr, 10);
   const safetyStock = safetyStockStr === '' ? 0 : parseInt(safetyStockStr, 10);
@@ -1433,11 +1456,7 @@ function StockDetailDrawer({
           </h2>
           <div className="mt-1.5 flex items-center gap-2.5">
             <p className="text-[14px] font-bold text-ink-700">{item.presentation}</p>
-            {item.available <= 0 && item.incoming > 0 ? (
-              <StatusChip label="En camino" tone="info" />
-            ) : (
-              <StatusChip label={statusLabels[item.status]} tone={statusTones[item.status]} />
-            )}
+            <StatusChip {...stockStatus(item)} />
           </div>
         </div>
         <button
@@ -1457,10 +1476,30 @@ function StockDetailDrawer({
               'rounded-2xl p-4 text-[13.5px] border font-medium leading-relaxed shadow-sm',
               item.status === 'low' && 'bg-amber-50 text-amber-950 border-amber-200',
               item.status === 'critical' && 'bg-rose-50 text-rose-950 border-rose-200',
-              item.status === 'out' && (item.incoming > 0 ? 'bg-brand-50 text-brand-950 border-brand-200' : 'bg-red-50 text-red-950 border-red-200')
+              item.status === 'out' && (item.onHand >= item.reserved && item.incoming > 0 ? 'bg-brand-50 text-brand-950 border-brand-200' : 'bg-red-50 text-red-950 border-red-200')
             )}
           >
-            {item.status === 'out' && item.incoming > 0 && (
+            {item.status === 'out' && item.onHand < item.reserved && (
+              <div className="flex items-start gap-2.5">
+                <AlertTriangle className="size-5 shrink-0 text-red-700 mt-0.5" />
+                <div>
+                  <p className="font-bold text-red-950">Faltan {item.reserved - item.onHand} {item.reserved - item.onHand === 1 ? 'unidad reservada' : 'unidades reservadas'}</p>
+                  <p className="text-[12.5px] text-red-800 mt-0.5">
+                    Hay {item.onHand} en depósito y {item.reserved} comprometidas con clientes. Revisá los pedidos y reservas pendientes; registrá la mercadería cuando llegue.
+                  </p>
+                </div>
+              </div>
+            )}
+            {item.status === 'out' && item.onHand >= item.reserved && item.onHand > 0 && (
+              <div className="flex items-start gap-2.5">
+                <Info className="size-5 shrink-0 text-red-700 mt-0.5" />
+                <div>
+                  <p className="font-bold text-red-950">Todo el stock está reservado</p>
+                  <p className="text-[12.5px] text-red-800 mt-0.5">Hay {item.onHand} unidades en depósito, pero ninguna libre para una nueva venta.</p>
+                </div>
+              </div>
+            )}
+            {item.status === 'out' && item.onHand === 0 && item.reserved === 0 && item.incoming > 0 && (
               <div className="flex items-start gap-2.5">
                 <PackageCheck className="size-5 shrink-0 text-brand-700 mt-0.5" />
                 <div>
@@ -1471,7 +1510,7 @@ function StockDetailDrawer({
                 </div>
               </div>
             )}
-            {item.status === 'out' && item.incoming <= 0 && (
+            {item.status === 'out' && item.onHand === 0 && item.reserved === 0 && item.incoming <= 0 && (
               <div className="flex items-start gap-2.5">
                 <AlertTriangle className="size-5 shrink-0 text-red-700 mt-0.5" />
                 <div>
@@ -1559,6 +1598,40 @@ function StockDetailDrawer({
             </div>
           </div>
         </div>
+
+        <section className="rounded-2xl border border-ink-950/10 bg-white p-4 shadow-xs" aria-label="Reservas de pedidos">
+          <h4 className="text-[13px] font-black uppercase tracking-wider text-ink-900">Reservado por pedido</h4>
+          <p className="mt-1 text-xs font-semibold text-ink-700">Guardar una unidad en una bolsita no cambia el stock físico ni la cantidad libre para vender.</p>
+          {reservationsQuery.isPending ? <p className="mt-3 text-sm text-ink-700">Consultando pedidos…</p> : null}
+          {reservationsQuery.isError ? <div className="mt-3"><ErrorState error={reservationsQuery.error} onRetry={() => void reservationsQuery.refetch()} /></div> : null}
+          {reservationsQuery.data ? (
+            <>
+              <p className="mt-3 text-[13px] font-semibold text-ink-800">
+                En pedidos: {inOrders} · En bolsitas registradas: {packedKnown} · Reservado sin guardar: {reservedWithoutBag}
+                {unverified > 0 ? ` · Sin verificar: ${unverified}` : ''}
+                {otherReservations > 0 ? ` · Otras reservas: ${otherReservations}` : ''}
+              </p>
+              {unverified > 0 ? <p className="mt-1 text-xs font-semibold text-amber-900">«Sin verificar» indica que todavía no se registró el contenido de esas bolsitas. Revisalas antes de indicar dónde están esas unidades.</p> : null}
+              {orderReservations.length ? (
+                <div className="mt-3 space-y-2">
+                  {orderReservations.map(reservation => (
+                    <Link
+                      key={reservation.orderId}
+                      to="/app/pedidos"
+                      search={{ search: String(reservation.orderNumber) }}
+                      className="flex min-h-11 flex-wrap items-center justify-between gap-2 rounded-xl border border-ink-950/10 bg-cream-50 p-3 text-sm hover:bg-cream-100"
+                    >
+                      <span className="font-black text-ink-950">Pedido #{reservation.orderNumber}</span>
+                      <span className="font-semibold text-ink-700">
+                        {reservation.physicalQuantity} reservadas · {reservation.packedQuantity === null ? 'Bolsita sin verificar' : `${reservation.packedQuantity} en bolsita`}
+                      </span>
+                    </Link>
+                  ))}
+                </div>
+              ) : <p className="mt-3 text-sm text-ink-700">No hay pedidos actuales con reservas físicas de este producto.</p>}
+            </>
+          ) : null}
+        </section>
 
         {/* 4. CUÁNDO AVISARME (Filas verticales con inputs limpios y placeholder 0) */}
         <div className="rounded-2xl border border-ink-950/10 bg-white p-4 shadow-sm">
@@ -2106,9 +2179,9 @@ export default function InventoryPage() {
           {inventoryQuery.data ? (
             <div className="overflow-hidden rounded-2xl border border-ink-950/8 bg-white shadow-sm">
               {/* Discrete Table Header */}
-              <div className="hidden sm:grid sm:grid-cols-[1fr_7.5rem_8rem_2.5rem] items-center px-6 py-2.5 bg-cream-100/70 border-b border-ink-950/6 text-[11px] font-black uppercase tracking-wider text-ink-600">
+              <div className="hidden sm:grid sm:grid-cols-[1fr_9rem_10rem_2.5rem] items-center px-6 py-2.5 bg-cream-100/70 border-b border-ink-950/6 text-[11px] font-black uppercase tracking-wider text-ink-600">
                 <span>Producto</span>
-                <span>Disponible</span>
+                <span>Libre para vender</span>
                 <span>Estado</span>
                 <span className="sr-only">Ver</span>
               </div>
@@ -2130,7 +2203,7 @@ export default function InventoryPage() {
                         }
                       }}
                       className={cn(
-                        'group grid min-h-[3.75rem] gap-2 p-3.5 sm:p-4 transition cursor-pointer sm:grid-cols-[1fr_7.5rem_8rem_2.5rem] sm:items-center sm:px-6 select-none focus:outline-none focus:bg-cream-100/80',
+                        'group grid min-h-[3.75rem] gap-2 p-3.5 sm:p-4 transition cursor-pointer sm:grid-cols-[1fr_9rem_10rem_2.5rem] sm:items-center sm:px-6 select-none focus:outline-none focus:bg-cream-100/80',
                         isProblem ? 'bg-amber-50/40 hover:bg-amber-50/70' : 'hover:bg-cream-50'
                       )}
                     >
@@ -2138,6 +2211,7 @@ export default function InventoryPage() {
                       <div className="min-w-0 pr-2">
                         <h3 className="truncate text-[15.5px] font-black text-ink-950">{item.name}</h3>
                         <p className="text-[12.5px] font-medium text-ink-600 truncate">{item.presentation}</p>
+                        <p className="text-[12px] font-semibold text-ink-700">Físico: {item.onHand} · Reservado: {item.reserved}</p>
                       </div>
 
                       {/* Quantity available */}
@@ -2158,11 +2232,7 @@ export default function InventoryPage() {
 
                       {/* Status Chip */}
                       <div>
-                        {item.available <= 0 && item.incoming > 0 ? (
-                          <StatusChip label="En camino" tone="info" />
-                        ) : (
-                          <StatusChip label={statusLabels[item.status]} tone={statusTones[item.status]} />
-                        )}
+                        <StatusChip {...stockStatus(item)} />
                       </div>
 
                       {/* Chevron affordance */}
@@ -2635,7 +2705,10 @@ export default function InventoryPage() {
           </div>
 
           <div className="mt-5 space-y-4">
-            <Field label="¿Cuántas unidades hay realmente?" hint={`Actualmente figuran ${adjustItem.onHand} unidades en stock.`}>
+            <div className="rounded-xl bg-cream-100 p-3 text-sm font-semibold text-ink-800">
+              En depósito: {adjustItem.onHand} · Reservadas para clientes: {adjustItem.reserved} · Libres para vender: {Math.max(0, adjustItem.onHand - adjustItem.reserved)}
+            </div>
+            <Field label="¿Cuántas unidades hay realmente?" hint="Contá todas las unidades físicas, incluidas las apartadas para clientes.">
               <div className="relative">
                 <Input
                   type="text"
@@ -2656,10 +2729,16 @@ export default function InventoryPage() {
 
             {targetStock !== '' && !isNaN(Number(targetStock)) && Number(targetStock) !== adjustItem.onHand && (
               <div className="rounded-xl bg-cream-100 p-3 text-xs font-bold text-ink-800 flex items-center justify-between">
-                <span>Variación a registrar:</span>
+                <span>Ajuste físico: de {adjustItem.onHand} a {Number(targetStock)} unidades.</span>
                 <span className={cn('font-black text-sm', Number(targetStock) - adjustItem.onHand > 0 ? 'text-emerald-700' : 'text-red-700')}>
                   {Number(targetStock) - adjustItem.onHand > 0 ? `+${Number(targetStock) - adjustItem.onHand}` : `${Number(targetStock) - adjustItem.onHand}`} unidades
                 </span>
+              </div>
+            )}
+
+            {targetStock !== '' && Number(targetStock) < adjustItem.reserved && (
+              <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-900">
+                Con este conteo faltarán {adjustItem.reserved - Number(targetStock)} {adjustItem.reserved - Number(targetStock) === 1 ? 'unidad' : 'unidades'} para cubrir las reservas. La corrección no las cancela; revisá los pedidos, las reservas previas y la reposición.
               </div>
             )}
 

@@ -49,7 +49,7 @@ describe('Venta al Costo - Rigor Extremo & Paridad de Dominio', () => {
     const actions = availableOrderActions(created);
     expect(actions).toContain('mark_at_cost');
     expect(actions).toContain('mark_paid');
-    expect(actions).toContain('mark_gifted');
+    expect(actions).not.toContain('mark_gifted'); // primero se verifica la bolsita antes de entregarla como regalo
 
     // Transición a Cobrar al costo
     const transitioned = await demoBusinessApi.transitionOrder(created.id, 'mark_at_cost');

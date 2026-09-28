@@ -1,19 +1,29 @@
 import type { Order, OrderAction } from './types';
 
+export const isOrderPackingComplete = (order: Order): boolean =>
+  order.items.length > 0 && order.items.every(item => item.packedQuantity === item.quantity);
+
 export const availableOrderActions = (order: Order): OrderAction[] => {
   if (order.orderState === 'cancelled') return [];
 
   const actions: OrderAction[] = [];
+  const hasPackedItems = order.items.some(item => (item.packedQuantity ?? 0) > 0);
   if (order.paymentState === 'refunded') {
-    if (order.fulfillmentState === 'pending') actions.push('cancel');
+    if (order.fulfillmentState === 'pending' && !hasPackedItems) actions.push('cancel');
     return actions;
   }
 
   const canFulfill = !order.stockReadiness || order.stockReadiness === 'ready';
+  // Todo pedido sin seguimiento se revisa antes de prepararlo desde esta interfaz.
+  // Los ya marcados listos conservan la posibilidad de entrega hasta conciliarlos.
+  const canUsePacking = order.packingTracked === undefined ||
+    isOrderPackingComplete(order) ||
+    (order.packingTracked === false && order.preparationState === 'ready');
+  const canExit = canFulfill && canUsePacking;
 
   // 1. Paso previo: Preparación (Listo para entregar)
   if (order.fulfillmentState === 'pending' && order.preparationState !== 'ready') {
-    if (canFulfill) {
+    if (canExit) {
       actions.push('mark_ready');
     }
   }
@@ -22,11 +32,11 @@ export const availableOrderActions = (order: Order): OrderAction[] => {
   if (order.paymentState === 'pending') {
     actions.push('mark_paid');
     actions.push('mark_at_cost');
-    actions.push('mark_gifted');
+    if (order.fulfillmentState !== 'pending' || canExit) actions.push('mark_gifted');
   }
 
   // 3. Acciones de Entrega
-  if (canFulfill) {
+  if (canExit) {
     if (order.fulfillmentState === 'pending') {
       actions.push('mark_delivered');
       if (order.deliveryMethod === 'shipping') {
@@ -41,7 +51,8 @@ export const availableOrderActions = (order: Order): OrderAction[] => {
   if (order.paymentState === 'paid' && order.fulfillmentState === 'pending') {
     actions.push('mark_refunded');
   }
-  if (order.fulfillmentState === 'pending' && order.paymentState !== 'paid') {
+  if (order.fulfillmentState === 'pending' && order.paymentState !== 'paid' &&
+      !hasPackedItems) {
     actions.push('cancel');
   }
 

@@ -109,6 +109,10 @@ export type OrderItem = {
   productName: string;
   presentation: string;
   quantity: number;
+  packedQuantity?: number | null;
+  physicalReservedQuantity?: number;
+  incomingQuantity?: number;
+  uncoveredQuantity?: number;
   unitPriceCents: number;
   unitCostCents: number | null;
   costTotalCents?: number | null;
@@ -131,6 +135,8 @@ export type Order = {
   paymentState: PaymentState;
   preparationState: PreparationState;
   fulfillmentState: FulfillmentState;
+  packingRevision?: number;
+  packingTracked?: boolean;
   stockReadiness?: StockReadiness;
   expectedArrivalAt?: string | null;
   subtotalCents: number;
@@ -146,6 +152,15 @@ export type Order = {
   saleType?: SaleType;
   isCostSale?: boolean;
   items: OrderItem[];
+};
+
+export type ProductReservation = {
+  orderId: string;
+  orderNumber: number;
+  physicalQuantity: number;
+  packedQuantity: number | null;
+  preparationState: PreparationState;
+  paymentState: PaymentState;
 };
 
 export type OrderAction =

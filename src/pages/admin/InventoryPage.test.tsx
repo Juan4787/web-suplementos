@@ -125,6 +125,54 @@ describe('Carga de compras', () => {
     await waitFor(() => expect(api.adjustStock).toHaveBeenCalledWith(demoProducts[0]!.id, -1, 'Conteo físico', 7));
   });
 
+  it('distingue stock físico de unidades reservadas cuando no alcanza para los pedidos', async () => {
+    api.listInventory.mockResolvedValue([{
+      ...toDemoInventory([demoProducts[0]!])[0]!,
+      onHand: 7,
+      reserved: 10,
+      available: 0,
+      incoming: 0,
+      status: 'out'
+    }]);
+    api.listMovements.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 25 });
+    api.listPurchases.mockResolvedValue({ items: [], total: 0, pendingTotal: 0, receivedTotal: 0, filteredTotal: 0, page: 1, pageSize: 15 });
+    render(<InventoryPage />, { wrapper: Wrapper });
+
+    const product = await screen.findByRole('button', { name: /Creatina Monohidratada.*Físico: 7.*Reservado: 10.*0 u./ });
+    expect(product).toHaveTextContent('RESERVAS SIN CUBRIR');
+    fireEvent.click(product);
+    expect(screen.getByText('Faltan 3 unidades reservadas')).toBeVisible();
+    expect(screen.getByText(/Hay 7 en depósito y 10 comprometidas con clientes/)).toBeVisible();
+  });
+
+  it('explica el ajuste de 10 a 7 y el faltante sin alterar las reservas', async () => {
+    api.listInventory.mockResolvedValue([{
+      ...toDemoInventory([demoProducts[0]!])[0]!,
+      onHand: 10,
+      reserved: 10,
+      available: 0,
+      incoming: 0,
+      status: 'out'
+    }]);
+    api.listMovements.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 25 });
+    api.listPurchases.mockResolvedValue({ items: [], total: 0, pendingTotal: 0, receivedTotal: 0, filteredTotal: 0, page: 1, pageSize: 15 });
+    api.adjustStock.mockResolvedValue(undefined);
+    render(<InventoryPage />, { wrapper: Wrapper });
+
+    const product = await screen.findByRole('button', { name: /Creatina Monohidratada.*Físico: 10.*Reservado: 10.*0 u./ });
+    expect(product).toHaveTextContent('TODO RESERVADO');
+    fireEvent.click(product);
+    fireEvent.click(screen.getByRole('button', { name: 'Corregir stock' }));
+    expect(screen.getByText('En depósito: 10 · Reservadas para clientes: 10 · Libres para vender: 0')).toBeVisible();
+    fireEvent.change(screen.getByLabelText('¿Cuántas unidades hay realmente?'), { target: { value: '7' } });
+    expect(screen.getByText('Ajuste físico: de 10 a 7 unidades.')).toBeVisible();
+    expect(screen.getByText('-3 unidades')).toBeVisible();
+    expect(screen.getByRole('alert')).toHaveTextContent('faltarán 3 unidades para cubrir las reservas');
+    fireEvent.change(screen.getByLabelText('Motivo de la corrección'), { target: { value: 'Conteo físico' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar corrección' }));
+    await waitFor(() => expect(api.adjustStock).toHaveBeenCalledWith(demoProducts[0]!.id, -3, 'Conteo físico', 10));
+  });
+
   it('el inventario de personal carga sin solicitudes fallidas a compras', async () => {
     auth.staff = true;
     api.listInventory.mockResolvedValue(toDemoInventory(demoProducts));

@@ -2,7 +2,6 @@ import { Link, useSearch } from '@tanstack/react-router';
 import {
   AlertTriangle,
   Banknote,
-  Check,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -26,6 +25,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from '@/app/query-keys';
 import { useBusinessQuery } from '@/app/use-business-query';
 import { OrderStatus } from '@/components/admin/OrderStatus';
+import { OrderPackingEditor } from '@/components/admin/OrderPackingEditor';
 import { PageHeader } from '@/components/layout/AdminShell';
 import { Button, buttonStyles } from '@/components/ui/Button';
 import { ErrorState, LoadingState } from '@/components/ui/DataState';
@@ -37,98 +37,19 @@ import {
   ORDER_ACTION_LABELS
 } from '@/domain/order-actions';
 import type { Order, OrderAction } from '@/domain/types';
+import type { OrderListFilter } from '@/services/business-api';
 import { cn } from '@/lib/cn';
 import { buildWhatsAppUrl } from '@/lib/whatsapp-url';
 import { getBusinessApi } from '@/services/business-api';
 
 import { cleanSearchTerm } from '@/lib/search';
 
-function OrderTimeline({ order }: { order: Order }) {
-  if (order.orderState === 'cancelled') {
-    return (
-      <div className="flex items-center justify-between gap-3 text-xs font-bold text-rose-900 bg-rose-50/70 rounded-xl p-3 border border-rose-200/70">
-        <div className="flex items-center gap-2.5">
-          <span className="grid size-6 place-items-center rounded-full bg-rose-200 text-rose-800 font-black text-xs">✕</span>
-          <span className="text-sm font-black text-rose-950">Flujo interrumpido: Pedido cancelado</span>
-        </div>
-        <span className="rounded-md bg-rose-100 text-rose-800 px-2.5 py-1 font-black text-[11px] uppercase tracking-wider">
-          Sin acciones requeridas
-        </span>
-      </div>
-    );
-  }
-  const isGift = order.paymentState === 'gifted';
-  const isCost = Boolean(order.isCostSale || order.saleType === 'cost');
-  const isReady =
-    order.preparationState === 'ready' ||
-    order.fulfillmentState === 'delivered' ||
-    order.fulfillmentState === 'shipped';
-  const steps = [
-    {
-      label: 'Listo para entregar',
-      status: isReady
-        ? 'Listo'
-        : order.stockReadiness === 'waiting_incoming'
-          ? 'En camino'
-          : 'Por preparar',
-      done: isReady
-    },
-    {
-      label: isGift ? 'Regalo' : isCost ? 'Al costo' : 'Cobrado',
-      status: isGift
-        ? 'Cortesía'
-        : isCost
-          ? (order.paymentState === 'paid' ? 'Cobrado al costo' : 'Pendiente (al costo)')
-          : order.paymentState === 'paid'
-            ? 'Cobrado'
-            : 'Pendiente de cobro',
-      done: isGift || order.paymentState === 'paid'
-    },
-    {
-      label: 'Entregado',
-      status:
-        order.fulfillmentState === 'delivered'
-          ? 'Entregado'
-          : order.fulfillmentState === 'shipped'
-            ? 'Enviado'
-            : 'Pendiente de entrega',
-      done: order.fulfillmentState === 'delivered'
-    }
-  ];
+const normalizeOrderSearch = (value: unknown): string =>
+  cleanSearchTerm(value).replace(/^(?:pedido\s*)?#\s*(\d+)$/i, '$1');
 
-  return (
-    <div className="flex flex-wrap items-center justify-between gap-4">
-      {steps.map((step, idx) => (
-        <div key={step.label} className="flex items-center gap-2.5 text-[14px] font-bold">
-          <span
-            className={cn(
-              'grid size-7 place-items-center rounded-full text-xs font-black transition-colors',
-              step.done ? 'bg-emerald-600 text-white shadow-sm' : 'bg-cream-200 text-ink-600'
-            )}
-          >
-            {step.done ? '✓' : idx + 1}
-          </span>
-          <div className="flex flex-col sm:flex-row sm:items-center sm:gap-1.5">
-            <span className={step.done ? 'text-ink-950 font-black' : 'text-ink-700 font-bold'}>
-              {step.label}
-            </span>
-            <span
-              className={cn(
-                'text-xs font-semibold',
-                step.done ? 'text-emerald-700' : 'text-ink-600'
-              )}
-            >
-              · {step.status}
-            </span>
-          </div>
-          {idx < steps.length - 1 ? (
-            <span className="text-ink-300 mx-3 hidden sm:inline">→</span>
-          ) : null}
-        </div>
-      ))}
-    </div>
-  );
-}
+const needsUnverifiedBagConfirmation = (order: Order, action: OrderAction): boolean =>
+  order.packingTracked === false && order.fulfillmentState === 'pending' &&
+  (action === 'mark_delivered' || action === 'mark_shipped');
 
 export default function OrdersPage() {
   const queryClient = useQueryClient();
@@ -136,23 +57,23 @@ export default function OrdersPage() {
   const routeSearchParams = useSearch({ strict: false }) as { search?: string | number } | undefined;
   const initialSearch = useMemo(() => {
     if (routeSearchParams?.search !== undefined && routeSearchParams?.search !== null) {
-      return cleanSearchTerm(routeSearchParams.search);
+      return normalizeOrderSearch(routeSearchParams.search);
     }
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
-      return cleanSearchTerm(params.get('search'));
+      return normalizeOrderSearch(params.get('search'));
     }
     return '';
   }, [routeSearchParams?.search]);
 
   const [search, setSearch] = useState(initialSearch);
-  const [filter, setFilter] = useState<'pending' | 'completed' | 'all'>(() => {
+  const [filter, setFilter] = useState<OrderListFilter>(() => {
     return initialSearch ? 'all' : 'pending';
   });
 
   useEffect(() => {
     if (routeSearchParams?.search !== undefined && routeSearchParams?.search !== null) {
-      const cleaned = cleanSearchTerm(routeSearchParams.search);
+      const cleaned = normalizeOrderSearch(routeSearchParams.search);
       setSearch(cleaned);
       if (cleaned) {
         setFilter('all');
@@ -171,7 +92,7 @@ export default function OrdersPage() {
 
   const [debouncedSearch, setDebouncedSearch] = useState(search);
   useEffect(() => {
-    const timer = setTimeout(() => { setPage(1); setDebouncedSearch(cleanSearchTerm(search)); }, 250);
+    const timer = setTimeout(() => { setPage(1); setDebouncedSearch(normalizeOrderSearch(search)); }, 250);
     return () => clearTimeout(timer);
   }, [search]);
   const settingsQuery = useBusinessQuery({
@@ -214,6 +135,7 @@ export default function OrdersPage() {
         queryClient.invalidateQueries({ queryKey: ['orders'] }),
         queryClient.invalidateQueries({ queryKey: queryKeys.dashboard }),
         queryClient.invalidateQueries({ queryKey: queryKeys.inventory }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.productReservationsRoot }),
         queryClient.invalidateQueries({ queryKey: queryKeys.products }),
         queryClient.invalidateQueries({ queryKey: queryKeys.storefrontProducts }),
         queryClient.invalidateQueries({ queryKey: ['paid-orders'] }),
@@ -229,6 +151,8 @@ export default function OrdersPage() {
 
   const pendingCount = ordersQuery.data?.pendingTotal ?? 0;
   const completedCount = ordersQuery.data?.completedTotal ?? 0;
+  const preparingCount = ordersQuery.data?.preparingTotal ?? 0;
+  const readyPickupCount = ordersQuery.data?.readyPickupTotal ?? 0;
   const filteredOrders = items;
 
   // Si se buscó un pedido específico (ej: desde "Ver pedido #1049"), autoexpandir su tarjeta
@@ -266,9 +190,29 @@ export default function OrdersPage() {
                 ? 'bg-brand-600 text-white shadow-sm font-black'
                 : 'border border-ink-950/15 bg-white text-ink-800 hover:border-ink-950/25'
             )}
-            onClick={() => { setPage(1); setFilter('pending'); }}
+            onClick={() => { setPage(1); setSearch(''); setFilter('pending'); }}
           >
             Pendientes de acción <span className="ml-1 opacity-85">• {pendingCount}</span>
+          </button>
+          <button
+            type="button"
+            className={cn(
+              'min-h-11 rounded-full px-4 text-[14.5px] font-bold transition',
+              filter === 'preparing' ? 'bg-brand-600 text-white shadow-sm font-black' : 'border border-ink-950/15 bg-white text-ink-800 hover:border-ink-950/25'
+            )}
+            onClick={() => { setPage(1); setSearch(''); setFilter('preparing'); }}
+          >
+            En preparación • {preparingCount}
+          </button>
+          <button
+            type="button"
+            className={cn(
+              'min-h-11 rounded-full px-4 text-[14.5px] font-bold transition',
+              filter === 'ready_pickup' ? 'bg-brand-600 text-white shadow-sm font-black' : 'border border-ink-950/15 bg-white text-ink-800 hover:border-ink-950/25'
+            )}
+            onClick={() => { setPage(1); setSearch(''); setFilter('ready_pickup'); }}
+          >
+            Listos para retirar • {readyPickupCount}
           </button>
           <button
             type="button"
@@ -278,7 +222,7 @@ export default function OrdersPage() {
                 ? 'bg-brand-600 text-white shadow-sm font-black'
                 : 'border border-ink-950/15 bg-white text-ink-800 hover:border-ink-950/25'
             )}
-            onClick={() => { setPage(1); setFilter('completed'); }}
+            onClick={() => { setPage(1); setSearch(''); setFilter('completed'); }}
           >
             Completados <span className="ml-1 opacity-85">• {completedCount}</span>
           </button>
@@ -290,7 +234,7 @@ export default function OrdersPage() {
                 ? 'bg-brand-600 text-white shadow-sm font-black'
                 : 'border border-ink-950/15 bg-white text-ink-800 hover:border-ink-950/25'
             )}
-            onClick={() => { setPage(1); setFilter('all'); }}
+            onClick={() => { setPage(1); setSearch(''); setFilter('all'); }}
           >
             Todos ({pendingCount + completedCount})
           </button>
@@ -300,11 +244,12 @@ export default function OrdersPage() {
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-ink-600" />
           <input
             type="search"
-            placeholder="Buscar pedido, cliente, tel…"
+            placeholder="Buscar #pedido, cliente o teléfono…"
             value={search}
             onChange={(e) => {
               const val = e.target.value.replace(/^["'“”`\\]+|["'“”`\\]+$/g, '');
               setSearch(val);
+              if (val.trim()) setFilter('all');
             }}
             className="h-11 w-full rounded-full border border-ink-950/15 bg-white pl-10 pr-4 text-[14.5px] font-semibold text-ink-950 placeholder:text-ink-600/70 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
           />
@@ -348,8 +293,9 @@ export default function OrdersPage() {
                 order.orderState === 'cancelled' ||
                 (order.fulfillmentState === 'delivered' && order.paymentState === 'paid');
               const actions = availableOrderActions(order);
-              const primaryAction = actions[0];
-              const secondaryActions = actions.slice(1);
+              const hasPhysicalUnitsToPack = order.items.some(item =>
+                (item.physicalReservedQuantity ?? item.quantity) > 0 || (item.packedQuantity ?? 0) > 0
+              );
               const showMore = showSecondaryActions[order.id] ?? false;
 
               return (
@@ -417,7 +363,7 @@ export default function OrdersPage() {
                   {open ? (
                     <div className="border-t border-ink-950/6 bg-cream-50/25 p-5 sm:p-6">
                       {order.orderState === 'cancelled' ? (
-                        <div className="mb-6 rounded-2xl bg-rose-50 border border-rose-200 p-4 text-rose-950 flex flex-wrap items-center justify-between gap-3 shadow-xs">
+                        <div className="mb-5 rounded-2xl bg-rose-50 border border-rose-200 p-4 text-rose-950 flex flex-wrap items-center justify-between gap-3 shadow-xs">
                           <div className="flex items-center gap-3">
                             <div className="grid size-9 place-items-center rounded-xl bg-rose-100 text-rose-700 shrink-0">
                               <AlertTriangle className="size-5" />
@@ -427,16 +373,8 @@ export default function OrdersPage() {
                               <p className="text-xs text-rose-800 font-medium">Este pedido está cancelado. El stock reservado fue liberado y no requiere preparación ni cobro.</p>
                             </div>
                           </div>
-                          <span className="inline-flex items-center gap-1 rounded-full bg-rose-200/90 px-3 py-1 text-xs font-black text-rose-950 uppercase tracking-wide">
-                            Estado: Cancelado
-                          </span>
                         </div>
-                      ) : (
-                        /* Timeline superior */
-                        <div className="mb-6 rounded-xl bg-white p-4 border border-ink-950/6 shadow-xs">
-                          <OrderTimeline order={order} />
-                        </div>
-                      )}
+                      ) : null}
 
                       <div className="grid gap-6 lg:grid-cols-[1fr_20rem]">
                         {/* Detalle de productos y entrega */}
@@ -467,10 +405,15 @@ export default function OrdersPage() {
                             </div>
                           </div>
 
+                          {order.orderState === 'confirmed' && order.fulfillmentState === 'pending' &&
+                           (hasPhysicalUnitsToPack || (order.stockReadiness !== 'waiting_incoming' && order.stockReadiness !== 'uncovered')) ? (
+                            <OrderPackingEditor order={order} />
+                          ) : null}
+
                           {/* Resumen de Pago y Entrega */}
-                          <div className="grid gap-3 sm:grid-cols-2">
+                          <div className={cn('grid gap-3', order.paymentState !== 'gifted' && 'sm:grid-cols-2')}>
                             {/* Card Pago */}
-                            <div className="rounded-2xl bg-white p-4 sm:p-5 border border-ink-950/8 text-[14px] space-y-3 shadow-xs">
+                            {order.paymentState !== 'gifted' ? <div className="rounded-2xl bg-white p-4 sm:p-5 border border-ink-950/8 text-[14px] space-y-3 shadow-xs">
                               <div className="flex items-center justify-between border-b border-ink-950/6 pb-2.5">
                                 <div className="flex items-center gap-2">
                                   <span className="grid size-7 place-items-center rounded-lg bg-emerald-50 text-emerald-700">
@@ -478,28 +421,6 @@ export default function OrdersPage() {
                                   </span>
                                   <p className="text-[12px] font-black uppercase tracking-wider text-ink-600">Pago</p>
                                 </div>
-                                <span
-                                  className={cn(
-                                    'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-black border',
-                                    order.paymentState === 'gifted'
-                                      ? 'bg-purple-50 text-purple-900 border-purple-200'
-                                      : order.paymentState === 'paid'
-                                        ? 'bg-emerald-50 text-emerald-900 border-emerald-200'
-                                        : order.paymentState === 'refunded'
-                                          ? 'bg-ink-100 text-ink-700 border-ink-200'
-                                          : 'bg-amber-50 text-amber-900 border-amber-200'
-                                  )}
-                                >
-                                  {order.paymentState === 'gifted'
-                                    ? 'Regalo / Cortesía'
-                                    : order.isCostSale || order.saleType === 'cost'
-                                      ? 'Pagado al costo'
-                                      : order.paymentState === 'paid'
-                                        ? 'Pagado'
-                                        : order.paymentState === 'refunded'
-                                          ? 'Reembolsado'
-                                          : 'Pendiente de cobro'}
-                                </span>
                               </div>
                               <div className="space-y-1">
                                 <span className="text-[11px] font-black uppercase tracking-wider text-ink-500 block">
@@ -513,7 +434,7 @@ export default function OrdersPage() {
                                       : 'Transferencia bancaria'}
                                 </p>
                               </div>
-                            </div>
+                            </div> : null}
 
                             {/* Card Entrega */}
                             {(() => {
@@ -586,11 +507,7 @@ export default function OrdersPage() {
                                         </div>
                                       ) : null}
                                     </div>
-                                  ) : (
-                                    <p className="text-xs font-medium text-ink-600">
-                                      El cliente retira personalmente por el local.
-                                    </p>
-                                  )}
+                                  ) : null}
                                 </div>
                               );
                             })()}
@@ -620,41 +537,22 @@ export default function OrdersPage() {
                           </div>
                         </div>
 
-                        {/* Botones de acción contextuales simplificados: Cobrado / Regalar y Entregado */}
-                        <div className="flex flex-col gap-3 rounded-2xl bg-white p-5 sm:p-6 border border-ink-950/8 shadow-sm h-fit">
-                          <div className="flex items-center justify-between border-b border-ink-950/6 pb-2">
+                        {/* Una sola guía operativa: los estados permanecen en la cabecera. */}
+                        <div className="flex h-fit flex-col gap-3 rounded-2xl border border-ink-950/8 bg-white p-5 shadow-sm sm:p-6">
+                          <div className="border-b border-ink-950/6 pb-2">
                             <p className="text-[12.5px] font-black uppercase tracking-wider text-ink-700">
-                              Acción operativa
+                              {order.orderState === 'cancelled' ? 'Estado del pedido' : 'Qué sigue'}
                             </p>
-                            {order.orderState === 'cancelled' ? (
-                              <span className="inline-flex items-center gap-1 rounded-md bg-rose-100 px-2 py-0.5 text-[11px] font-bold text-rose-900 border border-rose-200">
-                                Cancelado
-                              </span>
-                            ) : order.isCostSale || order.saleType === 'cost' ? (
-                              <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2 py-0.5 text-[11px] font-bold text-amber-900 border border-amber-200">
-                                <Tag className="size-3 text-amber-600" /> Al costo
-                              </span>
-                            ) : order.paymentState === 'gifted' ? (
-                              <span className="inline-flex items-center gap-1 rounded-md bg-purple-50 px-2 py-0.5 text-[11px] font-bold text-purple-900 border border-purple-200">
-                                <Gift className="size-3 text-purple-600" /> Regalo
-                              </span>
-                            ) : null}
                           </div>
 
                           {order.orderState === 'cancelled' ? (
                             <div className="rounded-xl bg-rose-50 border border-rose-200/80 p-4 text-center space-y-1">
-                              <p className="text-[13.5px] font-black text-rose-950">Pedido cancelado</p>
-                              <p className="text-xs text-rose-700 font-medium">No requiere acciones operativas pendientes.</p>
+                              <p className="text-xs text-rose-700 font-medium">No requiere acciones pendientes.</p>
                             </div>
                           ) : (
                             <>
-                              {/* 1. Paso Preparación (Listo para entregar) */}
-                          {order.preparationState === 'ready' || order.fulfillmentState === 'delivered' || order.fulfillmentState === 'shipped' ? (
-                            <div className="flex items-center gap-2 rounded-xl bg-brand-50 border border-brand-200 px-3.5 py-2.5 text-[13.5px] font-black text-brand-900">
-                              <PackageCheck className="size-4 shrink-0 text-brand-600" />
-                              <span>Listo para entrega</span>
-                            </div>
-                          ) : order.stockReadiness === 'waiting_incoming' ? (
+                              {/* Una sola indicación para el bloqueo o la próxima preparación. */}
+                          {order.fulfillmentState === 'pending' && order.stockReadiness === 'waiting_incoming' ? (
                             <div className="rounded-xl bg-brand-50 border border-brand-200 p-3 text-xs font-semibold text-brand-950 space-y-1">
                               <p className="font-black flex items-center gap-1.5 text-brand-900">
                                 <Package className="size-4 shrink-0 text-brand-600" /> Mercadería en camino
@@ -663,10 +561,10 @@ export default function OrdersPage() {
                                 {order.expectedArrivalAt
                                   ? `Llegada estimada: ${new Intl.DateTimeFormat('es-AR', { dateStyle: 'medium' }).format(new Date(order.expectedArrivalAt))}.`
                                   : 'Stock asignado a compras en camino.'}{' '}
-                                Recibí la compra en Inventario para preparar el pedido.
+                                Recibí la compra en Inventario. Después completá el armado de la bolsita.
                               </p>
                             </div>
-                          ) : order.stockReadiness === 'uncovered' ? (
+                          ) : order.fulfillmentState === 'pending' && order.stockReadiness === 'uncovered' ? (
                             <div className="rounded-xl bg-rose-50 border border-rose-200 p-3 text-xs font-semibold text-rose-950 space-y-1">
                               <p className="font-black flex items-center gap-1.5 text-rose-900">
                                 <span>🔴</span> Faltante de proveedor
@@ -675,7 +573,7 @@ export default function OrdersPage() {
                                 La compra del proveedor cerró con faltante definitivo. Contactá al cliente para acordar un reemplazo o cancelar el pedido.
                               </p>
                             </div>
-                          ) : actions.includes('mark_ready') ? (
+                          ) : order.fulfillmentState === 'pending' && order.preparationState !== 'ready' && actions.includes('mark_ready') ? (
                             <Button
                               variant="dark"
                               size="md"
@@ -691,27 +589,16 @@ export default function OrdersPage() {
                               <PackageCheck className="size-4 mr-1.5 shrink-0" />
                               Marcar listo para entregar
                             </Button>
+                          ) : order.fulfillmentState === 'pending' && order.preparationState !== 'ready' ? (
+                            <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs font-semibold text-amber-950">
+                              {hasPhysicalUnitsToPack
+                                ? 'Revisá la bolsita y registrá todas las unidades antes de marcar el pedido como listo.'
+                                : 'No hay unidades físicas reservadas para armar este pedido. Revisá sus reservas en Inventario.'}
+                            </p>
                           ) : null}
 
-                          {/* 2. Paso Cobrado / Regalo / Al costo */}
-                          {order.paymentState === 'gifted' ? (
-                            <div className="flex items-center gap-2 rounded-xl bg-purple-50 border border-purple-200 px-3.5 py-2.5 text-[13.5px] font-black text-purple-800">
-                              <Gift className="size-4 shrink-0 text-purple-600" />
-                              <span>Regalo / Cortesía</span>
-                            </div>
-                          ) : order.paymentState === 'paid' ? (
-                            order.isCostSale || order.saleType === 'cost' ? (
-                              <div className="flex items-center gap-2 rounded-xl bg-amber-50 border border-amber-200 px-3.5 py-2.5 text-[13.5px] font-black text-amber-900">
-                                <Tag className="size-4 shrink-0 text-amber-600" />
-                                <span>Cobrado al costo</span>
-                              </div>
-                            ) : (
-                              <div className="flex items-center gap-2 rounded-xl bg-emerald-50 border border-emerald-200 px-3.5 py-2.5 text-[13.5px] font-black text-emerald-800">
-                                <Check className="size-4 shrink-0 text-emerald-600" />
-                                <span>Cobrado</span>
-                              </div>
-                            )
-                          ) : actions.includes('mark_paid') ? (
+                          {/* El cobro es independiente de la preparación. */}
+                          {actions.includes('mark_paid') ? (
                             <div className="space-y-2">
                               <Button
                                 variant={order.preparationState === 'ready' ? 'dark' : 'secondary'}
@@ -767,34 +654,8 @@ export default function OrdersPage() {
                             </div>
                           ) : null}
 
-                          {/* 3. Paso Entregado */}
-                          {order.fulfillmentState === 'delivered' ? (
-                            <div className="flex items-center gap-2 rounded-xl bg-emerald-50 border border-emerald-200 px-3.5 py-2.5 text-[14px] font-black text-emerald-800">
-                              <Check className="size-4 shrink-0 text-emerald-600" />
-                              <span>Entregado</span>
-                            </div>
-                          ) : order.stockReadiness === 'waiting_incoming' ? (
-                            <div className="rounded-xl bg-brand-50 border border-brand-200 p-3 text-xs font-semibold text-brand-950 space-y-1">
-                              <p className="font-black flex items-center gap-1.5 text-brand-900">
-                                <span>📦</span> En camino
-                              </p>
-                              <p className="text-brand-800">
-                                {order.expectedArrivalAt
-                                  ? `Llegada estimada: ${new Intl.DateTimeFormat('es-AR', { dateStyle: 'medium' }).format(new Date(order.expectedArrivalAt))}.`
-                                  : 'Stock asignado a compras en camino.'}{' '}
-                                Recibí la compra en Inventario para habilitar la entrega.
-                              </p>
-                            </div>
-                          ) : order.stockReadiness === 'uncovered' ? (
-                            <div className="rounded-xl bg-rose-50 border border-rose-200 p-3 text-xs font-semibold text-rose-950 space-y-1">
-                              <p className="font-black flex items-center gap-1.5 text-rose-900">
-                                <span>🔴</span> Faltante de proveedor
-                              </p>
-                              <p className="text-rose-800">
-                                La compra del proveedor cerró con faltante definitivo. Contactá al cliente para acordar un reemplazo o cancelar el pedido.
-                              </p>
-                            </div>
-                          ) : actions.includes('mark_delivered') ? (
+                          {/* Se conserva la entrega directa que ya permitía la app. */}
+                          {actions.includes('mark_delivered') ? (
                             <Button
                               variant={order.paymentState === 'paid' && order.preparationState === 'ready' ? 'dark' : 'secondary'}
                               size="md"
@@ -803,23 +664,18 @@ export default function OrdersPage() {
                                 transition.isPending &&
                                 transition.variables?.action === 'mark_delivered'
                               }
-                              onClick={() =>
-                                transition.mutate({ orderId: order.id, action: 'mark_delivered' })
-                              }
+                              onClick={() => {
+                                if (needsUnverifiedBagConfirmation(order, 'mark_delivered')) {
+                                  setConfirmAction({ order, action: 'mark_delivered' });
+                                } else {
+                                  transition.mutate({ orderId: order.id, action: 'mark_delivered' });
+                                }
+                              }}
                             >
                               Marcar como entregado
                             </Button>
-                          ) : null}
-
-                          {/* Estado si ya fue completado */}
-                          {order.paymentState === 'gifted' ? (
-                            <p className="text-[13.5px] font-semibold text-purple-700 py-1 text-center">
-                              Pedido regalo / cortesía registrado. Stock descontado.
-                            </p>
-                          ) : order.paymentState === 'paid' && order.fulfillmentState === 'delivered' ? (
-                            <p className="text-[13.5px] font-semibold text-emerald-700 py-1 text-center">
-                              Pedido completado y stock actualizado.
-                            </p>
+                          ) : order.fulfillmentState === 'delivered' ? (
+                            <p className="text-[13px] font-semibold text-ink-700">Sin pasos operativos pendientes.</p>
                           ) : null}
                         </>
                       )}
@@ -863,7 +719,7 @@ export default function OrdersPage() {
                                             transition.variables?.action === secAction
                                           }
                                           onClick={() => {
-                                            if (isDestructive) {
+                                            if (isDestructive || needsUnverifiedBagConfirmation(order, secAction)) {
                                               setConfirmAction({ order, action: secAction });
                                             } else {
                                               transition.mutate({
@@ -926,6 +782,10 @@ export default function OrdersPage() {
                         ? `¿Cobrar pedido #${confirmAction.order.number} a precio de costo?`
                         : confirmAction.action === 'cancel'
                           ? `¿Cancelar pedido #${confirmAction.order.number}?`
+                          : confirmAction.action === 'mark_delivered'
+                            ? `¿Entregar pedido #${confirmAction.order.number}?`
+                            : confirmAction.action === 'mark_shipped'
+                              ? `¿Enviar pedido #${confirmAction.order.number}?`
                           : `¿Registrar reintegro para pedido #${confirmAction.order.number}?`}
                   </h3>
                   <p className="text-sm font-semibold text-ink-800">
@@ -940,6 +800,11 @@ export default function OrdersPage() {
               </div>
 
               <div className="mt-4 rounded-2xl bg-cream-50 p-4 text-sm text-ink-700 space-y-2">
+                {needsUnverifiedBagConfirmation(confirmAction.order, confirmAction.action) ? (
+                  <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 font-semibold text-amber-950">
+                    La bolsita figura sin verificar en la app. Comprobá físicamente que contiene todas las unidades de este pedido. Si falta algo, volvé y registrá el armado antes de continuar.
+                  </p>
+                ) : null}
                 {confirmAction.action === 'mark_gifted' ? (
                   <>
                     <p>
@@ -975,10 +840,15 @@ export default function OrdersPage() {
                     <p>
                       Al cancelar el pedido, <strong>se liberarán inmediatamente las unidades reservadas en inventario</strong> para que otros clientes puedan comprarlas.
                     </p>
+                    <p className="text-xs font-semibold text-rose-900">
+                      Si hay productos en una bolsita, devolvelos al estante y registrá cero unidades guardadas antes de cancelar.
+                    </p>
                     <p className="text-xs font-semibold text-rose-700">
                       ⚠️ Esta acción cambiará el estado del pedido a «Cancelado».
                     </p>
                   </>
+                ) : confirmAction.action === 'mark_delivered' || confirmAction.action === 'mark_shipped' ? (
+                  <p>Al confirmar se descontarán las unidades físicas reservadas del inventario.</p>
                 ) : (
                   <>
                     <p>
@@ -1032,6 +902,10 @@ export default function OrdersPage() {
                       ? 'Sí, cobrar al costo'
                       : confirmAction.action === 'cancel'
                         ? 'Sí, cancelar pedido'
+                        : confirmAction.action === 'mark_delivered'
+                          ? 'Sí, ya verifiqué y entregar'
+                          : confirmAction.action === 'mark_shipped'
+                            ? 'Sí, ya verifiqué y enviar'
                         : 'Sí, confirmar reintegro'}
                 </Button>
               </div>
