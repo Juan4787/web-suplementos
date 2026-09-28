@@ -114,8 +114,10 @@ export default function ImportOrderPage() {
 
       const products = productsQuery.data ?? [];
       const lines = parsed.lines.map((line) => {
-        const product = products.find((candidate) => candidate.sku === line.sku);
-        if (!product || !product.active || !product.published) {
+        const product = products.find(
+          (candidate) => candidate.sku.trim().toLowerCase() === line.sku.trim().toLowerCase()
+        );
+        if (!product || !product.active) {
           throw new AppError('business', `El producto “${line.name}” no está disponible en catálogo.`, {
             nextAction: 'Revisá el mensaje de WhatsApp o cargá el producto si es nuevo.'
           });

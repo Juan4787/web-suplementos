@@ -25,16 +25,29 @@ const fnv1a = (value: string): string => {
   return (hash >>> 0).toString(16).padStart(8, '0').toUpperCase();
 };
 
-const normalizeProtocolText = (value: string): string =>
-  value
+const normalizeProtocolText = (value: string): string => {
+  let text = value
+    // Limpiar caracteres invisibles, marcas de dirección LTR/RTL y BOM que inyecta WhatsApp Web / móvil
+    // (preservando \u200D que se usa en emojis compuestos)
+    .replace(/[\uFEFF\u200E\u200F\u200B\u200C]/g, '')
     .trim()
     .replace(/^["'“`]+|["'”`]+$/g, '')
     .replace(/\r\n/g, '\n')
     .replace(/\r/g, '\n')
-    .replace(/^[ \t]*[•\*\–\—][ \t]+\[/gm, '- [')
+    .replace(/^[ \t]*[•\*\–\—\-][ \t]*\[/gm, '- [')
     .replace(/\$[\u00a0\u202f\u200b\s]+(\d)/g, '$\u00a0$1')
     .replace(/[ \t]+$/gm, '')
     .trim();
+
+  // Si se copió desde WhatsApp Web con prefijo de remitente o timestamp en la misma línea
+  // ej: "[19:40, 28/9/2026] Agustina: PEDIDO DE TIENDA DE SUPLEMENTOS"
+  const headerMatch = text.match(/\*?(?:PEDIDO DE TIENDA DE SUPLEMENTOS|PEDIDO IMPULSO(?:\s*·\s*V1)?)\*?/i);
+  if (headerMatch && headerMatch.index !== undefined && headerMatch.index > 0) {
+    text = text.slice(headerMatch.index).trim();
+  }
+
+  return text;
+};
 
 const productLine = (line: CartLine): string =>
   `- [${line.sku}] ${line.name} | ${line.presentation} | ${line.quantity} x ${formatMoney(line.unitPriceCents)} = ${formatMoney(line.unitPriceCents * line.quantity)}`;
@@ -239,8 +252,8 @@ const reconstructLegacyAsterisks = (body: string): string => {
 const splitSections = (message: string): Map<string, string> => {
   const chunks = normalizeProtocolText(message).split(/\n\n+/);
   const rawHeader = chunks[0] ?? '';
-  const cleanHeader = rawHeader.replace(/^\*+|\*+$/g, '').trim();
-  if (!VALID_HEADERS.has(cleanHeader) && !VALID_HEADERS.has(rawHeader)) {
+  const cleanHeader = rawHeader.replace(/^\*+|\*+$/g, '').trim().toUpperCase();
+  if (!VALID_HEADERS.has(cleanHeader) && !VALID_HEADERS.has(rawHeader.toUpperCase())) {
     throw new Error('Encabezado inválido.');
   }
   const sections = new Map<string, string>();
@@ -248,15 +261,19 @@ const splitSections = (message: string): Map<string, string> => {
   for (const chunk of chunks.slice(1)) {
     const newlineIndex = chunk.indexOf('\n');
     if (newlineIndex === -1) {
-      throw new Error('Sección inválida.');
+      // Si el cliente agregó una línea de texto libre (ej: "Muchas gracias!", notas de entrega, etc.)
+      // sin formato "Etiqueta\nValor", no arruinamos el pedido con "Sección inválida".
+      continue;
     }
     const rawLabel = chunk.slice(0, newlineIndex).trim();
     const content = chunk.slice(newlineIndex + 1).trim();
     const label = rawLabel.replace(/^\*+|\*+$/g, '').trim();
-    if (!label || sections.has(label)) {
-      throw new Error('Sección inválida.');
+    if (!label) {
+      continue;
     }
-    sections.set(label, content);
+    if (!sections.has(label)) {
+      sections.set(label, content);
+    }
   }
   return sections;
 };
@@ -316,16 +333,20 @@ export const parseWhatsAppProtocol = (
     markerLength = '\n\n*Código de control*\n'.length;
   }
   if (checksumIndex < 0) {
-    const match = normalized.match(/\n\n\*?\s*Código de control\s*\*?\n([0-9A-Fa-f]{8})\s*$/);
-    if (match && match.index !== undefined && match[1]) {
+    const match = normalized.match(/(?:\n\n+|\n)\*?\s*Código de control\s*\*?(?:\n|:\s*)/i);
+    if (match && match.index !== undefined) {
       checksumIndex = match.index;
-      markerLength = match[0].length - match[1].length;
+      markerLength = match[0].length;
     }
   }
   if (checksumIndex < 0) throw new Error('Falta el código de control.');
 
   const body = normalized.slice(0, checksumIndex);
-  const suppliedChecksum = normalized.slice(checksumIndex + markerLength).trim().toUpperCase();
+  const rawSuppliedChecksum = normalized.slice(checksumIndex + markerLength).trim();
+  const hexMatch = rawSuppliedChecksum.match(/[0-9A-Fa-f]{8}/);
+  const suppliedChecksum = hexMatch
+    ? hexMatch[0].toUpperCase()
+    : rawSuppliedChecksum.replace(/[^0-9A-Za-z]/g, '').slice(0, 8).toUpperCase();
 
   if (!/^[0-9A-F]{8}$/.test(suppliedChecksum)) {
     throw new Error('El mensaje fue modificado o está incompleto.');
@@ -350,7 +371,7 @@ export const parseWhatsAppProtocol = (
     checksumMismatch = true;
   }
 
-  const sections = splitSections(normalized);
+  const sections = splitSections(body);
   const protocolOrderId = parsedRequired(sections, 'Código de pedido');
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(protocolOrderId)) {
     throw new Error('Código de pedido inválido.');

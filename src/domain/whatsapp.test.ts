@@ -597,4 +597,341 @@ AF62864F`;
     expect(parsed.addressNumber).toBe('2861 4B');
     expect(parsed.phone).toBe('+543498438371');
   });
+
+  it('auditoría adversarial: tolera prefijos de remitente y sufijos de timestamp propios de WhatsApp Web', () => {
+    const rawOrderWithWhatsAppWebDecorations = `[19:40, 28/9/2026] Agustina Gainza: PEDIDO DE TIENDA DE SUPLEMENTOS
+
+Código de pedido
+65e778c2-04ad-436a-a4e4-36c10b1c598c
+
+Nombre
+Agustina
+
+Apellido
+Gainza
+
+Productos
+- [THYROID_SUPPORT] THYROID SUPPORT | 30 CAPS | 1 x $ 33.000 = $ 33.000
+
+Subtotal
+$ 33.000
+
+Medio de pago
+Transferencia
+
+Entrega
+Envío a domicilio
+
+Tipo de envío
+Tradicional
+
+Envío
+A coordinar
+
+Dirección
+Urquiza
+
+Altura
+2861
+
+Teléfono
++543498438371
+
+Zona de entrega
+Santa Fe Capital o alrededores
+
+Total
+$ 33.000
+
+Código de control
+AF62864F
+19:41 ✓✓`;
+
+    const parsed = parseWhatsAppProtocol(rawOrderWithWhatsAppWebDecorations);
+    expect(parsed.protocolChecksum).toBe('AF62864F');
+    expect(parsed.customerFirstName).toBe('Agustina');
+    expect(parsed.customerLastName).toBe('Gainza');
+    expect(parsed.addressNumber).toBe('2861');
+    expect(parsed.lines[0]?.sku).toBe('THYROID_SUPPORT');
+  });
+
+  it('auditoría adversarial: tolera caracteres invisibles de WhatsApp Web (BOM, LTR/RTL marks, ZWSP)', () => {
+    const textWithInvisibles = `\uFEFFPEDIDO DE TIENDA DE SUPLEMENTOS
+
+Código de pedido
+\u200E65e778c2-04ad-436a-a4e4-36c10b1c598c
+
+Nombre
+Agustina\u200B
+
+Apellido
+Gainza
+
+Productos
+- [THYROID_SUPPORT] THYROID SUPPORT | 30 CAPS | 1 x $ 33.000 = $ 33.000
+
+Subtotal
+$ 33.000
+
+Medio de pago
+Transferencia
+
+Entrega
+Envío a domicilio
+
+Tipo de envío
+Tradicional
+
+Envío
+A coordinar
+
+Dirección
+Urquiza
+
+Altura
+2861
+
+Teléfono
+\u200E+543498438371
+
+Zona de entrega
+Santa Fe Capital o alrededores
+
+Total
+$ 33.000
+
+Código de control
+\u200EAF62864F`;
+
+    const parsed = parseWhatsAppProtocol(textWithInvisibles);
+    expect(parsed.protocolOrderId).toBe('65e778c2-04ad-436a-a4e4-36c10b1c598c');
+    expect(parsed.protocolChecksum).toBe('AF62864F');
+    expect(parsed.customerFirstName).toBe('Agustina');
+  });
+
+  it('auditoría adversarial: tolera código de control con asteriscos (*AF62864F*), comillas ("AF62864F") o marcas de lectura', () => {
+    const baseOrder = `PEDIDO DE TIENDA DE SUPLEMENTOS
+
+Código de pedido
+65e778c2-04ad-436a-a4e4-36c10b1c598c
+
+Nombre
+Agustina
+
+Apellido
+Gainza
+
+Productos
+- [THYROID_SUPPORT] THYROID SUPPORT | 30 CAPS | 1 x $ 33.000 = $ 33.000
+
+Subtotal
+$ 33.000
+
+Medio de pago
+Transferencia
+
+Entrega
+Envío a domicilio
+
+Tipo de envío
+Tradicional
+
+Envío
+A coordinar
+
+Dirección
+Urquiza
+
+Altura
+2861
+
+Teléfono
++543498438371
+
+Zona de entrega
+Santa Fe Capital o alrededores
+
+Total
+$ 33.000
+
+Código de control
+AF62864F`;
+
+    const textWithBoldChecksum = baseOrder.replace('AF62864F', '*AF62864F*');
+    const parsedBold = parseWhatsAppProtocol(textWithBoldChecksum);
+    expect(parsedBold.protocolChecksum).toBe('AF62864F');
+
+    const textWithQuotesChecksum = baseOrder.replace('AF62864F', '"AF62864F" 19:42 ✓✓');
+    const parsedQuotes = parseWhatsAppProtocol(textWithQuotesChecksum);
+    expect(parsedQuotes.protocolChecksum).toBe('AF62864F');
+  });
+
+  it('auditoría adversarial: tolera comentarios o agradecimientos del cliente entre medio o al final', () => {
+    const baseOrder = `PEDIDO DE TIENDA DE SUPLEMENTOS
+
+Código de pedido
+65e778c2-04ad-436a-a4e4-36c10b1c598c
+
+Nombre
+Agustina
+
+Apellido
+Gainza
+
+Productos
+- [THYROID_SUPPORT] THYROID SUPPORT | 30 CAPS | 1 x $ 33.000 = $ 33.000
+
+Subtotal
+$ 33.000
+
+Medio de pago
+Transferencia
+
+Entrega
+Envío a domicilio
+
+Tipo de envío
+Tradicional
+
+Envío
+A coordinar
+
+Dirección
+Urquiza
+
+Altura
+2861
+
+Teléfono
++543498438371
+
+Zona de entrega
+Santa Fe Capital o alrededores
+
+Total
+$ 33.000
+
+Código de control
+AF62864F`;
+
+    const textWithCustomerNote = baseOrder.replace(
+      'Total\n$ 33.000\n\nCódigo de control',
+      'Total\n$ 33.000\n\nMuchas gracias por la atención!!\n\nCódigo de control'
+    );
+    const parsed = parseWhatsAppProtocol(textWithCustomerNote, { allowChecksumMismatch: true });
+    expect(parsed.quotedTotalCents).toBe(3300000);
+    expect(parsed.customerName).toBe('Agustina Gainza');
+  });
+
+  it('auditoría adversarial: tolera un solo salto de línea antes de "Código de control"', () => {
+    const baseOrder = `PEDIDO DE TIENDA DE SUPLEMENTOS
+
+Código de pedido
+65e778c2-04ad-436a-a4e4-36c10b1c598c
+
+Nombre
+Agustina
+
+Apellido
+Gainza
+
+Productos
+- [THYROID_SUPPORT] THYROID SUPPORT | 30 CAPS | 1 x $ 33.000 = $ 33.000
+
+Subtotal
+$ 33.000
+
+Medio de pago
+Transferencia
+
+Entrega
+Envío a domicilio
+
+Tipo de envío
+Tradicional
+
+Envío
+A coordinar
+
+Dirección
+Urquiza
+
+Altura
+2861
+
+Teléfono
++543498438371
+
+Zona de entrega
+Santa Fe Capital o alrededores
+
+Total
+$ 33.000
+
+Código de control
+AF62864F`;
+
+    const textWithSingleNewline = baseOrder.replace(
+      'Total\n$ 33.000\n\nCódigo de control',
+      'Total\n$ 33.000\nCódigo de control'
+    );
+    const parsed = parseWhatsAppProtocol(textWithSingleNewline);
+    expect(parsed.protocolChecksum).toBe('AF62864F');
+  });
+
+  it('auditoría adversarial: tolera mayúsculas/minúsculas en el encabezado (ej. "Pedido de tienda de suplementos")', () => {
+    const baseOrder = `PEDIDO DE TIENDA DE SUPLEMENTOS
+
+Código de pedido
+65e778c2-04ad-436a-a4e4-36c10b1c598c
+
+Nombre
+Agustina
+
+Apellido
+Gainza
+
+Productos
+- [THYROID_SUPPORT] THYROID SUPPORT | 30 CAPS | 1 x $ 33.000 = $ 33.000
+
+Subtotal
+$ 33.000
+
+Medio de pago
+Transferencia
+
+Entrega
+Envío a domicilio
+
+Tipo de envío
+Tradicional
+
+Envío
+A coordinar
+
+Dirección
+Urquiza
+
+Altura
+2861
+
+Teléfono
++543498438371
+
+Zona de entrega
+Santa Fe Capital o alrededores
+
+Total
+$ 33.000
+
+Código de control
+AF62864F`;
+
+    const textWithSentenceCase = baseOrder.replace(
+      'PEDIDO DE TIENDA DE SUPLEMENTOS',
+      'Pedido de tienda de suplementos'
+    );
+    const parsed = parseWhatsAppProtocol(textWithSentenceCase, { allowChecksumMismatch: true });
+    expect(parsed.customerFirstName).toBe('Agustina');
+  });
 });
