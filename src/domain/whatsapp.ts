@@ -286,6 +286,10 @@ const parsedShipping = (value: string): CheckoutData['shippingType'] => {
   throw new Error('Tipo de envío inválido.');
 };
 
+export type ParseWhatsAppOptions = {
+  allowChecksumMismatch?: boolean;
+};
+
 export type ParsedWhatsAppOrder = Omit<ImportOrderInput, 'lines'> & {
   lines: Array<{
     sku: string;
@@ -295,9 +299,13 @@ export type ParsedWhatsAppOrder = Omit<ImportOrderInput, 'lines'> & {
     unitPriceCents: number;
     lineTotalCents: number;
   }>;
+  checksumMismatch?: boolean;
 };
 
-export const parseWhatsAppProtocol = (message: string): ParsedWhatsAppOrder => {
+export const parseWhatsAppProtocol = (
+  message: string,
+  options: ParseWhatsAppOptions = {}
+): ParsedWhatsAppOrder => {
   const normalized = normalizeProtocolText(message);
 
   // Detectar marcador del código de control (sin asteriscos o legado con asteriscos)
@@ -334,8 +342,12 @@ export const parseWhatsAppProtocol = (message: string): ParsedWhatsAppOrder => {
     }
   }
 
+  let checksumMismatch = false;
   if (!isValid) {
-    throw new Error('El mensaje fue modificado o está incompleto.');
+    if (!options.allowChecksumMismatch) {
+      throw new Error('El mensaje fue modificado o está incompleto.');
+    }
+    checksumMismatch = true;
   }
 
   const sections = splitSections(normalized);
@@ -435,7 +447,8 @@ export const parseWhatsAppProtocol = (message: string): ParsedWhatsAppOrder => {
     quotedSubtotalCents: subtotalCents,
     quotedTotalCents: totalCents,
     protocolOrderId: protocolOrderId.toLowerCase(),
-    protocolChecksum: suppliedChecksum
+    protocolChecksum: suppliedChecksum,
+    checksumMismatch
   };
 };
 

@@ -534,4 +534,67 @@ DCE085E3`;
     expect(parsedNational.isSantaFeOrNearby).toBe(false);
     expect(parsedNational.email).toBe('carlos.tevez@correo.com');
   });
+
+  it('permite recuperar pedidos con modificaciones manuales de WhatsApp usando allowChecksumMismatch', () => {
+    const rawOrder = `PEDIDO DE TIENDA DE SUPLEMENTOS
+
+Código de pedido
+65e778c2-04ad-436a-a4e4-36c10b1c598c
+
+Nombre
+Agustina
+
+Apellido
+Gainza
+
+Productos
+- [THYROID_SUPPORT] THYROID SUPPORT | 30 CAPS | 1 x $ 33.000 = $ 33.000
+
+Subtotal
+$ 33.000
+
+Medio de pago
+Transferencia
+
+Entrega
+Envío a domicilio
+
+Tipo de envío
+Tradicional
+
+Envío
+A coordinar
+
+Dirección
+Urquiza
+
+Altura
+2861 4B
+
+Teléfono
++543498438371
+
+Zona de entrega
+Santa Fe Capital o alrededores
+
+Total
+$ 33.000
+
+Código de control
+AF62864F`;
+
+    // Por defecto sigue arrojando error de seguridad estricto
+    expect(() => parseWhatsAppProtocol(rawOrder)).toThrow('El mensaje fue modificado o está incompleto.');
+
+    // Con allowChecksumMismatch: true, recupera los datos y marca el flag
+    const parsed = parseWhatsAppProtocol(rawOrder, { allowChecksumMismatch: true });
+    expect(parsed.checksumMismatch).toBe(true);
+    expect(parsed.customerFirstName).toBe('Agustina');
+    expect(parsed.customerLastName).toBe('Gainza');
+    expect(parsed.lines[0]?.sku).toBe('THYROID_SUPPORT');
+    expect(parsed.lines[0]?.quantity).toBe(1);
+    expect(parsed.address).toBe('Urquiza');
+    expect(parsed.addressNumber).toBe('2861 4B');
+    expect(parsed.phone).toBe('+543498438371');
+  });
 });

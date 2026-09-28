@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import {
+  AlertTriangle,
   CheckCircle2,
   ChevronDown,
   ClipboardPaste,
@@ -76,7 +77,41 @@ export default function ImportOrderPage() {
     setCreated(null);
     setShowEditFields(false);
     try {
-      const parsed = parseWhatsAppProtocol(message);
+      let parsed: ParsedWhatsAppOrder;
+      try {
+        parsed = parseWhatsAppProtocol(message);
+      } catch (firstError: unknown) {
+        // Si falló por verificación de integridad (ej. el cliente modificó su dirección agregando depto/piso en WhatsApp),
+        // intentamos recuperar los datos permitiendo la discrepancia del código de control para no trabar el negocio.
+        try {
+          parsed = parseWhatsAppProtocol(message, { allowChecksumMismatch: true });
+        } catch {
+          // Si tampoco se puede parsear permitiendo checksum, el error es estructural: analizamos la causa para guiar al usuario
+          const text = message.trim();
+          if (!text.includes('PEDIDO DE TIENDA DE SUPLEMENTOS') && !text.includes('PEDIDO IMPULSO')) {
+            throw new AppError(
+              'validation',
+              'El mensaje está incompleto: falta el encabezado inicial y los productos.',
+              {
+                nextAction:
+                  'Parece que solo copiaste una parte del mensaje. En WhatsApp, seleccioná y copiá todo el texto completo, desde "PEDIDO DE TIENDA DE SUPLEMENTOS" hasta el "Código de control" al final.'
+              }
+            );
+          }
+          if (!text.includes('Código de control')) {
+            throw new AppError(
+              'validation',
+              'Falta el código de control al final del mensaje.',
+              {
+                nextAction:
+                  'Asegurate de copiar el mensaje completo de WhatsApp hasta la última línea.'
+              }
+            );
+          }
+          throw firstError;
+        }
+      }
+
       const products = productsQuery.data ?? [];
       const lines = parsed.lines.map((line) => {
         const product = products.find((candidate) => candidate.sku === line.sku);
@@ -289,6 +324,20 @@ export default function ImportOrderPage() {
                 Volver
               </Button>
             </div>
+
+            {review.source.checksumMismatch ? (
+              <div className="mt-4 flex items-start gap-2.5 rounded-2xl border border-amber-300 bg-amber-50 p-3.5 text-xs text-amber-950">
+                <AlertTriangle className="size-4.5 text-amber-700 shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-black text-amber-900">
+                    Mensaje con modificaciones manuales en WhatsApp
+                  </p>
+                  <p className="mt-0.5 text-amber-800">
+                    El código de control no coincide exactamente (el cliente o remitente pudo haber agregado datos a mano como piso/depto o notas). Los datos fueron leídos correctamente; comprobalos abajo antes de confirmar.
+                  </p>
+                </div>
+              </div>
+            ) : null}
 
             {/* Metadatos compactos: Cliente, Pago y Entrega en jerarquía secundaria */}
             <div className="mt-4 grid gap-3 sm:grid-cols-3 rounded-2xl bg-cream-50/90 p-3.5 border border-ink-950/6 text-[13.5px]">
