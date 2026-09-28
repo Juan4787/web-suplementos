@@ -190,7 +190,7 @@ export const buildWhatsAppProtocol = (
 };
 
 const productPattern =
-  /^[ \t]*[-•\*][ \t]+\[([^\]]+)\][ \t]+(.+?)[ \t]+\|[ \t]+(.+?)[ \t]+\|[ \t]+(\d+)[ \t]+x[ \t]+\$[\u00a0\s]?([\d.]+(?:,\d{1,2})?)[ \t]+=[ \t]+\$[\u00a0\s]?([\d.]+(?:,\d{1,2})?)$/;
+  /^[ \t]*(?:[-•\*][ \t]*)?\[([^\]]+)\][ \t]+(.+?)[ \t]+\|[ \t]+(.+?)[ \t]+\|[ \t]+(\d+)[ \t]*x[ \t]*\$[\u00a0\s]?([\d.]+(?:,\d{1,2})?)[ \t]*=[ \t]*\$[\u00a0\s]?([\d.]+(?:,\d{1,2})?)$/;
 
 const parseArs = (value: string): number => {
   const currencyValue = value.trim().replace(/^\$\s*/u, '').replace(/\s/gu, '');
@@ -333,10 +333,15 @@ export const parseWhatsAppProtocol = (
     markerLength = '\n\n*Código de control*\n'.length;
   }
   if (checksumIndex < 0) {
-    const match = normalized.match(/(?:\n\n+|\n)\*?\s*Código de control\s*\*?(?:\n|:\s*)/i);
-    if (match && match.index !== undefined) {
-      checksumIndex = match.index;
-      markerLength = match[0].length;
+    const regex = /(?:\n\n+|\n)\*?\s*Código de control\s*\*?(?:\n|:\s*)/gi;
+    let match: RegExpExecArray | null = null;
+    let lastMatch: RegExpExecArray | null = null;
+    while ((match = regex.exec(normalized)) !== null) {
+      lastMatch = match;
+    }
+    if (lastMatch && lastMatch.index !== undefined) {
+      checksumIndex = lastMatch.index;
+      markerLength = lastMatch[0].length;
     }
   }
   if (checksumIndex < 0) throw new Error('Falta el código de control.');
@@ -423,20 +428,25 @@ export const parseWhatsAppProtocol = (
   let customerLastName = '';
   let customerName = '';
 
-  if (sections.has('Apellido')) {
-    customerFirstName = parsedRequired(sections, 'Nombre');
-    customerLastName = parsedRequired(sections, 'Apellido');
+  const rawNombre = sections.get('Nombre') ?? '';
+  const rawApellido = sections.get('Apellido') ?? '';
+
+  if (rawNombre && rawApellido) {
+    customerFirstName = rawNombre;
+    customerLastName = rawApellido;
     customerName = `${customerFirstName} ${customerLastName}`.trim();
-  } else {
-    customerName = parsedRequired(sections, 'Nombre');
+  } else if (rawNombre) {
+    customerName = rawNombre;
     const spaceIndex = customerName.indexOf(' ');
     if (spaceIndex > 0) {
       customerFirstName = customerName.slice(0, spaceIndex).trim();
       customerLastName = customerName.slice(spaceIndex + 1).trim();
     } else {
       customerFirstName = customerName;
-      customerLastName = '-';
+      customerLastName = rawApellido || '';
     }
+  } else {
+    throw new Error('Falta Nombre.');
   }
 
   const rawZona = sections.get('Zona de entrega') ?? sections.get('Zona') ?? null;
@@ -457,12 +467,12 @@ export const parseWhatsAppProtocol = (
     shippingType,
     isSantaFeOrNearby,
     email,
-    address: deliveryMethod === 'shipping' ? parsedRequired(sections, 'Dirección') : null,
+    address: deliveryMethod === 'shipping' ? (sections.get('Dirección') ?? '') : null,
     addressNumber:
       deliveryMethod === 'shipping'
-        ? parsedRequired(sections, 'Altura').replace(/^Sin altura$/, '') || null
+        ? (sections.get('Altura')?.replace(/^Sin altura$/, '') || null)
         : null,
-    phone: deliveryMethod === 'shipping' ? parsedRequired(sections, 'Teléfono') : null,
+    phone: sections.get('Teléfono') ?? null,
     lines,
     shippingFeeCents,
     quotedSubtotalCents: subtotalCents,

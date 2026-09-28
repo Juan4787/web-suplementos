@@ -88,7 +88,7 @@ export default function ImportOrderPage() {
         } catch {
           // Si tampoco se puede parsear permitiendo checksum, el error es estructural: analizamos la causa para guiar al usuario
           const text = message.trim();
-          if (!text.includes('PEDIDO DE TIENDA DE SUPLEMENTOS') && !text.includes('PEDIDO IMPULSO')) {
+          if (!/PEDIDO DE TIENDA DE SUPLEMENTOS|PEDIDO IMPULSO/i.test(text)) {
             throw new AppError(
               'validation',
               'El mensaje está incompleto: falta el encabezado inicial y los productos.',
@@ -98,7 +98,7 @@ export default function ImportOrderPage() {
               }
             );
           }
-          if (!text.includes('Código de control')) {
+          if (!/Código de control/i.test(text)) {
             throw new AppError(
               'validation',
               'Falta el código de control al final del mensaje.',
@@ -696,13 +696,19 @@ export default function ImportOrderPage() {
                 En “Corregir datos del pedido”, completá el nombre y apellido del cliente.
               </p>
             ) : null}
+            {review.source.deliveryMethod === 'shipping' && !review.source.address?.trim() ? (
+              <p role="status" className="mb-3 text-sm font-bold text-amber-900">
+                En “Corregir datos del pedido”, completá la dirección de entrega.
+              </p>
+            ) : null}
             <Button
               className="w-full text-[15.5px] font-black"
               size="lg"
               loading={confirm.isPending}
               disabled={
                 !review.customerFirstName.trim() ||
-                !review.customerLastName.trim()
+                !review.customerLastName.trim() ||
+                (review.source.deliveryMethod === 'shipping' && !review.source.address?.trim())
               }
               onClick={() =>
                 confirm.mutate({

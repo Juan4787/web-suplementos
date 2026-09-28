@@ -934,4 +934,169 @@ AF62864F`;
     const parsed = parseWhatsAppProtocol(textWithSentenceCase, { allowChecksumMismatch: true });
     expect(parsed.customerFirstName).toBe('Agustina');
   });
+
+  it('auditoría adversarial: tolera formato de producto compacto (1x, sin espacio en guion o en igual)', () => {
+    const baseOrder = `PEDIDO DE TIENDA DE SUPLEMENTOS
+
+Código de pedido
+65e778c2-04ad-436a-a4e4-36c10b1c598c
+
+Nombre
+Agustina
+
+Apellido
+Gainza
+
+Productos
+-[THYROID_SUPPORT] THYROID SUPPORT | 30 CAPS | 1x $ 33.000 = $ 33.000
+
+Subtotal
+$ 33.000
+
+Medio de pago
+Transferencia
+
+Entrega
+Envío a domicilio
+
+Tipo de envío
+Tradicional
+
+Envío
+A coordinar
+
+Dirección
+Urquiza
+
+Altura
+2861
+
+Teléfono
++543498438371
+
+Zona de entrega
+Santa Fe Capital o alrededores
+
+Total
+$ 33.000
+
+Código de control
+AF62864F`;
+
+    const parsed = parseWhatsAppProtocol(baseOrder, { allowChecksumMismatch: true });
+    expect(parsed.lines[0]?.sku).toBe('THYROID_SUPPORT');
+    expect(parsed.lines[0]?.quantity).toBe(1);
+    expect(parsed.lines[0]?.unitPriceCents).toBe(3300000);
+  });
+
+  it('auditoría adversarial: no lanza excepción fatal si falta el apellido o viene vacío', () => {
+    const baseOrderWithoutLastName = `PEDIDO DE TIENDA DE SUPLEMENTOS
+
+Código de pedido
+65e778c2-04ad-436a-a4e4-36c10b1c598c
+
+Nombre
+Agustina
+
+Apellido
+
+Productos
+- [THYROID_SUPPORT] THYROID SUPPORT | 30 CAPS | 1 x $ 33.000 = $ 33.000
+
+Subtotal
+$ 33.000
+
+Medio de pago
+Transferencia
+
+Entrega
+Envío a domicilio
+
+Tipo de envío
+Tradicional
+
+Envío
+A coordinar
+
+Dirección
+Urquiza
+
+Altura
+2861
+
+Teléfono
++543498438371
+
+Zona de entrega
+Santa Fe Capital o alrededores
+
+Total
+$ 33.000
+
+Código de control
+AF62864F`;
+
+    const parsed = parseWhatsAppProtocol(baseOrderWithoutLastName, { allowChecksumMismatch: true });
+    expect(parsed.customerFirstName).toBe('Agustina');
+    expect(parsed.customerLastName).toBe('');
+    expect(parsed.quotedTotalCents).toBe(3300000);
+  });
+
+  it('auditoría adversarial: en mensajes reenviados con citas anteriores toma la última aparición del código de control', () => {
+    const forwardedConversation = `[Ayer 15:30] Pedido anterior cancelado:
+Código de control
+00000000
+
+[Hoy 19:40] Nuevo pedido:
+PEDIDO DE TIENDA DE SUPLEMENTOS
+
+Código de pedido
+65e778c2-04ad-436a-a4e4-36c10b1c598c
+
+Nombre
+Agustina
+
+Apellido
+Gainza
+
+Productos
+- [THYROID_SUPPORT] THYROID SUPPORT | 30 CAPS | 1 x $ 33.000 = $ 33.000
+
+Subtotal
+$ 33.000
+
+Medio de pago
+Transferencia
+
+Entrega
+Envío a domicilio
+
+Tipo de envío
+Tradicional
+
+Envío
+A coordinar
+
+Dirección
+Urquiza
+
+Altura
+2861
+
+Teléfono
++543498438371
+
+Zona de entrega
+Santa Fe Capital o alrededores
+
+Total
+$ 33.000
+
+Código de control
+AF62864F`;
+
+    const parsed = parseWhatsAppProtocol(forwardedConversation);
+    expect(parsed.protocolChecksum).toBe('AF62864F');
+    expect(parsed.customerFirstName).toBe('Agustina');
+  });
 });
