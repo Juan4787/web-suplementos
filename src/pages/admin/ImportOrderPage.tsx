@@ -767,7 +767,7 @@ export default function ImportOrderPage() {
                   Actualizar disponibilidad
                 </button>
                 <p className="mt-2 text-xs font-medium">
-                  Si ya lo cargaste, <Link to="/app/pedidos" className="underline">buscalo en Pedidos</Link>; no hace falta reservarlo otra vez.
+                  Si ya lo cargaste, <Link to="/app/pedidos" target="_blank" rel="noopener noreferrer" className="underline">buscalo en Pedidos ↗</Link>; no hace falta reservarlo otra vez.
                 </p>
               </div>
             ) : null}

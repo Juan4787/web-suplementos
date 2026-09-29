@@ -334,6 +334,8 @@ export function OrderPackingEditor({ order }: { order: Order }) {
             </div>
             <Link
               to="/app/inventario"
+              target="_blank"
+              rel="noopener noreferrer"
               search={{ tab: hasIncomingItems ? 'compras' : 'stock' }}
               className="inline-flex min-h-10 items-center gap-1.5 rounded-xl bg-brand-600 px-3.5 py-1.5 text-xs font-black text-white shadow-xs hover:bg-brand-700 transition"
             >
@@ -347,6 +349,8 @@ export function OrderPackingEditor({ order }: { order: Order }) {
               {hasIncomingItems ? (
                 <Link
                   to="/app/inventario"
+                  target="_blank"
+                  rel="noopener noreferrer"
                   search={{ tab: 'compras' }}
                   className="inline-flex items-center gap-1.5 text-xs font-bold text-brand-800 hover:text-brand-950 hover:underline"
                 >

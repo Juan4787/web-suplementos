@@ -4,7 +4,7 @@ import type { PropsWithChildren } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { demoProducts, demoOwner, toDemoInventory } from '@/data/demo-data';
 import type { Purchase } from '@/domain/types';
-import InventoryPage, { PurchaseFormModal, ReceivePurchaseModal } from './InventoryPage';
+import InventoryPage, { PurchaseFormModal, ReceivePurchaseModal, getStockPriority } from './InventoryPage';
 
 const api = vi.hoisted(() => ({
   listAdminProducts: vi.fn(),
@@ -20,12 +20,18 @@ const api = vi.hoisted(() => ({
   declareItemShortage: vi.fn(),
   reassignPurchaseReservations: vi.fn(),
   transitionOrder: vi.fn(),
+  listProductReservations: vi.fn(),
   getSettings: vi.fn()
 }));
 const auth = vi.hoisted(() => ({ staff: false }));
 vi.mock('@/services/business-api', () => ({ getBusinessApi: async () => api }));
 vi.mock('@/features/auth/AuthProvider', () => ({ useAuth: () => ({ user: { ...demoOwner, role: auth.staff ? 'staff' : 'owner' } }) }));
-vi.mock('@tanstack/react-router', () => ({ useSearch: () => ({}) }));
+vi.mock('@tanstack/react-router', () => ({
+  useSearch: () => ({}),
+  Link: ({ children, to, ...props }: PropsWithChildren<{ to: string } & Record<string, unknown>>) => (
+    <a href={to} {...props}>{children}</a>
+  )
+}));
 
 function Wrapper({ children }: PropsWithChildren) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
@@ -33,7 +39,13 @@ function Wrapper({ children }: PropsWithChildren) {
 }
 
 describe('Carga de compras', () => {
-  beforeEach(() => { vi.resetAllMocks(); auth.staff = false; api.listAdminProducts.mockResolvedValue(demoProducts); api.listOpeningReservations.mockResolvedValue([]); });
+  beforeEach(() => {
+    vi.resetAllMocks();
+    auth.staff = false;
+    api.listAdminProducts.mockResolvedValue(demoProducts);
+    api.listOpeningReservations.mockResolvedValue([]);
+    api.listProductReservations.mockResolvedValue([]);
+  });
   afterEach(cleanup);
 
   it('permite editar un pedido existente al proveedor precargando los datos', async () => {
@@ -449,3 +461,125 @@ describe('Recepción asistida de compras (ReceivePurchaseModal)', () => {
     expect(screen.getByRole('button', { name: /Finalizar recepción/ })).toBeEnabled();
   });
 });
+
+describe('Ordenamiento estricto de inventario (getStockPriority y lista renderizada)', () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+    auth.staff = false;
+    api.listAdminProducts.mockResolvedValue(demoProducts);
+    api.listOpeningReservations.mockResolvedValue([]);
+    api.getSettings.mockResolvedValue({ storeName: 'Sophos Suplementos' });
+    api.listPurchases.mockResolvedValue({ items: [], total: 0, pendingTotal: 0, receivedTotal: 0, filteredTotal: 0, page: 1, pageSize: 15 });
+    api.listMovements.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 25 });
+  });
+  afterEach(cleanup);
+
+  it('asigna las prioridades exactas: sin stock (0), todo reservado (1), en camino (2), urgente (3), comprar (4), ok (5)', () => {
+    const base = toDemoInventory([demoProducts[0]!])[0]!;
+
+    const sinStock = { ...base, available: 0, onHand: 0, reserved: 0, incoming: 0, status: 'out' as const };
+    const reservasSinCubrir = { ...base, available: -2, onHand: 3, reserved: 5, incoming: 0, status: 'out' as const };
+    const todoReservado = { ...base, available: 0, onHand: 5, reserved: 5, incoming: 0, status: 'out' as const };
+    const todoReservadoConTransito = { ...base, available: 0, onHand: 5, reserved: 5, incoming: 10, status: 'out' as const };
+    const enCamino = { ...base, available: 0, onHand: 0, reserved: 0, incoming: 8, status: 'out' as const };
+    const urgente = { ...base, available: 2, onHand: 2, reserved: 0, incoming: 0, status: 'critical' as const };
+    const comprar = { ...base, available: 6, onHand: 6, reserved: 0, incoming: 0, status: 'low' as const };
+    const ok = { ...base, available: 25, onHand: 25, reserved: 0, incoming: 0, status: 'ok' as const };
+
+    expect(getStockPriority(sinStock)).toBe(0);
+    expect(getStockPriority(reservasSinCubrir)).toBe(0);
+    expect(getStockPriority(todoReservado)).toBe(1);
+    expect(getStockPriority(todoReservadoConTransito)).toBe(1);
+    expect(getStockPriority(enCamino)).toBe(2);
+    expect(getStockPriority(urgente)).toBe(3);
+    expect(getStockPriority(comprar)).toBe(4);
+    expect(getStockPriority(ok)).toBe(5);
+  });
+
+  it('renderiza la lista de inventario en el orden estricto solicitado', async () => {
+    const base = toDemoInventory([demoProducts[0]!])[0]!;
+
+    const itemOk = { ...base, id: 'p-ok', name: 'Zeta Vitaminas', available: 20, onHand: 20, reserved: 0, incoming: 0, status: 'ok' as const };
+    const itemComprar = { ...base, id: 'p-comprar', name: 'Beta Alanina', available: 5, onHand: 5, reserved: 0, incoming: 0, status: 'low' as const };
+    const itemUrgente = { ...base, id: 'p-urgente', name: 'Magnesio Total', available: 2, onHand: 2, reserved: 0, incoming: 0, status: 'critical' as const };
+    const itemEnCamino = { ...base, id: 'p-camino', name: 'Omega 3 Fish', available: 0, onHand: 0, reserved: 0, incoming: 10, status: 'out' as const };
+    const itemTodoReservado = { ...base, id: 'p-reservado', name: 'Whey Protein', available: 0, onHand: 4, reserved: 4, incoming: 0, status: 'out' as const };
+    const itemSinStock = { ...base, id: 'p-sinstock', name: 'Creatina Creapure', available: 0, onHand: 0, reserved: 0, incoming: 0, status: 'out' as const };
+
+    // Pasamos los productos mezclados
+    api.listInventory.mockResolvedValue([
+      itemOk,
+      itemComprar,
+      itemUrgente,
+      itemEnCamino,
+      itemTodoReservado,
+      itemSinStock
+    ]);
+
+    render(<InventoryPage />, { wrapper: Wrapper });
+
+    // Esperar a que cargue la lista
+    const okElement = await screen.findByText('Zeta Vitaminas');
+    expect(okElement).toBeVisible();
+
+    const productButtons = screen.getAllByRole('button').filter(btn =>
+      btn.textContent?.includes('Creatina Creapure') ||
+      btn.textContent?.includes('Whey Protein') ||
+      btn.textContent?.includes('Omega 3 Fish') ||
+      btn.textContent?.includes('Magnesio Total') ||
+      btn.textContent?.includes('Beta Alanina') ||
+      btn.textContent?.includes('Zeta Vitaminas')
+    );
+
+    expect(productButtons).toHaveLength(6);
+    // Verificar orden estricto: sin stock -> todo reservado -> en camino -> urgente -> comprar -> ok
+    expect(productButtons[0]).toHaveTextContent('Creatina Creapure');
+    expect(productButtons[0]).toHaveTextContent('SIN STOCK');
+
+    expect(productButtons[1]).toHaveTextContent('Whey Protein');
+    expect(productButtons[1]).toHaveTextContent('TODO RESERVADO');
+
+    expect(productButtons[2]).toHaveTextContent('Omega 3 Fish');
+    expect(productButtons[2]).toHaveTextContent('EN CAMINO');
+
+    expect(productButtons[3]).toHaveTextContent('Magnesio Total');
+    expect(productButtons[3]).toHaveTextContent('URGENTE');
+
+    expect(productButtons[4]).toHaveTextContent('Beta Alanina');
+    expect(productButtons[4]).toHaveTextContent('COMPRAR');
+
+    expect(productButtons[5]).toHaveTextContent('Zeta Vitaminas');
+    expect(productButtons[5]).toHaveTextContent('OK');
+  });
+
+  it('abre el enlace al pedido en una nueva pestaña desde el drawer de inventario', async () => {
+    const item = {
+      ...toDemoInventory([demoProducts[0]!])[0]!,
+      onHand: 10,
+      reserved: 10,
+      available: 0,
+      incoming: 0,
+      status: 'out' as const
+    };
+    api.listInventory.mockResolvedValue([item]);
+    api.listProductReservations.mockResolvedValue([{
+      orderId: 'ord-101',
+      orderNumber: 101,
+      customerName: 'Juan Pérez',
+      physicalQuantity: 10,
+      incomingQuantity: 0,
+      packedQuantity: null
+    }]);
+
+    render(<InventoryPage />, { wrapper: Wrapper });
+
+    const productBtn = await screen.findByRole('button', { name: /Creatina Monohidratada.*TODO RESERVADO/ });
+    fireEvent.click(productBtn);
+
+    const orderLink = await screen.findByRole('link', { name: /Pedido #101/ });
+    expect(orderLink).toHaveAttribute('target', '_blank');
+    expect(orderLink).toHaveAttribute('rel', 'noopener noreferrer');
+    expect(orderLink).toHaveAttribute('href', '/app/pedidos');
+  });
+});
+

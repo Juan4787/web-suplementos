@@ -9,7 +9,9 @@ import { OrderPackingEditor } from './OrderPackingEditor';
 const api = vi.hoisted(() => ({ saveOrderPacking: vi.fn() }));
 vi.mock('@/services/business-api', () => ({ getBusinessApi: async () => api }));
 vi.mock('@tanstack/react-router', () => ({
-  Link: ({ children, to }: PropsWithChildren<{ to: string }>) => <a href={to}>{children}</a>
+  Link: ({ children, to, ...props }: PropsWithChildren<{ to: string } & Record<string, unknown>>) => (
+    <a href={to} {...props}>{children}</a>
+  )
 }));
 
 afterEach(() => {
@@ -323,5 +325,18 @@ it('permite borrar 11 por completo antes de escribir 7 sin restaurar el valor an
     [{ orderItemId: 'line-one', packedQuantity: 7 }],
     0
   ));
+  client.clear();
+});
+
+it('opens inventory links in a new tab with target _blank and noopener noreferrer', async () => {
+  const order = sampleOrder();
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(<QueryClientProvider client={client}><OrderPackingEditor order={order} /></QueryClientProvider>);
+
+  const incomingLink = screen.getByRole('link', { name: /Hay productos en camino\. Ver compra en Inventario/ });
+  expect(incomingLink).toHaveAttribute('target', '_blank');
+  expect(incomingLink).toHaveAttribute('rel', 'noopener noreferrer');
+  expect(incomingLink).toHaveAttribute('href', '/app/inventario');
+
   client.clear();
 });

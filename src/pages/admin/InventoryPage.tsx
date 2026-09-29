@@ -77,6 +77,27 @@ const stockStatus = (item: InventoryItem) => {
   return { label: statusLabels[item.status], tone: statusTones[item.status] };
 };
 
+export const getStockPriority = (item: InventoryItem): number => {
+  const status = stockStatus(item);
+  switch (status.label) {
+    case 'RESERVAS SIN CUBRIR':
+    case 'SIN STOCK':
+      return 0;
+    case 'TODO RESERVADO':
+      return 1;
+    case 'EN CAMINO':
+      return 2;
+    case 'URGENTE':
+      return 3;
+    case 'COMPRAR':
+      return 4;
+    case 'OK':
+      return 5;
+    default:
+      return 6;
+  }
+};
+
 const movementKindLabels = {
   sale: 'Venta',
   purchase_received: 'Compra recibida',
@@ -1149,9 +1170,9 @@ export function ReceivePurchaseModal({
                                             {ord.paymentState === 'paid' ? 'Reembolsar y cancelar en app' : 'Cancelar pedido en app'}
                                           </Button>
                                           <a
-                                            href={`/admin/pedidos?search=${ord.orderNumber}`}
+                                            href={`/app/pedidos?search=${ord.orderNumber}`}
                                             target="_blank"
-                                            rel="noreferrer"
+                                            rel="noopener noreferrer"
                                             className="text-[11px] font-bold text-ink-600 hover:text-ink-950 underline px-1"
                                             title="Abrir este pedido en una nueva pestaña"
                                           >
@@ -1644,10 +1665,12 @@ function StockDetailDrawer({
                     <Link
                       key={reservation.orderId}
                       to="/app/pedidos"
+                      target="_blank"
+                      rel="noopener noreferrer"
                       search={{ search: String(reservation.orderNumber) }}
                       className="flex min-h-11 flex-wrap items-center justify-between gap-2 rounded-xl border border-ink-950/10 bg-cream-50 p-3 text-sm hover:bg-cream-100"
                     >
-                      <span className="font-black text-ink-950">Pedido #{reservation.orderNumber}</span>
+                      <span className="font-black text-ink-950">Pedido #{reservation.orderNumber} ↗</span>
                       <span className="font-semibold text-ink-700">
                         {reservation.physicalQuantity} reservadas · {reservation.packedQuantity === null ? 'Bolsita sin verificar' : `${reservation.packedQuantity} en bolsita`}
                       </span>
@@ -2062,18 +2085,7 @@ export default function InventoryPage() {
         return true;
       })
       .sort((left, right) => {
-        const getPriority = (item: typeof left) => {
-          // 1. Sin stock (sin stock disponible y sin compras en tránsito): primero todos juntos
-          if (item.available <= 0 && (!item.incoming || item.incoming <= 0)) return 0;
-          // 2. En camino (sin stock disponible pero con compras en tránsito): segundo todos juntos
-          if (item.available <= 0 && item.incoming > 0) return 1;
-          // 3. Resto de estados si existiera stock disponible
-          if (item.status === 'critical') return 2;
-          if (item.status === 'low') return 3;
-          return 4;
-        };
-
-        const priorityDiff = getPriority(left) - getPriority(right);
+        const priorityDiff = getStockPriority(left) - getStockPriority(right);
         return priorityDiff !== 0 ? priorityDiff : left.name.localeCompare(right.name, 'es');
       });
   }, [inventoryQuery.data, stockSearch, stockFilter]);
