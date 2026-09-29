@@ -559,8 +559,7 @@ export default function OrdersPage() {
                               <p className="text-brand-800">
                                 {order.expectedArrivalAt
                                   ? `Llegada estimada: ${new Intl.DateTimeFormat('es-AR', { dateStyle: 'medium' }).format(new Date(order.expectedArrivalAt))}.`
-                                  : 'Stock asignado a compras en camino.'}{' '}
-                                Recibí la compra en Inventario. Después completá el armado de la bolsita.
+                                  : 'Stock asignado a compras en camino.'}
                               </p>
                             </div>
                           ) : order.fulfillmentState === 'pending' && order.stockReadiness === 'uncovered' ? (

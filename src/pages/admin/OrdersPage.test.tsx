@@ -174,10 +174,11 @@ it('mantiene visible la tarjeta de bolsita con estado bloqueado e invitación a 
   expect(screen.getByText('Esperando mercadería')).toBeInTheDocument();
   expect(screen.queryByText('Falta preparar')).not.toBeInTheDocument();
   expect(screen.getAllByText('Mercadería en camino')).toHaveLength(1);
-  expect(screen.getByText(/Recibí la compra en Inventario\. Después completá el armado/)).toBeInTheDocument();
+  expect(screen.getByText(/Llegada estimada:/)).toBeInTheDocument();
+  expect(screen.queryByText(/Recibí la compra en Inventario\. Después completá el armado/)).not.toBeInTheDocument();
   expect(screen.getByRole('region', { name: `Armado del pedido ${order.number}` })).toBeInTheDocument();
   expect(screen.getByText('0 en bolsita')).toBeInTheDocument();
-  expect(screen.getByRole('link', { name: /Recibir compra en Inventario/i })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: /Ver compra en Inventario/i })).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Guardar armado' })).not.toBeInTheDocument();
   expect(screen.queryByText('Medio de pago')).not.toBeInTheDocument();
   expect(screen.queryByText(/Stock descontado/)).not.toBeInTheDocument();

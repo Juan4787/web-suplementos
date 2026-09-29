@@ -28,11 +28,16 @@ envContent.split('\n').forEach((line) => {
 
 const supabaseUrl = envConfig.VITE_SUPABASE_URL;
 const supabaseKey = envConfig.VITE_SUPABASE_ANON_KEY;
-const ownerEmail = envConfig.E2E_ADMIN_EMAIL || 'natisfrutos@gmail.com';
-const ownerPassword = envConfig.E2E_ADMIN_PASSWORD || 'natalia5050';
+const ownerEmail = process.env.E2E_ADMIN_EMAIL || envConfig.E2E_ADMIN_EMAIL || process.env.E2E_EMAIL || envConfig.E2E_EMAIL;
+const ownerPassword = process.env.E2E_ADMIN_PASSWORD || envConfig.E2E_ADMIN_PASSWORD || process.env.E2E_PASSWORD || envConfig.E2E_PASSWORD;
 
 if (!supabaseUrl || !supabaseKey) {
   console.error('❌ Variables de Supabase no configuradas en .env.local');
+  process.exit(1);
+}
+
+if (!ownerEmail || !ownerPassword) {
+  console.error('❌ Configurá E2E_EMAIL y E2E_PASSWORD para ejecutar los contratos privados.');
   process.exit(1);
 }
 

@@ -212,6 +212,14 @@ const VALID_HEADERS = new Set([
   '*PEDIDO IMPULSO · V1*'
 ]);
 
+const protocolHeaderOffset = (line: string): number | null => {
+  const header = line.trim().replace(/^\*+|\*+$/g, '').trim().toUpperCase();
+  if (VALID_HEADERS.has(header)) return 0;
+  // WhatsApp Web puede anteponer "[fecha] Remitente: " en la misma línea.
+  const prefixed = line.match(/(?:^|:\s*)(\*?(?:PEDIDO DE TIENDA DE SUPLEMENTOS|PEDIDO IMPULSO(?:\s*·\s*V1)?)\*?)\s*$/i);
+  return prefixed?.[1] ? line.lastIndexOf(prefixed[1]) : null;
+};
+
 const KNOWN_LEGACY_HEADERS = [
   'PEDIDO DE TIENDA DE SUPLEMENTOS',
   'PEDIDO IMPULSO',
@@ -234,6 +242,7 @@ const KNOWN_LEGACY_HEADERS = [
   'Zona',
   'Total'
 ];
+const canonicalSectionLabels = new Map(KNOWN_LEGACY_HEADERS.map(label => [label.toLowerCase(), label]));
 
 /**
  * Reconstruye asteriscos en encabezados conocidos para validar checksums
@@ -267,13 +276,18 @@ const splitSections = (message: string): Map<string, string> => {
     }
     const rawLabel = chunk.slice(0, newlineIndex).trim();
     const content = chunk.slice(newlineIndex + 1).trim();
-    const label = rawLabel.replace(/^\*+|\*+$/g, '').trim();
+    const normalizedLabel = rawLabel.replace(/^\*+|\*+$/g, '').trim();
+    const label = canonicalSectionLabels.get(normalizedLabel.toLowerCase()) ?? normalizedLabel;
     if (!label) {
       continue;
     }
-    if (!sections.has(label)) {
-      sections.set(label, content);
+    if (sections.has(label)) {
+      if (KNOWN_LEGACY_HEADERS.includes(label)) {
+        throw new Error(`La sección ${label} aparece más de una vez.`);
+      }
+      continue;
     }
+    sections.set(label, content);
   }
   return sections;
 };
@@ -325,33 +339,39 @@ export const parseWhatsAppProtocol = (
 ): ParsedWhatsAppOrder => {
   const normalized = normalizeProtocolText(message);
 
-  // Detectar marcador del código de control (sin asteriscos o legado con asteriscos)
-  let checksumIndex = normalized.lastIndexOf('\n\nCódigo de control\n');
-  let markerLength = '\n\nCódigo de control\n'.length;
-  if (checksumIndex < 0) {
-    checksumIndex = normalized.lastIndexOf('\n\n*Código de control*\n');
-    markerLength = '\n\n*Código de control*\n'.length;
-  }
-  if (checksumIndex < 0) {
-    const regex = /(?:\n\n+|\n)\*?\s*Código de control\s*\*?(?:\n|:\s*)/gi;
-    let match: RegExpExecArray | null = null;
-    let lastMatch: RegExpExecArray | null = null;
-    while ((match = regex.exec(normalized)) !== null) {
-      lastMatch = match;
-    }
-    if (lastMatch && lastMatch.index !== undefined) {
-      checksumIndex = lastMatch.index;
-      markerLength = lastMatch[0].length;
-    }
-  }
-  if (checksumIndex < 0) throw new Error('Falta el código de control.');
+  // Buscar el último marcador entre todos los formatos, incluso si los mensajes
+  // anteriores usaron un marcador distinto (con o sin asteriscos).
+  const markerPattern = /(?:^|\n\n+|\n)[ \t]*\*?Código de control\*?[ \t]*(?:\n|:[ \t]*)/gi;
+  let marker: RegExpExecArray | null = null;
+  let latestMarker: RegExpExecArray | null = null;
+  while ((marker = markerPattern.exec(normalized)) !== null) latestMarker = marker;
+  if (!latestMarker) throw new Error('Falta el código de control.');
 
-  const body = normalized.slice(0, checksumIndex);
+  const checksumIndex = latestMarker.index;
+  const markerLength = latestMarker[0].length;
+  const precedingText = normalized.slice(0, checksumIndex);
+  // Un chat pegado puede contener pedidos completos anteriores. Tomar el último
+  // encabezado antes del último código evita mezclar productos y cliente de otro pedido.
+  let lastHeaderStart = -1;
+  let lineStart = 0;
+  for (let index = 0; index <= precedingText.length; index += 1) {
+    if (index !== precedingText.length && precedingText[index] !== '\n') continue;
+    const line = precedingText.slice(lineStart, index);
+    const headerOffset = protocolHeaderOffset(line);
+    if (headerOffset !== null) lastHeaderStart = lineStart + headerOffset;
+    lineStart = index + 1;
+  }
+  const body = lastHeaderStart >= 0 ? precedingText.slice(lastHeaderStart) : precedingText;
   const rawSuppliedChecksum = normalized.slice(checksumIndex + markerLength).trim();
-  const hexMatch = rawSuppliedChecksum.match(/[0-9A-Fa-f]{8}/);
+  const checksumLine = rawSuppliedChecksum.split('\n', 1)[0] ?? '';
+  const trailingLines = rawSuppliedChecksum.slice(checksumLine.length).split('\n');
+  if (trailingLines.some(line => protocolHeaderOffset(line) !== null)) {
+    throw new Error('El último pedido copiado está incompleto: falta su código de control.');
+  }
+  const hexMatch = checksumLine.match(/[0-9A-Fa-f]{8}/);
   const suppliedChecksum = hexMatch
     ? hexMatch[0].toUpperCase()
-    : rawSuppliedChecksum.replace(/[^0-9A-Za-z]/g, '').slice(0, 8).toUpperCase();
+    : checksumLine.replace(/[^0-9A-Za-z]/g, '').slice(0, 8).toUpperCase();
 
   if (!/^[0-9A-F]{8}$/.test(suppliedChecksum)) {
     throw new Error('El mensaje fue modificado o está incompleto.');

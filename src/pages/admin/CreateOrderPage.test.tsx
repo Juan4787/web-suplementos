@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { PropsWithChildren } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { demoOrders } from '@/data/demo-data';
 import type { AdminProduct, Order, StoreSettings } from '@/domain/types';
 import CreateOrderPage from './CreateOrderPage';
 
@@ -66,6 +67,15 @@ const mockProducts: AdminProduct[] = [
     active: true,
     published: true,
     updatedAt: new Date().toISOString()
+  },
+  {
+    id: 'prod-hidden', sku: 'HIDDEN-01', slug: 'producto-oculto',
+    name: 'Producto oculto', presentation: '30 cápsulas', description: '',
+    priceCents: 100000, currentCostCents: 50000, imageUrl: '/test.svg', imageAlt: 'Producto oculto',
+    availability: 'available', maxOrderQuantity: 1, onHand: 1, reserved: 0, incoming: 0,
+    incomingAvailable: 0, reorderPoint: 0, safetyStock: 0, leadTimeDays: 7,
+    category: 'Pruebas', featured: false, active: true, published: false,
+    updatedAt: new Date().toISOString()
   }
 ];
 
@@ -119,6 +129,7 @@ describe('CreateOrderPage', () => {
     await waitFor(() => {
       expect(screen.getByText('Creatina Creapure')).toBeDefined();
       expect(screen.getByText('Proteína Whey Isolate')).toBeDefined();
+      expect(screen.getByText('Producto oculto')).toBeDefined();
     });
 
     // Agregar Creatina
@@ -168,6 +179,8 @@ describe('CreateOrderPage', () => {
     fireEvent.change(firstNameInput, { target: { value: 'Bo' } });
     fireEvent.change(lastNameInput, { target: { value: 'Li' } });
     expect(confirmButton).not.toBeDisabled();
+    fireEvent.change(lastNameInput, { target: { value: 'L' } });
+    expect(confirmButton).toBeDisabled();
   });
 
   it('calcula flete correctamente cuando se selecciona envío a domicilio', async () => {
@@ -277,6 +290,18 @@ describe('CreateOrderPage', () => {
     fireEvent.click(button);
     await waitFor(() => expect(mockConfirm).toHaveBeenCalledTimes(3));
     expect(mockConfirm.mock.calls[2]![0].protocolOrderId).not.toBe(mockConfirm.mock.calls[0]![0].protocolOrderId);
+  });
+
+  it('avisa cuando un reintento manual recuperó un pedido existente sin reservar de nuevo', async () => {
+    mockConfirm.mockResolvedValue({ ...demoOrders[0]!, number: 2545, alreadyImported: true });
+    render(<CreateOrderPage />, { wrapper: createWrapper() });
+    await screen.findByText('Creatina Creapure');
+    fireEvent.click(screen.getAllByRole('button', { name: /agregar/i })[0]!);
+    fireEvent.change(screen.getByPlaceholderText('Ej. Marta'), { target: { value: 'Cliente' } });
+    fireEvent.change(screen.getByPlaceholderText('Ej. Gómez'), { target: { value: 'Prueba' } });
+    fireEvent.click(screen.getByRole('button', { name: /confirmar pedido manual/i }));
+    expect(await screen.findByRole('heading', { name: 'Pedido ya registrado' })).toBeInTheDocument();
+    expect(screen.getByText(/No se reservaron unidades nuevamente/i)).toBeInTheDocument();
   });
 
 });

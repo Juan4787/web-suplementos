@@ -37,27 +37,16 @@ export const suggestedPurchase = (
 };
 
 /**
- * Sanitizes numeric user input to prevent typing glitches (e.g. typing 5 over 0 becoming "50" or "05").
- * - Filters non-digit characters.
- * - If previous was "0" and user enters a new digit, it replaces "0" (e.g. "05" -> "5", "50" -> "5").
- * - Strips leading zeroes for multi-digit numbers (e.g. "012" -> "12").
+ * Sanitizes whole-unit fields while preserving the number the operator typed.
+ * - Filters non-digit characters and strips leading zeroes ("012" -> "12").
+ * - Preserves meaningful trailing zeroes ("10" must stay 10).
  * - Allows empty string while typing so the user can backspace completely.
  */
-export const sanitizeIntegerInput = (newValue: string, prevValue = ''): string => {
+export const sanitizeIntegerInput = (newValue: string): string => {
   let digits = newValue.replace(/\D/g, '');
 
   if (digits === '') {
     return '';
-  }
-
-  // If previous was '0' and user typed a single digit (producing '05' or '50')
-  if (prevValue === '0' && digits.length === 2) {
-    if (digits.startsWith('0')) {
-      return digits.slice(1); // '05' -> '5'
-    }
-    if (digits.endsWith('0')) {
-      return digits.slice(0, 1); // '50' -> '5'
-    }
   }
 
   // Strip leading zeroes for numbers like "00", "012", "07000" -> "7000"
@@ -68,7 +57,7 @@ export const sanitizeIntegerInput = (newValue: string, prevValue = ''): string =
   return digits;
 };
 
-export const sanitizeDecimalInput = (newValue: string, prevValue = ''): string => {
+export const sanitizeDecimalInput = (newValue: string): string => {
   let clean = newValue.replace(/,/g, '.');
   clean = clean.replace(/[^\d.]/g, '');
 
@@ -81,21 +70,9 @@ export const sanitizeDecimalInput = (newValue: string, prevValue = ''): string =
     return '';
   }
 
-  // If previous was '0' and user typed a single digit (producing '01' or '10')
-  if (prevValue === '0' && clean.length === 2 && !clean.includes('.')) {
-    if (clean.startsWith('0')) {
-      return clean.slice(1); // '01' -> '1'
-    }
-    if (clean.endsWith('0')) {
-      return clean.slice(0, 1); // '10' -> '1'
-    }
-  }
-
-  // Strip leading zeroes for numbers like "07000" -> "7000", but preserve "0.X" and "0"
-  if (clean.length > 1 && clean.startsWith('0') && !clean.startsWith('0.')) {
-    clean = clean.replace(/^0+/, '') || '0';
-  }
-
-  return clean;
+  // El cero a la derecha es significativo: "10" debe seguir siendo diez.
+  const dot = clean.indexOf('.');
+  if (dot < 0) return clean.replace(/^0+(?=\d)/, '');
+  const integer = clean.slice(0, dot).replace(/^0+(?=\d)/, '');
+  return `${integer}.${clean.slice(dot + 1)}`;
 };
-

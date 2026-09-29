@@ -137,6 +137,7 @@ export type Order = {
   fulfillmentState: FulfillmentState;
   packingRevision?: number;
   packingTracked?: boolean;
+  alreadyImported?: boolean;
   stockReadiness?: StockReadiness;
   expectedArrivalAt?: string | null;
   subtotalCents: number;

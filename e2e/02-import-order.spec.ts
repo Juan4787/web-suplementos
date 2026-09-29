@@ -55,7 +55,7 @@ test.describe('Pilar 2, 5, 6, 7: Importación, Variación de Precios e Idempoten
     await expect(page.getByRole('heading', { name: 'Pedido cargado', level: 1 })).toBeVisible();
     await expect(page.getByText(/pedido #\d+ · santiago giménez/i)).toBeVisible();
     await expect(page.getByText(/1 producto · 1 unidad/i)).toBeVisible();
-    await expect(page.getByText(/el pedido quedó cargado y las unidades fueron reservadas/i)).toBeVisible();
+    await expect(page.getByText(/el pedido quedó registrado y el stock fue reservado/i)).toBeVisible();
 
     // Verifica jerarquía de botones
     const viewOrderBtn = page.getByRole('link', { name: /ver pedido #\d+/i });
@@ -103,8 +103,12 @@ $ 1.000
     await page.locator('textarea').fill(alteredMessage);
     await page.getByRole('button', { name: /analizar y revisar pedido|analizar/i }).click();
 
-    // Al tener firma incorrecta o datos alterados, la UI avisa el error de validación
-    await expect(page.getByText(/no pudimos interpretar|inválido|error/i).first()).toBeVisible();
+    // El texto se puede revisar aunque el cliente lo haya editado, pero el
+    // precio vigente sigue siendo obligatorio al confirmar.
+    await expect(page.getByText(/El código de control no coincide/i)).toBeVisible();
+    await page.getByRole('button', { name: /confirmar pedido/i }).click();
+    await expect(page.getByText(/El precio del mensaje no coincide con el catálogo actual/i)).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Pedido cargado', level: 1 })).toHaveCount(0);
   });
 
   test('2.3: Idempotencia UI: Reintentar la importación del mismo ID no duplica el pedido (Pilar 7)', async ({ page }) => {
@@ -139,6 +143,7 @@ $ 1.000
     await page.getByRole('button', { name: /analizar y revisar pedido|analizar/i }).click();
     await page.getByRole('button', { name: /confirmar y reservar stock|confirmar pedido/i }).click();
     await expect(page.getByRole('heading', { name: 'Pedido cargado', level: 1 })).toBeVisible();
+    const firstOrderLink = await page.getByRole('link', { name: /Ver pedido #\d+/i }).textContent();
 
     // Para el segundo intento, hace click en "Importar otro pedido"
     await page.getByRole('button', { name: /importar otro pedido/i }).click();
@@ -146,8 +151,10 @@ $ 1.000
     await page.getByRole('button', { name: /analizar y revisar pedido|analizar/i }).click();
     await page.getByRole('button', { name: /confirmar y reservar stock|confirmar pedido/i }).click();
 
-    // La UI no debe crear un segundo pedido; debe advertir que ya fue importado
-    await expect(page.getByText(/ya fue importado/i).first()).toBeVisible();
+    // La UI debe recuperar el mismo pedido y aclarar que no reservó dos veces.
+    await expect(page.getByRole('heading', { name: 'Pedido ya cargado', level: 1 })).toBeVisible();
+    await expect(page.getByText('Este pedido ya estaba cargado. No se reservaron unidades nuevamente.')).toBeVisible();
+    await expect(page.getByRole('link', { name: /Ver pedido #\d+/i })).toHaveText(firstOrderLink ?? '');
   });
 
   test('2.4: Navegación desde "Ver pedido #..." busca sin comillas y detecta el pedido', async ({ page }) => {

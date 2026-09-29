@@ -1,26 +1,14 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { format, isValid, parseISO } from 'date-fns';
-import { es } from 'date-fns/locale';
 import { AlertTriangle, ArrowRight, Lock, Minus, Package, Plus, Sparkles } from 'lucide-react';
 import { queryKeys } from '@/app/query-keys';
 import { Button } from '@/components/ui/Button';
 import { ErrorState } from '@/components/ui/DataState';
+import { sanitizeIntegerInput } from '@/domain/inventory';
 import type { Order } from '@/domain/types';
 import { cn } from '@/lib/cn';
 import { getBusinessApi } from '@/services/business-api';
-
-const formatArrivalDate = (isoString?: string | null): string => {
-  if (!isoString) return 'próximamente';
-  try {
-    const date = parseISO(isoString);
-    if (!isValid(date)) return 'próximamente';
-    return format(date, "d 'de' MMMM", { locale: es });
-  } catch {
-    return 'próximamente';
-  }
-};
 
 const startingValues = (order: Order): Record<string, string> =>
   Object.fromEntries(
@@ -41,13 +29,28 @@ export function OrderPackingEditor({ order }: { order: Order }) {
   const queryClient = useQueryClient();
   const [values, setValues] = useState<Record<string, string>>(() => startingValues(order));
   const [saved, setSaved] = useState(false);
+  const physicalByItem = Object.fromEntries(order.items.map(item => [item.id, item.physicalReservedQuantity ?? item.quantity]));
+  const physicalSignature = order.items.map(item => `${item.id}:${physicalByItem[item.id]}`).join('|');
+  const previousSnapshot = useRef({ id: order.id, revision: order.packingRevision, physicalByItem });
 
   useEffect(() => {
-    setValues(startingValues(order));
-  }, [order.id, order.packingRevision]);
+    const previous = previousSnapshot.current;
+    if (previous.id !== order.id || previous.revision !== order.packingRevision) {
+      setValues(startingValues(order));
+    } else if (order.items.some(item => previous.physicalByItem[item.id] !== physicalByItem[item.id])) {
+      setSaved(false);
+      setValues(current => Object.fromEntries(order.items.map(item => {
+        const before = previous.physicalByItem[item.id] ?? 0;
+        const now = physicalByItem[item.id] ?? 0;
+        const value = current[item.id] ?? '';
+        // Un 0 impuesto por el candado no equivale a un conteo físico hecho por la operadora.
+        return [item.id, before === 0 && now > 0 && item.packedQuantity == null && value === '0' ? '' : value];
+      })));
+    }
+    previousSnapshot.current = { id: order.id, revision: order.packingRevision, physicalByItem };
+  }, [order.id, order.packingRevision, physicalSignature]);
 
   const hasUnknown = order.items.some(item => item.packedQuantity == null);
-  const arrivalText = formatArrivalDate(order.expectedArrivalAt);
 
   const hasAnyPhysicalStock = order.items.some(item => {
     const physical = item.physicalReservedQuantity ?? item.quantity;
@@ -120,6 +123,7 @@ export function OrderPackingEditor({ order }: { order: Order }) {
   };
 
   const hasIncomingItems = order.items.some(item => (item.incomingQuantity ?? 0) > 0);
+  const hasUncoveredItems = order.items.some(item => (item.uncoveredQuantity ?? 0) > 0);
   const allPackedFull = order.items.every(item => Number(values[item.id]) === item.quantity);
 
   return (
@@ -162,7 +166,11 @@ export function OrderPackingEditor({ order }: { order: Order }) {
                 <div className="min-w-0 pr-2">
                   <div className="flex flex-wrap items-center gap-2">
                     <p className="text-[14.5px] font-black text-ink-950">{item.productName}</p>
-                    {isLocked && incoming > 0 ? (
+                    {isLocked && incoming > 0 && uncovered > 0 ? (
+                      <span className="inline-flex items-center gap-1 rounded-md border border-rose-200 bg-rose-50 px-2 py-0.5 text-[11px] font-bold text-rose-900">
+                        <AlertTriangle className="size-3 text-rose-600 shrink-0" /> En camino y sin reposición
+                      </span>
+                    ) : isLocked && incoming > 0 ? (
                       <span className="inline-flex items-center gap-1 rounded-md border border-brand-200 bg-brand-50 px-2 py-0.5 text-[11px] font-bold text-brand-900">
                         <Lock className="size-3 text-brand-600 shrink-0" /> En camino
                       </span>
@@ -179,14 +187,14 @@ export function OrderPackingEditor({ order }: { order: Order }) {
 
                   <p className="mt-0.5 text-[12.5px] font-semibold text-ink-600">
                     Pedido: {item.quantity} u.
-                    {physical > 0 ? ` · En estante: ${physical}` : ''}
-                    {incoming > 0 ? ` · Llega ${arrivalText}` : ''}
-                    {uncovered > 0 ? ' · Sin reposición' : ''}
+                    {physical > 0 ? ` · Reservado físico: ${physical}` : ''}
+                    {incoming > 0 ? ` · En camino: ${incoming}` : ''}
+                    {uncovered > 0 ? ` · Sin reposición: ${uncovered}` : ''}
                   </p>
 
                   {isPartial ? (
                     <p className="mt-1 text-[11.5px] font-semibold text-amber-800">
-                      Podés apartar hasta {physical} {physical === 1 ? 'unidad' : 'unidades'}. Las {item.quantity - physical} restantes se completan cuando recibas la compra.
+                      Registrá solo lo que ya pusiste en la bolsita, hasta {physical} {physical === 1 ? 'unidad' : 'unidades'}.
                     </p>
                   ) : null}
                 </div>
@@ -215,24 +223,23 @@ export function OrderPackingEditor({ order }: { order: Order }) {
                       </button>
 
                       <input
-                        type="number"
+                        type="text"
                         inputMode="numeric"
-                        min={0}
-                        max={maxPacked}
-                        step={1}
-                        placeholder="0"
+                        pattern="[0-9]*"
+                        placeholder="—"
                         value={value}
+                        onFocus={event => event.currentTarget.select()}
                         onChange={event => {
                           setSaved(false);
                           save.reset();
-                          setValues(previous => ({ ...previous, [item.id]: event.target.value }));
+                          setValues(previous => ({
+                            ...previous,
+                            [item.id]: sanitizeIntegerInput(event.target.value)
+                          }));
                         }}
-                        onBlur={() => {
-                          if (value === '') {
-                            setValues(previous => ({ ...previous, [item.id]: '0' }));
-                          }
-                        }}
-                        aria-label={`Unidades guardadas de ${item.productName}`}
+                        disabled={save.isPending}
+                        aria-label={`Unidades en bolsita de ${item.productName}`}
+                        aria-describedby={`packing-limit-${item.id}`}
                         aria-invalid={invalid || isEmpty}
                         className={cn(
                           'h-9 w-14 rounded-lg border bg-white px-1 text-center text-sm font-black text-ink-950 focus:outline-none focus:ring-2',
@@ -259,7 +266,7 @@ export function OrderPackingEditor({ order }: { order: Order }) {
                         <Plus className="size-3.5" />
                       </button>
 
-                      <span className="text-xs font-semibold text-ink-500">/ {maxPacked}</span>
+                      <span id={`packing-limit-${item.id}`} className="text-xs font-semibold text-ink-500">/ {maxPacked} máximo</span>
                     </div>
 
                     {isEmpty ? (
@@ -300,26 +307,37 @@ export function OrderPackingEditor({ order }: { order: Order }) {
         <p role="status" className="mt-3 text-sm font-bold text-emerald-800">
           {allPackedFull
             ? `✓ Armado completo guardado para el pedido #${order.number}.`
-            : `✓ Armado parcial guardado para el pedido #${order.number}. Queda en preparación hasta recibir el stock restante.`}
+            : `✓ Armado parcial guardado para el pedido #${order.number}. Todavía faltan unidades por guardar en la bolsita.`}
         </p>
       ) : null}
 
       {/* Pie de acción inteligente */}
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-ink-950/6 pt-3">
         {!hasAnyPhysicalStock ? (
-          <div className="flex w-full flex-wrap items-center justify-between gap-3 rounded-xl border border-brand-200 bg-brand-50/70 p-3.5">
+          <div className={cn(
+            'flex w-full flex-wrap items-center justify-between gap-3 rounded-xl border p-3.5',
+            hasUncoveredItems
+              ? 'border-rose-200 bg-rose-50'
+              : 'border-brand-200 bg-brand-50/70'
+          )}>
             <div className="flex items-center gap-2.5">
-              <Package className="size-4.5 text-brand-700 shrink-0" />
-              <p className="text-xs font-bold text-brand-950 sm:text-sm">
-                Toda la mercadería está en camino. El armado se habilitará cuando recibas la compra.
+              {hasUncoveredItems
+                ? <AlertTriangle className="size-4.5 text-rose-700 shrink-0" />
+                : <Package className="size-4.5 text-brand-700 shrink-0" />}
+              <p className={cn('text-xs font-bold sm:text-sm', hasUncoveredItems ? 'text-rose-950' : 'text-brand-950')}>
+                {hasUncoveredItems
+                  ? 'Hay unidades sin reposición asignada. Revisá el faltante antes de completar el pedido.'
+                  : hasIncomingItems
+                    ? 'Las unidades de este pedido están en camino. Podrás registrar la bolsita cuando recibas la compra.'
+                    : 'No hay unidades físicas reservadas para este pedido. Revisá sus reservas en Inventario.'}
               </p>
             </div>
             <Link
               to="/app/inventario"
-              search={{ tab: 'compras' }}
+              search={{ tab: hasIncomingItems ? 'compras' : 'stock' }}
               className="inline-flex min-h-10 items-center gap-1.5 rounded-xl bg-brand-600 px-3.5 py-1.5 text-xs font-black text-white shadow-xs hover:bg-brand-700 transition"
             >
-              <span>Recibir compra en Inventario</span>
+              <span>{hasIncomingItems ? 'Ver compra en Inventario' : 'Revisar Inventario'}</span>
               <ArrowRight className="size-3.5" />
             </Link>
           </div>
@@ -349,7 +367,7 @@ export function OrderPackingEditor({ order }: { order: Order }) {
                   className="inline-flex items-center gap-1.5"
                 >
                   <Sparkles className="size-3.5 text-brand-600" />
-                  <span>Apartar todo disponible</span>
+                  <span>Ya guardé todo lo reservado</span>
                 </Button>
               ) : null}
               {hasEmpty ? (

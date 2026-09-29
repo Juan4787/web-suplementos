@@ -542,7 +542,7 @@ export default function SettingsPage() {
                           value={draft.taxRatePercentStr}
                           onFocus={(e) => e.target.select()}
                           onChange={(e) => {
-                            const clean = sanitizeDecimalInput(e.target.value, draft.taxRatePercentStr);
+                            const clean = sanitizeDecimalInput(e.target.value);
                             setDraft({ ...draft, taxRatePercentStr: clean });
                           }}
                         />

@@ -172,8 +172,16 @@ describe('demoBusinessApi lifecycle and domain guarantees', () => {
     expect(updatedProduct.reserved).toBe(initialReserved + 2);
     expect(updatedProduct.onHand).toBe(initialOnHand);
 
-    // Re-importing same protocol ID must fail
-    await expect(demoBusinessApi.confirmImportedOrder(importInput)).rejects.toThrow();
+    // Un reintento idéntico recupera el pedido y no reserva unidades otra vez.
+    const repeated = await demoBusinessApi.confirmImportedOrder(importInput);
+    expect(repeated.id).toBe(confirmed.id);
+    expect(repeated.alreadyImported).toBe(true);
+    const afterRetry = (await demoBusinessApi.listAdminProducts()).find((p) => p.id === product.id)!;
+    expect(afterRetry.reserved).toBe(initialReserved + 2);
+    await expect(demoBusinessApi.confirmImportedOrder({
+      ...importInput,
+      customerName: 'Otro Comprador'
+    })).rejects.toThrow(/datos cambiaron/i);
   });
 
   it('preserves historical sales data and snapshots when product price and cost are updated later', async () => {
@@ -562,8 +570,9 @@ describe('demoBusinessApi lifecycle and domain guarantees', () => {
 
   it('allows creating a manual gift order directly with paymentMethod: gift', async () => {
     const productsBefore = await demoBusinessApi.listAdminProducts();
-    const product = productsBefore.find((p) => p.onHand >= 3)!;
+    const product = productsBefore.find((p) => p.onHand - p.reserved >= 3)!;
     const initialOnHand = product.onHand;
+    const initialReserved = product.reserved;
 
     const manualGiftOrder: ImportOrderInput = {
       protocolOrderId: crypto.randomUUID(),
@@ -594,12 +603,119 @@ describe('demoBusinessApi lifecycle and domain guarantees', () => {
 
     const order = await demoBusinessApi.confirmImportedOrder(manualGiftOrder);
     expect(order.paymentState).toBe('gifted');
-    expect(order.fulfillmentState).toBe('delivered');
+    expect(order.fulfillmentState).toBe('pending');
+    expect(order.preparationState).toBe('pending');
     expect(order.totalCents).toBe(0);
+    expect(order.items[0]?.unitPriceCents).toBe(0);
 
-    const invAfter = await demoBusinessApi.listInventory();
-    const productInv = invAfter.find((p) => p.id === product.id)!;
-    expect(productInv.onHand).toBe(initialOnHand - 1);
+    const reservedInventory = await demoBusinessApi.listInventory();
+    const reservedProduct = reservedInventory.find((p) => p.id === product.id)!;
+    expect(reservedProduct.onHand).toBe(initialOnHand);
+    expect(reservedProduct.reserved).toBe(initialReserved + 1);
+
+    await demoBusinessApi.saveOrderPacking(order.id, [{ orderItemId: order.items[0]!.id, packedQuantity: 1 }], 0);
+    await demoBusinessApi.transitionOrder(order.id, 'mark_ready');
+    const delivered = await demoBusinessApi.transitionOrder(order.id, 'mark_delivered');
+    expect(delivered.fulfillmentState).toBe('delivered');
+    const finalInventory = await demoBusinessApi.listInventory();
+    const finalProduct = finalInventory.find((p) => p.id === product.id)!;
+    expect(finalProduct.onHand).toBe(initialOnHand - 1);
+    expect(finalProduct.reserved).toBe(initialReserved);
+  });
+
+  it('separates physical and incoming reservations and moves only received units into physical stock', async () => {
+    const product = await demoBusinessApi.saveProduct({
+      sku: 'DEMO_INCOMING_SPLIT', slug: 'demo-incoming-split', name: 'Producto de prueba mixta',
+      presentation: '1 unidad', description: 'Prueba aislada.', category: 'Pruebas',
+      priceCents: 100000, currentCostCents: 60000, reorderPoint: 0,
+      safetyStock: 0, leadTimeDays: 1, imageUrl: '/test.svg', imageAlt: 'Prueba',
+      published: true, active: true, featured: false
+    });
+    await demoBusinessApi.adjustStock(product.id, 1, 'Stock de prueba');
+    const purchase = await demoBusinessApi.createPurchase({
+      supplierName: 'Proveedor de prueba', expectedAt: new Date().toISOString(), notes: null,
+      items: [{ productId: product.id, quantity: 1, unitCostCents: 60000 }]
+    });
+    const line = {
+      productId: product.id, sku: product.sku, slug: product.slug,
+      name: product.name, presentation: product.presentation, imageUrl: product.imageUrl,
+      quantity: 2, unitPriceCents: product.priceCents
+    };
+    const order = await demoBusinessApi.confirmImportedOrder({
+      customerName: 'Cliente Mixto', paymentMethod: 'cash', deliveryMethod: 'pickup',
+      shippingType: null, address: null, addressNumber: null, phone: null,
+      shippingFeeCents: 0, quotedSubtotalCents: 200000, quotedTotalCents: 200000,
+      protocolOrderId: crypto.randomUUID(), protocolChecksum: 'ABCD1234', lines: [line]
+    });
+    expect(order.items[0]?.physicalReservedQuantity).toBe(1);
+    expect(order.items[0]?.incomingQuantity).toBe(1);
+    const before = (await demoBusinessApi.listAdminProducts()).find(candidate => candidate.id === product.id)!;
+    expect([before.onHand, before.reserved, before.incoming, before.incomingReserved, before.incomingAvailable])
+      .toEqual([1, 1, 1, 1, 0]);
+    await expect(demoBusinessApi.confirmImportedOrder({
+      customerName: 'Otro Cliente', paymentMethod: 'cash', deliveryMethod: 'pickup',
+      shippingType: null, address: null, addressNumber: null, phone: null,
+      shippingFeeCents: 0, quotedSubtotalCents: 100000, quotedTotalCents: 100000,
+      protocolOrderId: crypto.randomUUID(), protocolChecksum: 'ABCD5678', lines: [{ ...line, quantity: 1 }]
+    })).rejects.toThrow(/stock cambió/i);
+
+    const received = await demoBusinessApi.receivePurchase(purchase.id);
+    expect(received.unblockedOrders).toContainEqual({ id: order.id, number: order.number });
+    const after = (await demoBusinessApi.listAdminProducts()).find(candidate => candidate.id === product.id)!;
+    expect([after.onHand, after.reserved, after.incoming, after.incomingReserved, after.incomingAvailable])
+      .toEqual([2, 2, 0, 0, 0]);
+    const refreshed = (await demoBusinessApi.listOrders(1, 100, String(order.number), 'all')).items.find(candidate => candidate.id === order.id)!;
+    expect(refreshed.items[0]?.physicalReservedQuantity).toBe(2);
+    expect(refreshed.items[0]?.incomingQuantity).toBe(0);
+    expect(refreshed.stockReadiness).toBe('ready');
+  });
+
+  it('does not silently reduce a purchase already reserved and marks a definitive shortage as uncovered', async () => {
+    const product = await demoBusinessApi.saveProduct({
+      sku: 'DEMO_SHORTAGE_RESERVED', slug: 'demo-shortage-reserved', name: 'Producto con faltante',
+      presentation: '1 unidad', description: 'Prueba aislada.', category: 'Pruebas',
+      priceCents: 100000, currentCostCents: 60000, reorderPoint: 0,
+      safetyStock: 0, leadTimeDays: 1, imageUrl: '/test.svg', imageAlt: 'Prueba',
+      published: true, active: true, featured: false
+    });
+    const purchase = await demoBusinessApi.createPurchase({
+      supplierName: 'Proveedor de prueba', expectedAt: new Date().toISOString(), notes: null,
+      items: [{ productId: product.id, quantity: 2, unitCostCents: 60000 }]
+    });
+    const order = await demoBusinessApi.confirmImportedOrder({
+      customerName: 'Cliente Faltante', paymentMethod: 'cash', deliveryMethod: 'pickup',
+      shippingType: null, address: null, addressNumber: null, phone: null,
+      shippingFeeCents: 0, quotedSubtotalCents: 200000, quotedTotalCents: 200000,
+      protocolOrderId: crypto.randomUUID(), protocolChecksum: 'ABCD9988',
+      lines: [{
+        productId: product.id, sku: product.sku, slug: product.slug,
+        name: product.name, presentation: product.presentation, imageUrl: product.imageUrl,
+        quantity: 2, unitPriceCents: product.priceCents
+      }]
+    });
+    await expect(demoBusinessApi.updatePurchase({
+      id: purchase.id, supplierName: purchase.supplierName, expectedAt: purchase.expectedAt,
+      notes: null, items: [{ productId: product.id, quantity: 1, unitCostCents: 60000 }]
+    })).rejects.toThrow(/reservadas para pedidos/i);
+    const before = (await demoBusinessApi.listAdminProducts()).find(candidate => candidate.id === product.id)!;
+    expect([before.incoming, before.incomingReserved]).toEqual([2, 2]);
+    await expect(demoBusinessApi.transitionOrder(order.id, 'mark_gifted')).rejects.toThrow(/faltan unidades físicas/i);
+
+    await demoBusinessApi.closePurchaseWithShortage(purchase.id, 'Faltante definitivo');
+    const after = (await demoBusinessApi.listAdminProducts()).find(candidate => candidate.id === product.id)!;
+    expect([after.onHand, after.reserved, after.incoming, after.incomingReserved]).toEqual([0, 0, 0, 0]);
+    const refreshed = (await demoBusinessApi.listOrders(1, 100, String(order.number), 'all')).items.find(candidate => candidate.id === order.id)!;
+    expect(refreshed.items[0]?.uncoveredQuantity).toBe(2);
+    expect(refreshed.items[0]?.incomingQuantity).toBe(0);
+    expect(refreshed.stockReadiness).toBe('uncovered');
+    for (const action of ['mark_ready', 'mark_delivered', 'mark_gifted'] as const) {
+      await expect(demoBusinessApi.transitionOrder(order.id, action)).rejects.toThrow(/faltan unidades físicas/i);
+    }
+    const unchanged = (await demoBusinessApi.listOrders(1, 100, String(order.number), 'all')).items.find(candidate => candidate.id === order.id)!;
+    expect([unchanged.paymentState, unchanged.preparationState, unchanged.fulfillmentState])
+      .toEqual(['pending', 'pending', 'pending']);
+    const stockAfterFailures = (await demoBusinessApi.listAdminProducts()).find(candidate => candidate.id === product.id)!;
+    expect([stockAfterFailures.onHand, stockAfterFailures.reserved]).toEqual([0, 0]);
   });
 
   it('generates a complete authorized export dataset with all 13 tables', async () => {

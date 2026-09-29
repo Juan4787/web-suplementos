@@ -321,6 +321,46 @@ describe('Recepción asistida de compras (ReceivePurchaseModal)', () => {
     expect(continueBtn).toBeEnabled();
   });
 
+  it('permite borrar y reescribir unidades recibidas sin convertir un vacío temporal en cero', async () => {
+    render(<ReceivePurchaseModal purchase={samplePurchase} onClose={vi.fn()} onUnblocked={vi.fn()} />, { wrapper: Wrapper });
+    fireEvent.click(await screen.findByText('Llegó con faltante / parte'));
+    fireEvent.click((await screen.findAllByRole('checkbox'))[0]!);
+
+    const received = screen.getByRole('textbox', { name: `Unidades recibidas de ${samplePurchase.items[0]!.productName}` });
+    const continueButton = screen.getByRole('button', { name: /Continuar/ });
+    expect(received).toHaveValue('0');
+
+    fireEvent.change(received, { target: { value: '' } });
+    fireEvent.blur(received);
+    expect(received).toHaveValue('');
+    expect(continueButton).toBeDisabled();
+    expect(screen.getByText(/Ingresá cuántas unidades llegaron/i)).toBeVisible();
+
+    fireEvent.change(received, { target: { value: '07' } });
+    expect(received).toHaveValue('7');
+    expect(continueButton).toBeEnabled();
+
+    fireEvent.change(received, { target: { value: '10' } });
+    expect(received).toHaveValue('10');
+    expect(continueButton).toBeDisabled();
+    expect(screen.getByText(/Ingresá entre 0 y 9 unidades/i)).toBeVisible();
+
+    fireEvent.change(received, { target: { value: '7' } });
+    expect(continueButton).toBeEnabled();
+    expect(api.receivePurchase).not.toHaveBeenCalled();
+
+    // Cambiar de idea y declarar una recepción completa debe ignorar el borrador parcial.
+    fireEvent.change(received, { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Volver' }));
+    fireEvent.click(screen.getByText('Llegó TODO completo'));
+    api.receivePurchase.mockResolvedValue({ purchase: { ...samplePurchase, state: 'received' }, unblockedOrders: [] });
+    fireEvent.click(screen.getByRole('button', { name: /Confirmar ingreso completo/ }));
+    await waitFor(() => expect(api.receivePurchase).toHaveBeenCalledWith('purch-2042', [
+      { purchaseItemId: 'pi-1', receivedQuantity: 10 },
+      { purchaseItemId: 'pi-2', receivedQuantity: 4 }
+    ], expect.any(String)));
+  });
+
   it('diagnóstico con "SÍ, viene después": permite finalizar sin bloqueos', async () => {
     const onClose = vi.fn();
     api.receivePurchase.mockResolvedValue({ purchase: samplePurchase, unblockedOrders: [] });

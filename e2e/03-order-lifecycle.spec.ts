@@ -27,14 +27,42 @@ async function expectStock(page: Page, onHand: number, reserved: number) {
 }
 
 test.describe('Operación diaria de pedidos', () => {
+  test('el conteo de bolsita admite borrar y reescribir sin completar ceros solo', async ({ page }) => {
+    const order = await createDailyOrder(page, 'Cliente conteo auditoría');
+    await order.getByRole('button', { name: 'Completar vacíos con 0' }).click();
+    const count = order.getByRole('textbox', { name: 'Unidades en bolsita de Creatina Monohidratada' });
+    await expect(count).toHaveValue('0');
+
+    await count.fill('');
+    await order.getByText(/Armado de la bolsita/).click();
+    await expect(count).toHaveValue('');
+    await expect(order.getByRole('button', { name: 'Guardar armado' })).toBeDisabled();
+
+    await count.fill('01');
+    await expect(count).toHaveValue('1');
+    await count.fill('10');
+    await expect(count).toHaveValue('10');
+    await expect(order.getByRole('button', { name: 'Guardar armado' })).toBeDisabled();
+    await count.fill('');
+    await expect(count).toHaveValue('');
+    await count.fill('1');
+    await order.getByRole('button', { name: 'Guardar armado' }).click();
+    await expect(order.getByText(/Armado completo guardado/)).toBeVisible();
+  });
+
   test('cobrar y entregar completa el pedido, libera la reserva y descuenta una unidad física', async ({ page }) => {
     const order = await createDailyOrder(page, 'Cliente entrega auditoría');
     await order.getByRole('button', { name: 'Marcar como cobrado' }).click();
     await expect(order.getByRole('button', { name: 'Marcar como cobrado' })).toHaveCount(0);
+    await order.getByRole('button', { name: 'Ya guardé todo lo reservado' }).click();
+    await order.getByRole('button', { name: 'Guardar armado' }).click();
+    await expect(order.getByText(/Armado completo guardado/)).toBeVisible();
+    await order.getByRole('button', { name: 'Marcar listo para entregar' }).click();
     await order.getByRole('button', { name: 'Marcar como entregado' }).click();
     await page.getByRole('button', { name: /^Completados/ }).click();
     await expect(order).toBeVisible();
-    await expect(order.getByText('Pedido completado y stock actualizado.')).toBeVisible();
+    await expect(order.getByText('Completado', { exact: true })).toBeVisible();
+    await expect(page.getByRole('status').filter({ hasText: /completado\. Lo encontrás en Completados/i })).toBeVisible();
     await expectStock(page, 6, 3);
   });
 

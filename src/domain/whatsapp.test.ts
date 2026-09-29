@@ -1099,4 +1099,66 @@ AF62864F`;
     expect(parsed.protocolChecksum).toBe('AF62864F');
     expect(parsed.customerFirstName).toBe('Agustina');
   });
+
+  it('toma el último pedido completo al pegar dos mensajes válidos del mismo chat', () => {
+    const previous = buildWhatsAppProtocol(
+      { ...checkout, customerName: 'Pedido Anterior', customerFirstName: 'Pedido', customerLastName: 'Anterior' },
+      lines,
+      settings
+    );
+    const latest = buildWhatsAppProtocol(
+      { ...checkout, customerName: 'Pedido Nuevo', customerFirstName: 'Pedido', customerLastName: 'Nuevo' },
+      [{ ...lines[0]!, quantity: 1 }],
+      settings
+    );
+    const pastedChat = `${previous.message}\n\n[Hoy] Mensaje reenviado:\n${latest.message}`;
+
+    const parsed = parseWhatsAppProtocol(pastedChat, { allowChecksumMismatch: true });
+    expect(parsed.protocolOrderId).toBe(latest.orderId);
+    expect(parsed.customerName).toBe('Pedido Nuevo');
+    expect(parsed.lines[0]?.quantity).toBe(1);
+    expect(parsed.checksumMismatch).toBe(false);
+
+    const latestWithLegacyMarker = latest.message.replace('\n\nCódigo de control\n', '\n\n*Código de control*\n');
+    const mixedMarkers = parseWhatsAppProtocol(`${previous.message}\n\n${latestWithLegacyMarker}`);
+    expect(mixedMarkers.protocolOrderId).toBe(latest.orderId);
+    expect(mixedMarkers.checksumMismatch).toBe(false);
+
+    const inlineWhatsAppPrefix = `${previous.message}\n\n[28/9/2026, 20:40] Cliente: ${latest.message}`;
+    const parsedInlinePrefix = parseWhatsAppProtocol(inlineWhatsAppPrefix, { allowChecksumMismatch: true });
+    expect(parsedInlinePrefix.protocolOrderId).toBe(latest.orderId);
+    expect(parsedInlinePrefix.customerName).toBe('Pedido Nuevo');
+    expect(parsedInlinePrefix.checksumMismatch).toBe(false);
+  });
+
+  it('rechaza campos repetidos en un mensaje editado en vez de elegir uno silenciosamente', () => {
+    const order = buildWhatsAppProtocol(checkout, lines, settings);
+    const tampered = order.message.replace(
+      '\n\nCódigo de control\n',
+      '\n\nNombre\nOtra Persona\n\nCódigo de control\n'
+    );
+    expect(tampered).not.toBe(order.message);
+    expect(tampered).toContain('Nombre\nOtra Persona');
+    expect(() => parseWhatsAppProtocol(tampered, { allowChecksumMismatch: true }))
+      .toThrow('La sección Nombre aparece más de una vez.');
+
+    const differentCase = order.message.replace(
+      '\n\nCódigo de control\n',
+      '\n\nnombre\nOtra Persona\n\nCódigo de control\n'
+    );
+    expect(() => parseWhatsAppProtocol(differentCase, { allowChecksumMismatch: true }))
+      .toThrow('La sección Nombre aparece más de una vez.');
+  });
+
+  it('no recupera un pedido viejo si el último mensaje pegado quedó sin código de control', () => {
+    const previous = buildWhatsAppProtocol(checkout, lines, settings);
+    const latest = buildWhatsAppProtocol(
+      { ...checkout, customerFirstName: 'Pedido', customerLastName: 'Nuevo', customerName: 'Pedido Nuevo' },
+      lines,
+      settings
+    );
+    const incompleteLatest = latest.message.slice(0, latest.message.lastIndexOf('\n\nCódigo de control\n'));
+    expect(() => parseWhatsAppProtocol(`${previous.message}\n\n${incompleteLatest}`, { allowChecksumMismatch: true }))
+      .toThrow(/último pedido.*incompleto/i);
+  });
 });

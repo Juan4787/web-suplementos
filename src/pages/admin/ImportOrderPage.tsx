@@ -3,21 +3,18 @@ import { Link } from '@tanstack/react-router';
 import {
   AlertTriangle,
   CheckCircle2,
-  ChevronDown,
   ClipboardPaste,
   Edit2,
   Minus,
   Plus,
   RotateCcw,
-  ShieldCheck,
-  Sparkles
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { queryKeys } from '@/app/query-keys';
 import { useBusinessQuery } from '@/app/use-business-query';
 import { PageHeader } from '@/components/layout/AdminShell';
 import { Button, buttonStyles } from '@/components/ui/Button';
-import { ErrorState, LoadingState } from '@/components/ui/DataState';
+import { ErrorState } from '@/components/ui/DataState';
 import { Field, Input, Textarea } from '@/components/ui/Field';
 import { AppError } from '@/domain/errors';
 import { formatMoney } from '@/domain/money';
@@ -48,11 +45,29 @@ export default function ImportOrderPage() {
   });
 
   const totals = useMemo(() => {
+    if (review?.source.paymentMethod === 'gift') return { subtotal: 0, shipping: 0, total: 0 };
     const subtotal =
       review?.lines.reduce((sum, line) => sum + line.unitPriceCents * line.quantity, 0) ?? 0;
     const shipping = review?.source.shippingFeeCents ?? 0;
     return { subtotal, shipping, total: subtotal + shipping };
   }, [review]);
+
+  const stockIssues = useMemo(() => (review?.lines ?? []).flatMap((line) => {
+    const product = productsQuery.data?.find((candidate) => candidate.id === line.productId);
+    if (!product) return [];
+    const physical = Math.max(0, product.onHand - product.reserved);
+    const incoming = Math.max(0, product.incomingAvailable ?? (product.incoming - (product.incomingReserved ?? 0)));
+    const missing = Math.max(0, line.quantity - physical - incoming);
+    return missing > 0 ? [{ productId: line.productId, name: line.name, missing }] : [];
+  }), [review, productsQuery.data]);
+
+  const missingCustomer = Boolean(review && (
+    review.customerFirstName.trim().length < 2 || review.customerLastName.trim().length < 2
+  ));
+  const missingAddress = Boolean(review && review.source.deliveryMethod === 'shipping' &&
+    (review.source.address?.trim().length ?? 0) < 3);
+  const missingPhone = Boolean(review && review.source.deliveryMethod === 'shipping' &&
+    (review.source.phone?.replace(/\D/g, '').length ?? 0) < 8);
 
   const confirm = useMutation({
     mutationFn: async (input: ImportOrderInput) =>
@@ -85,7 +100,17 @@ export default function ImportOrderPage() {
         // intentamos recuperar los datos permitiendo la discrepancia del código de control para no trabar el negocio.
         try {
           parsed = parseWhatsAppProtocol(message, { allowChecksumMismatch: true });
-        } catch {
+        } catch (secondError) {
+          if (secondError instanceof Error && /^La sección .+ aparece más de una vez\.$/.test(secondError.message)) {
+            throw new AppError('validation', secondError.message, {
+              nextAction: 'Copiá un solo pedido completo o quitá el campo repetido antes de volver a analizarlo.'
+            });
+          }
+          if (secondError instanceof Error && secondError.message.startsWith('El último pedido copiado está incompleto')) {
+            throw new AppError('validation', secondError.message, {
+              nextAction: 'Copiá de nuevo el mensaje más reciente hasta su código de control final.'
+            });
+          }
           // Si tampoco se puede parsear permitiendo checksum, el error es estructural: analizamos la causa para guiar al usuario
           const text = message.trim();
           if (!/PEDIDO DE TIENDA DE SUPLEMENTOS|PEDIDO IMPULSO/i.test(text)) {
@@ -113,6 +138,7 @@ export default function ImportOrderPage() {
       }
 
       const products = productsQuery.data ?? [];
+      const seenProductIds = new Set<string>();
       const lines = parsed.lines.map((line) => {
         const product = products.find(
           (candidate) => candidate.sku.trim().toLowerCase() === line.sku.trim().toLowerCase()
@@ -122,6 +148,12 @@ export default function ImportOrderPage() {
             nextAction: 'Revisá el mensaje de WhatsApp o cargá el producto si es nuevo.'
           });
         }
+        if (seenProductIds.has(product.id)) {
+          throw new AppError('validation', `El producto “${product.name}” aparece dos veces en el mensaje.`, {
+            nextAction: 'Revisá el mensaje y dejá una sola línea con la cantidad total antes de importarlo.'
+          });
+        }
+        seenProductIds.add(product.id);
         return {
           productId: product.id,
           sku: product.sku,
@@ -182,10 +214,10 @@ export default function ImportOrderPage() {
   return (
     <div className="page-enter">
       <PageHeader
-        title={created ? 'Pedido cargado' : 'Importar pedido'}
+        title={created ? (created.alreadyImported ? 'Pedido ya cargado' : 'Pedido cargado') : 'Importar pedido'}
         description={
           created
-            ? 'El pedido quedó registrado correctamente.'
+            ? (created.alreadyImported ? 'Se encontró el pedido registrado anteriormente.' : 'El pedido quedó registrado correctamente.')
             : 'Pegá el mensaje generado por la tienda.'
         }
       />
@@ -201,10 +233,12 @@ export default function ImportOrderPage() {
               </span>
               <div>
                 <h2 className="font-display text-2xl font-black text-ink-950 sm:text-[26px]">
-                  Pedido cargado
+                  {created.alreadyImported ? 'Registrado anteriormente' : 'Reserva confirmada'}
                 </h2>
                 <p className="mt-0.5 text-[15px] font-semibold text-emerald-800">
-                  El pedido quedó registrado y el stock fue reservado.
+                  {created.alreadyImported
+                    ? 'Este pedido ya estaba cargado. No se reservaron unidades nuevamente.'
+                    : 'El pedido quedó registrado y el stock fue reservado.'}
                 </p>
               </div>
             </div>
@@ -231,16 +265,11 @@ export default function ImportOrderPage() {
                 </div>
                 <div className="text-right">
                   <span className="inline-flex items-center gap-1.5 rounded-full border border-ink-950/10 bg-white px-3.5 py-1.5 text-[14px] font-bold text-ink-800 shadow-sm">
-                    {created.paymentMethod === 'cash' ? 'Efectivo' : 'Transferencia'} · {created.deliveryMethod === 'pickup' ? 'Retiro' : `Envío ${created.shippingType === 'express' ? 'express' : 'a domicilio'}`}
+                    {created.paymentMethod === 'cash' ? 'Efectivo' : created.paymentMethod === 'gift' ? 'Regalo / Cortesía' : 'Transferencia'} · {created.deliveryMethod === 'pickup' ? 'Retiro' : `Envío ${created.shippingType === 'express' ? 'express' : 'a domicilio'}`}
                   </span>
                 </div>
               </div>
             </div>
-
-            {/* Mensaje natural sobre el stock */}
-            <p className="mt-5 text-[15px] font-semibold text-ink-700">
-              El pedido quedó cargado y las unidades fueron reservadas.
-            </p>
 
             {/* Botones de acción jerárquicos: Azul zafiro principal y Blanco secundario */}
             <div className="mt-7 flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -255,9 +284,7 @@ export default function ImportOrderPage() {
               >
                 Ver pedido #{created.number}
               </Link>
-              {productsQuery.isPending ? <LoadingState label="Cargando productos para revisar el pedido…" /> : null}
-            {productsQuery.isError ? <ErrorState error={productsQuery.error} onRetry={() => void productsQuery.refetch()} /> : null}
-            <Button
+              <Button
                 variant="secondary"
                 size="lg"
                 className="flex-1 border-ink-950/15"
@@ -298,6 +325,9 @@ export default function ImportOrderPage() {
                 <ErrorState error={parseError} />
               </div>
             ) : null}
+            {productsQuery.isError ? (
+              <div className="mt-4"><ErrorState error={productsQuery.error} onRetry={() => void productsQuery.refetch()} /></div>
+            ) : null}
 
             <Button
               className="mt-5"
@@ -335,10 +365,16 @@ export default function ImportOrderPage() {
                     Mensaje con modificaciones manuales en WhatsApp
                   </p>
                   <p className="mt-0.5 text-amber-800">
-                    El código de control no coincide exactamente (el cliente o remitente pudo haber agregado datos a mano como piso/depto o notas). Los datos fueron leídos correctamente; comprobalos abajo antes de confirmar.
+                    El código de control no coincide. El mensaje pudo haber cambiado o estar incompleto. Compará cliente, dirección, productos, cantidades y total con el chat antes de confirmar.
                   </p>
                 </div>
               </div>
+            ) : null}
+
+            {review.source.paymentMethod === 'gift' ? (
+              <p className="mt-4 rounded-xl border border-purple-200 bg-purple-50 p-3 text-sm font-semibold text-purple-900">
+                Regalo / Cortesía: se registrará sin cobro ($0). Los precios del mensaje son solo una referencia.
+              </p>
             ) : null}
 
             {/* Metadatos compactos: Cliente, Pago y Entrega en jerarquía secundaria */}
@@ -354,7 +390,11 @@ export default function ImportOrderPage() {
               <div className="flex flex-col gap-0.5 min-w-0">
                 <span className="text-[11px] font-black uppercase tracking-wider text-ink-500">Pago</span>
                 <p className="font-bold text-ink-900">
-                  {review.source.paymentMethod === 'cash' ? 'Efectivo' : 'Transferencia bancaria'}
+                  {review.source.paymentMethod === 'cash'
+                    ? 'Efectivo'
+                    : review.source.paymentMethod === 'gift'
+                      ? 'Regalo / Cortesía'
+                      : 'Transferencia bancaria'}
                 </p>
               </div>
 
@@ -389,8 +429,8 @@ export default function ImportOrderPage() {
               <div className="hidden sm:grid sm:grid-cols-[1fr_7rem_8rem_7.5rem] items-center gap-4 px-5 text-[13px] font-black uppercase tracking-wider text-ink-500">
                 <span>Producto</span>
                 <span className="text-right">Cantidad</span>
-                <span className="text-right">Precio u.</span>
-                <span className="text-right">Subtotal</span>
+                <span className="text-right">{review.source.paymentMethod === 'gift' ? 'Precio' : 'Precio u.'}</span>
+                <span className="text-right">{review.source.paymentMethod === 'gift' ? 'A cobrar' : 'Subtotal'}</span>
               </div>
 
               {/* Cada producto como fila de verificación explícita */}
@@ -419,10 +459,19 @@ export default function ImportOrderPage() {
                           const prod = productsQuery.data?.find((p) => p.id === line.productId);
                           const phys = prod ? Math.max(0, prod.onHand - prod.reserved) : 0;
                           const incomingNeeded = Math.max(0, line.quantity - phys);
+                          const incomingAvailable = Math.max(0, prod?.incomingAvailable ?? ((prod?.incoming ?? 0) - (prod?.incomingReserved ?? 0)));
+                          const missing = Math.max(0, incomingNeeded - incomingAvailable);
+                          if (missing > 0) {
+                            return (
+                              <span className="mt-1 inline-flex items-center gap-1 text-[11px] font-bold text-rose-900 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-md">
+                                Faltan {missing} u. para confirmar. Revisá stock o ajustá la cantidad.
+                              </span>
+                            );
+                          }
                           if (incomingNeeded > 0) {
                             return (
                               <span className="mt-1 inline-flex items-center gap-1 text-[11px] font-bold text-amber-900 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md">
-                                <span>🟠</span> Asigna {incomingNeeded} u. de compra en camino
+                                {incomingNeeded} u. se reservarán de una compra en camino
                               </span>
                             );
                           }
@@ -449,15 +498,15 @@ export default function ImportOrderPage() {
                       <div className="sm:text-right">
                         <span className="sm:hidden text-xs font-bold text-ink-500 block">Precio unitario:</span>
                         <span className="text-[16px] font-semibold text-ink-700">
-                          {formatMoney(line.unitPriceCents)} c/u
+                          {review.source.paymentMethod === 'gift' ? '$0 · Cortesía' : `${formatMoney(line.unitPriceCents)} c/u`}
                         </span>
                       </div>
 
                       {/* Subtotal de línea */}
                       <div className="sm:text-right">
-                        <span className="sm:hidden text-xs font-bold text-ink-500 block">Subtotal:</span>
+                        <span className="sm:hidden text-xs font-bold text-ink-500 block">{review.source.paymentMethod === 'gift' ? 'A cobrar:' : 'Subtotal:'}</span>
                         <span className="text-[17.5px] font-black text-ink-950">
-                          {formatMoney(lineSubtotal)}
+                          {review.source.paymentMethod === 'gift' ? '$0' : formatMoney(lineSubtotal)}
                         </span>
                       </div>
                     </div>
@@ -493,8 +542,8 @@ export default function ImportOrderPage() {
                         label="Nombre *"
                         htmlFor="review-first-name"
                         error={
-                          !review.customerFirstName.trim()
-                            ? 'Ingresá el nombre.'
+                          review.customerFirstName.trim().length < 2
+                            ? 'Ingresá al menos 2 letras.'
                             : undefined
                         }
                       >
@@ -515,8 +564,8 @@ export default function ImportOrderPage() {
                         label="Apellido *"
                         htmlFor="review-last-name"
                         error={
-                          !review.customerLastName.trim()
-                            ? 'Ingresá el apellido.'
+                          review.customerLastName.trim().length < 2
+                            ? 'Ingresá al menos 2 letras.'
                             : undefined
                         }
                       >
@@ -562,7 +611,7 @@ export default function ImportOrderPage() {
                           <div>
                             <span className="text-sm font-black text-ink-950">{line.name}</span>
                             <span className="text-xs text-ink-600 font-semibold ml-2">
-                              · {formatMoney(line.unitPriceCents)} c/u
+                              · {review.source.paymentMethod === 'gift' ? 'Cortesía' : `${formatMoney(line.unitPriceCents)} c/u`}
                             </span>
                           </div>
                           <div className="inline-flex items-center rounded-full bg-cream-100 p-1">
@@ -673,7 +722,9 @@ export default function ImportOrderPage() {
               <div className="flex justify-between font-semibold text-ink-700">
                 <span>Envío</span>
                 <span className="font-black text-ink-950">
-                  {review.source.deliveryMethod === 'shipping'
+                  {review.source.paymentMethod === 'gift'
+                    ? '$0 (Cortesía)'
+                    : review.source.deliveryMethod === 'shipping'
                     ? totals.shipping > 0
                       ? formatMoney(totals.shipping)
                       : 'A coordinar'
@@ -685,30 +736,47 @@ export default function ImportOrderPage() {
             <div className="my-5 border-t border-ink-950/8" />
 
             <div className="flex items-baseline justify-between mb-6">
-              <span className="text-[13.5px] font-black uppercase tracking-wider text-ink-700">Total</span>
+              <span className="text-[13.5px] font-black uppercase tracking-wider text-ink-700">{review.source.paymentMethod === 'gift' ? 'Total cortesía' : 'Total'}</span>
               <span className="font-display text-3xl font-black text-ink-950">
                 {formatMoney(totals.total)}
               </span>
             </div>
 
-            {!review.customerFirstName.trim() || !review.customerLastName.trim() ? (
+            {missingCustomer ? (
               <p role="status" className="mb-3 text-sm font-bold text-amber-900">
-                En “Corregir datos del pedido”, completá el nombre y apellido del cliente.
+                En “Corregir datos del pedido”, ingresá nombre y apellido de al menos 2 letras cada uno.
               </p>
             ) : null}
-            {review.source.deliveryMethod === 'shipping' && !review.source.address?.trim() ? (
+            {missingAddress ? (
               <p role="status" className="mb-3 text-sm font-bold text-amber-900">
-                En “Corregir datos del pedido”, completá la dirección de entrega.
+                En “Corregir datos del pedido”, completá la dirección de entrega (al menos 3 caracteres).
               </p>
+            ) : null}
+            {missingPhone ? (
+              <p role="status" className="mb-3 text-sm font-bold text-amber-900">
+                En “Corregir datos del pedido”, completá un teléfono de al menos 8 dígitos para el envío.
+              </p>
+            ) : null}
+            {stockIssues.length > 0 ? (
+              <div role="status" className="mb-3 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm font-bold text-rose-900">
+                <p>No alcanza el stock para confirmar este pedido:</p>
+                <ul className="mt-1 list-inside list-disc">
+                  {stockIssues.map((issue) => <li key={issue.productId}>{issue.name}: faltan {issue.missing} u.</li>)}
+                </ul>
+                <button type="button" className="mt-2 underline" onClick={() => void productsQuery.refetch()}>
+                  Actualizar disponibilidad
+                </button>
+                <p className="mt-2 text-xs font-medium">
+                  Si ya lo cargaste, <Link to="/app/pedidos" className="underline">buscalo en Pedidos</Link>; no hace falta reservarlo otra vez.
+                </p>
+              </div>
             ) : null}
             <Button
               className="w-full text-[15.5px] font-black"
               size="lg"
               loading={confirm.isPending}
               disabled={
-                !review.customerFirstName.trim() ||
-                !review.customerLastName.trim() ||
-                (review.source.deliveryMethod === 'shipping' && !review.source.address?.trim())
+                missingCustomer || missingAddress || missingPhone || stockIssues.length > 0 || productsQuery.isFetching
               }
               onClick={() =>
                 confirm.mutate({

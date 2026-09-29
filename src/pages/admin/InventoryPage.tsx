@@ -299,7 +299,7 @@ export function PurchaseFormModal({
                         const updated = [...lines];
                         const item = updated[index];
                         if (item) {
-                          const clean = sanitizeIntegerInput(event.target.value, String(item.quantity || ''));
+                          const clean = sanitizeIntegerInput(event.target.value);
                           item.quantity = clean === '' ? 0 : parseInt(clean, 10);
                         }
                         setLines(updated);
@@ -328,7 +328,7 @@ export function PurchaseFormModal({
                         const updated = [...lines];
                         const item = updated[index];
                         if (item) {
-                          item.unitCostPesos = sanitizeDecimalInput(event.target.value, item.unitCostPesos);
+                          item.unitCostPesos = sanitizeDecimalInput(event.target.value);
                         }
                         setLines(updated);
                       }}
@@ -379,7 +379,8 @@ type WizardStep = 'choice' | 'complete_confirm' | 'missing_checklist' | 'missing
 
 type MissingItemConfig = {
   isMissing: boolean;
-  receivedQty: number;
+  receivedQty: number | null;
+  receivedQtyDraft?: string | undefined;
   delayedResolution: 'later' | 'definitive';
   reassignedPurchaseNumber?: number;
 };
@@ -450,6 +451,11 @@ export function ReceivePurchaseModal({
   }, [purchase.items, missingConfig]);
 
   const missingCount = missingItemsList.length;
+  const hasInvalidMissingQuantity = missingItemsList.some(item => {
+    const pending = Math.max(0, item.quantity - (item.receivedQuantity ?? 0) - (item.shortageQuantity ?? 0));
+    const received = missingConfig[item.id]?.receivedQty;
+    return received === null || received === undefined || !Number.isSafeInteger(received) || received < 0 || received >= pending;
+  });
 
   const totalReceivedUnits = useMemo(() => {
     if (step === 'choice' || step === 'complete_confirm') {
@@ -555,6 +561,9 @@ export function ReceivePurchaseModal({
   // Mutación principal para registrar recepción
   const receiveMutation = useMutation({
     mutationFn: async () => {
+      if (step !== 'complete_confirm' && hasInvalidMissingQuantity) {
+        throw new AppError('validation', 'Falta revisar cuántas unidades llegaron de cada producto marcado con faltante.');
+      }
       const api = await getBusinessApi();
 
       if (step === 'complete_confirm') {
@@ -592,7 +601,7 @@ export function ReceivePurchaseModal({
         const cfg = missingConfig[item.id];
         if (cfg?.isMissing && cfg.delayedResolution === 'definitive' && !cfg.reassignedPurchaseNumber) {
           const pending = Math.max(0, item.quantity - (item.receivedQuantity ?? 0) - (item.shortageQuantity ?? 0));
-          const missingQty = pending - cfg.receivedQty;
+          const missingQty = pending - (cfg.receivedQty ?? 0);
           if (missingQty > 0) {
             await api.declareItemShortage(item.id, missingQty, 'Faltante definitivo informado por el distribuidor');
           }
@@ -741,7 +750,7 @@ export function ReceivePurchaseModal({
                 <span>Ingreso del 100% de la mercadería</span>
               </div>
               <p className="text-xs font-medium text-emerald-900 leading-relaxed">
-                Se ingresarán <strong>{totalPendingUnits} unidades</strong> a stock físico. Los pedidos de clientes que se encontraban aguardando reposición quedarán automáticamente habilitados para entrega.
+                Se ingresarán <strong>{totalPendingUnits} unidades</strong> a stock físico. Las unidades reservadas para pedidos pasarán a ser físicas; después revisá el armado de cada bolsita en Pedidos antes de marcarla lista.
               </p>
             </div>
 
@@ -797,7 +806,9 @@ export function ReceivePurchaseModal({
             <div className="space-y-3 max-h-[50vh] overflow-y-auto pr-1 custom-scrollbar">
               {(purchase.items ?? []).map((item) => {
                 const pending = Math.max(0, item.quantity - (item.receivedQuantity ?? 0) - (item.shortageQuantity ?? 0));
-                const cfg = missingConfig[item.id] || { isMissing: false, receivedQty: pending, delayedResolution: 'later' };
+                const cfg: MissingItemConfig = missingConfig[item.id] || { isMissing: false, receivedQty: pending, delayedResolution: 'later' };
+                const invalidReceivedQty = cfg.isMissing && (cfg.receivedQty === null ||
+                  !Number.isSafeInteger(cfg.receivedQty) || cfg.receivedQty < 0 || cfg.receivedQty >= pending);
 
                 return (
                   <div
@@ -825,7 +836,8 @@ export function ReceivePurchaseModal({
                               [item.id]: {
                                 ...prev[item.id]!,
                                 isMissing: checked,
-                                receivedQty: checked ? 0 : pending
+                                receivedQty: checked ? 0 : pending,
+                                receivedQtyDraft: undefined
                               }
                             }));
                           }}
@@ -866,7 +878,7 @@ export function ReceivePurchaseModal({
                             onClick={() => {
                               setMissingConfig((prev) => ({
                                 ...prev,
-                                [item.id]: { ...prev[item.id]!, receivedQty: 0 }
+                                [item.id]: { ...prev[item.id]!, receivedQty: 0, receivedQtyDraft: undefined }
                               }));
                             }}
                             className={cn(
@@ -881,22 +893,36 @@ export function ReceivePurchaseModal({
                           <div className="flex items-center gap-1.5 bg-white border border-ink-950/15 rounded-xl px-2.5 py-1">
                             <span className="font-semibold text-ink-700">Llegaron:</span>
                             <input
-                              type="number"
-                              min={0}
-                              max={pending - 1}
-                              value={cfg.receivedQty}
+                              type="text"
+                              inputMode="numeric"
+                              pattern="[0-9]*"
+                              value={cfg.receivedQtyDraft ?? cfg.receivedQty ?? ''}
+                              onFocus={(event) => event.currentTarget.select()}
                               onChange={(e) => {
-                                const val = Math.max(0, Math.min(pending - 1, parseInt(e.target.value, 10) || 0));
+                                const raw = e.target.value;
+                                const draft = /^\d+$/.test(raw) ? sanitizeIntegerInput(raw) : raw;
+                                const val = /^\d+$/.test(draft) ? Number(draft) : null;
                                 setMissingConfig((prev) => ({
                                   ...prev,
-                                  [item.id]: { ...prev[item.id]!, receivedQty: val }
+                                  [item.id]: { ...prev[item.id]!, receivedQty: val, receivedQtyDraft: draft }
                                 }));
                               }}
+                              aria-label={`Unidades recibidas de ${item.productName}`}
+                              aria-invalid={invalidReceivedQty}
                               className="w-12 text-center font-black text-ink-950 focus:outline-none"
                             />
                             <span className="font-semibold text-ink-500">de {pending}</span>
                           </div>
                         </div>
+                        {invalidReceivedQty ? (
+                          <p role="status" className="w-full text-xs font-semibold text-rose-800">
+                            {cfg.receivedQty === null
+                              ? cfg.receivedQtyDraft
+                                ? 'Usá un número entero sin signos; 0 si no llegó ninguna unidad.'
+                                : 'Ingresá cuántas unidades llegaron; 0 si no llegó ninguna.'
+                              : `Ingresá entre 0 y ${pending - 1} unidades para registrar un faltante.`}
+                          </p>
+                        ) : null}
                       </div>
                     )}
                   </div>
@@ -924,7 +950,7 @@ export function ReceivePurchaseModal({
               {missingItemsList.map((item) => {
                 const pending = Math.max(0, item.quantity - (item.receivedQuantity ?? 0) - (item.shortageQuantity ?? 0));
                 const cfg = missingConfig[item.id]!;
-                const missingUnits = pending - cfg.receivedQty;
+                const missingUnits = pending - (cfg.receivedQty ?? 0);
                 const impactItem = impactQuery.data?.find((i) => i.purchaseItemId === item.id);
                 const reservedOrders = impactItem?.reservedOrders ?? [];
                 const isDefinitive = cfg.delayedResolution === 'definitive';
@@ -940,7 +966,7 @@ export function ReceivePurchaseModal({
                       <div>
                         <h4 className="text-base font-black text-ink-950">{item.productName}</h4>
                         <p className="text-xs font-bold text-rose-700 mt-0.5">
-                          Faltan {missingUnits} unidades {cfg.receivedQty > 0 ? `(llegaron ${cfg.receivedQty} de ${pending})` : `(no llegó ninguna de ${pending})`}
+                          Faltan {missingUnits} unidades {(cfg.receivedQty ?? 0) > 0 ? `(llegaron ${cfg.receivedQty} de ${pending})` : `(no llegó ninguna de ${pending})`}
                         </p>
                       </div>
                       <span className="text-xs font-bold text-ink-500">
@@ -1210,7 +1236,7 @@ export function ReceivePurchaseModal({
                 <Button
                   variant="primary"
                   size="md"
-                  disabled={missingCount === 0 || receiveMutation.isPending}
+                  disabled={missingCount === 0 || hasInvalidMissingQuantity || receiveMutation.isPending}
                   onClick={() => setStep('missing_resolution')}
                   className="font-black"
                 >
@@ -1656,7 +1682,7 @@ function StockDetailDrawer({
                   placeholder="0"
                   onFocus={(e) => e.target.select()}
                   onChange={(e) => {
-                    const clean = sanitizeIntegerInput(e.target.value, reorderPointStr);
+                    const clean = sanitizeIntegerInput(e.target.value);
                     setReorderPointStr(clean);
                   }}
                   className="h-12 w-28 pr-7 text-right text-[16px] font-black bg-cream-50 border-ink-950/12 focus:bg-white focus:ring-1 focus:ring-amber-500/50"
@@ -1683,7 +1709,7 @@ function StockDetailDrawer({
                   placeholder="0"
                   onFocus={(e) => e.target.select()}
                   onChange={(e) => {
-                    const clean = sanitizeIntegerInput(e.target.value, safetyStockStr);
+                    const clean = sanitizeIntegerInput(e.target.value);
                     setSafetyStockStr(clean);
                   }}
                   className="h-12 w-28 pr-7 text-right text-[16px] font-black bg-cream-50 border-ink-950/12 focus:bg-white focus:ring-1 focus:ring-rose-500/50"
@@ -2718,7 +2744,7 @@ export default function InventoryPage() {
                   value={targetStock}
                   disabled={adjustment.isPending}
                   onFocus={(e) => e.target.select()}
-                  onChange={(e) => setTargetStock(sanitizeIntegerInput(e.target.value, targetStock))}
+                  onChange={(e) => setTargetStock(sanitizeIntegerInput(e.target.value))}
                   className="text-lg font-black pr-10"
                 />
                 <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm font-bold text-ink-500 pointer-events-none">

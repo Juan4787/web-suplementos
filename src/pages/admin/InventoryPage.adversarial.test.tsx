@@ -183,7 +183,7 @@ describe('Auditoría Adversarial: ReceivePurchaseModal', () => {
     await waitFor(() => expect(finalizeBtn).toBeEnabled());
   });
 
-  it('Adversarial 3: Clamping estricto al ingresar números anómalos o fuera de rango', async () => {
+  it('Adversarial 3: deja visible un número inválido y bloquea continuar hasta corregirlo', async () => {
     api.getPurchaseImpact.mockResolvedValue([]);
     render(<ReceivePurchaseModal purchase={samplePurchase} onClose={vi.fn()} onUnblocked={vi.fn()} />, { wrapper: Wrapper });
     fireEvent.click(await screen.findByText('Llegó con faltante / parte'));
@@ -191,16 +191,23 @@ describe('Auditoría Adversarial: ReceivePurchaseModal', () => {
     const checkboxes = await screen.findAllByRole('checkbox');
     fireEvent.click(checkboxes[0]!); // pi-adv-1 tiene 10 u. pendientes
 
-    const spinInput = screen.getByRole('spinbutton');
+    const countInput = screen.getByRole('textbox', { name: 'Unidades recibidas de Creatina Monohidratada' });
+    const continueButton = screen.getByRole('button', { name: /Continuar/ });
     // Intento 1: Escribir 9999 (mayor al remanente)
-    fireEvent.change(spinInput, { target: { value: '9999' } });
-    // Debe clampearse a pending - 1 = 9
-    expect((spinInput as HTMLInputElement).value).toBe('9');
+    fireEvent.change(countInput, { target: { value: '9999' } });
+    expect(countInput).toHaveValue('9999');
+    expect(continueButton).toBeDisabled();
+    expect(screen.getByText(/Ingresá entre 0 y 9 unidades/i)).toBeVisible();
 
     // Intento 2: Escribir -50 (número negativo)
-    fireEvent.change(spinInput, { target: { value: '-50' } });
-    // Debe clampearse a 0
-    expect((spinInput as HTMLInputElement).value).toBe('0');
+    fireEvent.change(countInput, { target: { value: '-50' } });
+    expect(countInput).toHaveValue('-50');
+    expect(continueButton).toBeDisabled();
+    expect(screen.getByText(/Usá un número entero sin signos/i)).toBeVisible();
+
+    fireEvent.change(countInput, { target: { value: '7' } });
+    expect(countInput).toHaveValue('7');
+    expect(continueButton).toBeEnabled();
   });
 
   it('Adversarial 4: Cliente sin teléfono no rompe la UI ni emite enlaces defectuosos', async () => {

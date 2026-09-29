@@ -96,8 +96,8 @@ describe('Compras reflejadas en Productos', () => {
         fireEvent.click(await screen.findByText('Llegó con faltante / parte'));
         const checkbox = await screen.findByRole('checkbox');
         fireEvent.click(checkbox);
-        const spinInput = screen.getByRole('spinbutton');
-        fireEvent.change(spinInput, { target: { value: String(quantity) } });
+        const countInput = screen.getByRole('textbox', { name: `Unidades recibidas de ${product.name}` });
+        fireEvent.change(countInput, { target: { value: String(quantity) } });
         fireEvent.click(screen.getByRole('button', { name: /Continuar/ }));
         fireEvent.click(screen.getByRole('button', { name: /Finalizar recepción/ }));
       }

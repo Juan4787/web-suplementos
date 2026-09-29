@@ -57,8 +57,8 @@ describe('Auditoría Profunda de 15 Puntos: Pedidos de Regalo / Cortesía', () =
     expect(stockAfterSecond).toBe(stockAfterFirst);
   });
 
-  // Punto 2 y 6: mark_gifted sobre paid → INVALID_TRANSITION
-  it('mark_gifted sobre paid → INVALID_TRANSITION', async () => {
+  // Punto 2 y 6: un pedido ya cobrado no puede regalarse.
+  it('explica en lenguaje claro por qué un pedido ya cobrado no puede regalarse', async () => {
     const products = await demoBusinessApi.listAdminProducts();
     const product = products.find((p) => (p.onHand - p.reserved) >= 3)!;
 
@@ -91,10 +91,10 @@ describe('Auditoría Profunda de 15 Puntos: Pedidos de Regalo / Cortesía', () =
     // Cobrar el pedido
     await demoBusinessApi.transitionOrder(order.id, 'mark_paid');
 
-    // Intentar regalar un pedido ya cobrado debe arrojar INVALID_TRANSITION
+    // No se modifica un cobro ya asentado.
     await expect(
       demoBusinessApi.transitionOrder(order.id, 'mark_gifted')
-    ).rejects.toThrow('INVALID_TRANSITION');
+    ).rejects.toThrow('Este pedido ya no se puede regalar.');
   });
 
   // Punto 4: Regalo de pedido con múltiples productos
@@ -341,10 +341,11 @@ describe('Auditoría Profunda de 15 Puntos: Pedidos de Regalo / Cortesía', () =
   });
 
   // Punto 14: Pedido manual directo con paymentMethod = gift
-  it('14. Carga manual con paymentMethod = gift descuenta stock y fija total en $ 0', async () => {
+  it('14. Carga manual con paymentMethod = gift reserva stock sin entregarlo y fija total en $ 0', async () => {
     const products = await demoBusinessApi.listAdminProducts();
     const product = products.find((p) => (p.onHand - p.reserved) >= 2)!;
     const initialOnHand = product.onHand;
+    const initialReserved = product.reserved;
 
     const manualGift: ImportOrderInput = {
       protocolOrderId: crypto.randomUUID(),
@@ -373,11 +374,12 @@ describe('Auditoría Profunda de 15 Puntos: Pedidos de Regalo / Cortesía', () =
 
     const order = await demoBusinessApi.confirmImportedOrder(manualGift);
     expect(order.paymentState).toBe('gifted');
-    expect(order.fulfillmentState).toBe('delivered');
+    expect(order.fulfillmentState).toBe('pending');
     expect(order.totalCents).toBe(0);
 
     const prodsFinal = await demoBusinessApi.listAdminProducts();
-    expect(prodsFinal.find((p) => p.id === product.id)!.onHand).toBe(initialOnHand - 1);
+    expect(prodsFinal.find((p) => p.id === product.id)!.onHand).toBe(initialOnHand);
+    expect(prodsFinal.find((p) => p.id === product.id)!.reserved).toBe(initialReserved + 1);
   });
 
 });

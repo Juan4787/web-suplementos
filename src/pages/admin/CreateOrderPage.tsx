@@ -109,7 +109,7 @@ export default function CreateOrderPage() {
   const filteredProducts = useMemo(() => {
     const term = searchProduct.trim().toLowerCase();
     return products.filter((p) => {
-      if (!p.active || !p.published) return false;
+      if (!p.active) return false;
       if (selectedCategory !== 'all' && p.category !== selectedCategory) return false;
       if (!term) return true;
       return (
@@ -256,14 +256,14 @@ export default function CreateOrderPage() {
     }
 
     const trimmedFirst = customerFirstName.trim();
-    if (!trimmedFirst) {
-      setValidationError('Ingresá el nombre del cliente.');
+    if (trimmedFirst.length < 2) {
+      setValidationError('Ingresá un nombre de al menos 2 letras.');
       return;
     }
 
     const trimmedLast = customerLastName.trim();
-    if (!trimmedLast) {
-      setValidationError('Ingresá el apellido del cliente.');
+    if (trimmedLast.length < 2) {
+      setValidationError('Ingresá un apellido de al menos 2 letras.');
       return;
     }
 
@@ -411,10 +411,12 @@ export default function CreateOrderPage() {
       </div>
 
       <PageHeader
-        title={createdOrder ? 'Pedido registrado' : 'Cargar pedido manual'}
+        title={createdOrder ? (createdOrder.alreadyImported ? 'Pedido ya registrado' : 'Pedido registrado') : 'Cargar pedido manual'}
         description={
           createdOrder
-            ? `El pedido #${createdOrder.number} fue registrado y las unidades fueron reservadas.`
+            ? createdOrder.alreadyImported
+              ? `El pedido #${createdOrder.number} ya existía. No se reservaron unidades nuevamente.`
+              : `El pedido #${createdOrder.number} fue registrado y las unidades fueron reservadas.`
             : 'Registrá un pedido recibido por teléfono, mostrador o WhatsApp sin que el cliente use la web.'
         }
       />
@@ -429,7 +431,7 @@ export default function CreateOrderPage() {
               </span>
               <div>
                 <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-black uppercase tracking-wider text-emerald-800">
-                  Confirmado con éxito
+                  {createdOrder.alreadyImported ? 'Registrado anteriormente' : 'Confirmado con éxito'}
                 </span>
                 <h2 className="mt-2 font-display text-2xl font-black tracking-tight text-ink-950 sm:text-3xl">
                   Pedido #{createdOrder.number}
@@ -1204,9 +1206,9 @@ export default function CreateOrderPage() {
                 <p className="mb-3 rounded-xl bg-cream-100 p-2.5 text-center text-xs font-bold text-ink-600">
                   Agregá al menos un producto al pedido para poder confirmar.
                 </p>
-              ) : !customerFirstName.trim() || !customerLastName.trim() ? (
+              ) : customerFirstName.trim().length < 2 || customerLastName.trim().length < 2 ? (
                 <p className="mb-3 rounded-xl bg-amber-50 p-2.5 text-center text-xs font-bold text-amber-800 border border-amber-200">
-                  Completá el nombre y el apellido del cliente para habilitar la confirmación.
+                  Completá el nombre y el apellido del cliente con al menos 2 letras cada uno.
                 </p>
               ) : null}
 
@@ -1221,7 +1223,7 @@ export default function CreateOrderPage() {
                       : ''
                 )}
                 loading={confirmMutation.isPending}
-                disabled={items.length === 0 || !customerFirstName.trim() || !customerLastName.trim() || confirmMutation.isPending}
+                disabled={items.length === 0 || customerFirstName.trim().length < 2 || customerLastName.trim().length < 2 || confirmMutation.isPending}
                 onClick={handleSubmit}
               >
                 {saleType === 'gift'

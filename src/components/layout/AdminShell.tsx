@@ -185,7 +185,8 @@ function Sidebar({ mobile = false, close }: { mobile?: boolean; close?: (() => v
       <div className="mb-8 flex items-center justify-between px-2 min-w-0">
         <Logo
           inverted
-          textClassName="text-[14px] font-black tracking-tight leading-tight"
+          className="flex-1"
+          textClassName="text-[14px] font-black tracking-tight leading-tight min-[375px]:whitespace-normal"
         />
         {isDemo ? (
           <span className="shrink-0 rounded-md bg-white/10 px-2 py-0.5 text-[11px] font-black uppercase tracking-wider text-white/75">

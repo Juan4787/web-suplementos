@@ -51,12 +51,14 @@ const product = (
     Partial<Pick<AdminProduct, 'active' | 'published'>>
 ): AdminProduct => {
   const available = partial.onHand - partial.reserved;
+  const incomingAvailable = Math.max(0, partial.incoming - (partial.incomingReserved ?? 0));
   return {
     ...partial,
+    incomingAvailable,
     active: partial.active ?? true,
     published: partial.published ?? true,
-    availability: availabilityFromQuantity(available, partial.reorderPoint),
-    maxOrderQuantity: Math.max(0, Math.min(20, available)),
+    availability: available > 0 ? availabilityFromQuantity(available, partial.reorderPoint) : incomingAvailable > 0 ? 'incoming' : 'out_of_stock',
+    maxOrderQuantity: Math.max(0, Math.min(20, available + incomingAvailable)),
     updatedAt: isoDaysAgo(1)
   };
 };
@@ -100,7 +102,7 @@ export const demoProducts: AdminProduct[] = [
     leadTimeDays: 10,
     onHand: 18,
     reserved: 2,
-    incoming: 8
+    incoming: 0
   }),
   product({
     id: '10000000-0000-4000-8000-000000000003',
@@ -322,6 +324,26 @@ export const demoOrders: Order[] = [
 
 export const demoPurchases: Purchase[] = [
   {
+    id: '40000000-0000-4000-8000-000000000003',
+    number: 89,
+    supplierName: 'Distribuidora Focus',
+    state: 'ordered',
+    orderedAt: isoDaysAgo(1),
+    expectedAt: isoDaysAgo(-3),
+    receivedAt: null,
+    totalCostCents: pesosToCents(178_000),
+    notes: null,
+    items: [{
+      id: '41000000-0000-4000-8000-000000000004',
+      productId: demoProducts[4]!.id,
+      productName: demoProducts[4]!.name,
+      quantity: 10,
+      receivedQuantity: 0,
+      shortageQuantity: 0,
+      unitCostCents: demoProducts[4]!.currentCostCents ?? 0
+    }]
+  },
+  {
     id: '40000000-0000-4000-8000-000000000001',
     number: 88,
     supplierName: 'Distribuidora Norte',
@@ -386,7 +408,7 @@ export const demoMovements: StockMovement[] = [
     reservedDelta: 0,
     reason: 'Compra #87 recibida',
     orderId: null,
-    purchaseId: demoPurchases[1]!.id,
+    purchaseId: demoPurchases[2]!.id,
     createdAt: isoDaysAgo(11),
     createdByName: demoOwner.displayName
   },

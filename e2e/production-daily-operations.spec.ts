@@ -7,16 +7,16 @@ test.describe('Verificación Rigurosa E2E de Operación Diaria', () => {
       pageErrors.push(err.message);
     });
 
-    page.on('console', (msg) => console.log(`[BROWSER CONSOLE] ${msg.type()}: ${msg.text()}`));
-    page.on('requestfailed', (req) => console.log(`[REQUEST FAILED] ${req.url()} - ${req.failure()?.errorText}`));
-
     // 1. Iniciar sesión si es necesario
     await page.goto('/ingresar');
     if (page.url().includes('/ingresar')) {
       const emailInput = page.locator('#email');
       if (await emailInput.isVisible({ timeout: 3000 }).catch(() => false)) {
-        await page.fill('#email', 'natisfrutos@gmail.com');
-        await page.fill('#password', 'natalia5050');
+        const email = process.env.E2E_EMAIL?.trim();
+        const password = process.env.E2E_PASSWORD?.trim();
+        test.skip(!email || !password, 'Se necesitan credenciales E2E explícitas para el acceso remoto.');
+        await page.fill('#email', email!);
+        await page.fill('#password', password!);
         await Promise.all([
           page.waitForResponse((res) => res.url().includes('supabase') || res.status() === 200, { timeout: 15000 }).catch(() => null),
           page.getByRole('button', { name: /ingresar/i }).click()
