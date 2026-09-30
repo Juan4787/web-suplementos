@@ -333,6 +333,75 @@ it('permite borrar 11 por completo antes de escribir 7 sin restaurar el valor an
   client.clear();
 });
 
+it('rechaza letras, signos y decimales completos sin alterar el vacío o el conteo escrito', () => {
+  const order = sampleOrder();
+  const client = new QueryClient();
+  render(<QueryClientProvider client={client}><OrderPackingEditor order={order} /></QueryClientProvider>);
+  const count = screen.getByRole('textbox', { name: 'Unidades en bolsita de B Complex' });
+  const other = screen.getByRole('textbox', { name: 'Unidades en bolsita de Omapure' });
+  fireEvent.change(other, { target: { value: '0' } });
+
+  for (const value of ['abc', '-1', '+1', '1,5', '1.5', '1e2', '1 2', ' 1 ', '١', '💊']) {
+    fireEvent.change(count, { target: { value } });
+    expect(count).toHaveValue('');
+    expect(screen.getByRole('button', { name: 'Guardar armado' })).toBeDisabled();
+  }
+  fireEvent.change(count, { target: { value: '1' } });
+  for (const value of ['1a', '-1', '1,5', '1.5', '1e2']) {
+    fireEvent.change(count, { target: { value } });
+    expect(count).toHaveValue('1');
+    expect(other).toHaveValue('0');
+  }
+  fireEvent.change(count, { target: { value: '' } });
+  fireEvent.blur(count);
+  expect(count).toHaveValue('');
+  expect(api.saveOrderPacking).not.toHaveBeenCalled();
+  client.clear();
+});
+
+it('rechaza pegar texto inválido sin reemplazar la selección y admite pegar dígitos', () => {
+  const order = sampleOrder();
+  const client = new QueryClient();
+  render(<QueryClientProvider client={client}><OrderPackingEditor order={order} /></QueryClientProvider>);
+  const count = screen.getByRole('textbox', { name: 'Unidades en bolsita de B Complex' }) as HTMLInputElement;
+  fireEvent.change(count, { target: { value: '1' } });
+  count.setSelectionRange(0, 1);
+  for (const text of ['abc', '-1', '1,5', '1e2', ' 1 ', '1\n2']) {
+    const accepted = fireEvent.paste(count, { clipboardData: { getData: () => text } });
+    expect(accepted).toBe(false);
+    expect(count).toHaveValue('1');
+    expect(count.selectionStart).toBe(0);
+    expect(count.selectionEnd).toBe(1);
+  }
+  expect(fireEvent.paste(count, { clipboardData: { getData: () => '0' } })).toBe(true);
+  expect(api.saveOrderPacking).not.toHaveBeenCalled();
+  client.clear();
+});
+
+it('conserva un campo borrado al refrescar o reabrir y permite escribir otro número antes de un conflicto', () => {
+  const order = sampleOrder();
+  order.items = [{ ...order.items[0]!, quantity: 11, physicalReservedQuantity: 11,
+    incomingQuantity: 0, packedQuantity: 11 }];
+  const store: PackingDraftStore = new Map();
+  const client = new QueryClient();
+  const view = render(<QueryClientProvider client={client}><OrderPackingEditor order={order} draftStore={store} /></QueryClientProvider>);
+  fireEvent.change(screen.getByRole('textbox', { name: 'Unidades en bolsita de B Complex' }), { target: { value: '' } });
+  view.rerender(<QueryClientProvider client={client}><OrderPackingEditor order={structuredClone(order)} draftStore={store} /></QueryClientProvider>);
+  expect(screen.getByRole('textbox', { name: 'Unidades en bolsita de B Complex' })).toHaveValue('');
+  view.unmount();
+  const next = render(<QueryClientProvider client={client}><OrderPackingEditor order={order} draftStore={store} /></QueryClientProvider>);
+  const count = screen.getByRole('textbox', { name: 'Unidades en bolsita de B Complex' });
+  expect(count).toHaveValue('');
+  fireEvent.change(count, { target: { value: '7' } });
+  const changed = { ...order, packingRevision: 1, items: [{ ...order.items[0]!, packedQuantity: 10 }] };
+  next.rerender(<QueryClientProvider client={client}><OrderPackingEditor order={changed} draftStore={store} /></QueryClientProvider>);
+  expect(count).toHaveValue('7');
+  expect(screen.getByRole('alert')).toHaveTextContent('El pedido cambió');
+  expect(screen.getByRole('button', { name: 'Guardar armado' })).toBeDisabled();
+  expect(api.saveOrderPacking).not.toHaveBeenCalled();
+  client.clear();
+});
+
 it('opens inventory links in a new tab with target _blank and noopener noreferrer', async () => {
   const order = sampleOrder();
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -367,12 +436,15 @@ it('preserves a dirty count on an external revision and never silently adopts th
   client.clear();
 });
 
-it('retains empty and malformed drafts across unmounts, and keeps a reduced physical limit actionable', () => {
+it('retains an existing malformed draft for correction and keeps a reduced physical limit actionable', () => {
   const order = sampleOrder();
-  const store: PackingDraftStore = new Map();
+  const store: PackingDraftStore = new Map([[order.id, {
+    baseline: order,
+    values: { 'line-one': '1,5', 'line-two': '' }
+  }]]);
   const client = new QueryClient();
   const view = render(<QueryClientProvider client={client}><OrderPackingEditor order={order} draftStore={store} /></QueryClientProvider>);
-  fireEvent.change(screen.getByRole('textbox', { name: 'Unidades en bolsita de B Complex' }), { target: { value: '1,5' } });
+  expect(screen.getByRole('textbox', { name: 'Unidades en bolsita de B Complex' })).toHaveValue('1,5');
   view.unmount();
   const next = render(<QueryClientProvider client={client}><OrderPackingEditor order={order} draftStore={store} /></QueryClientProvider>);
   const count = screen.getByRole('textbox', { name: 'Unidades en bolsita de B Complex' });

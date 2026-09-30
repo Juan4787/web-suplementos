@@ -248,7 +248,17 @@ export function OrderPackingEditor({ order: receivedOrder, draftStore, draftEpoc
                         placeholder="—"
                         value={value}
                         onFocus={event => event.currentTarget.select()}
+                        onBeforeInput={event => {
+                          const text = (event.nativeEvent as InputEvent).data;
+                          if (typeof text === 'string' && !/^\d*$/.test(text)) event.preventDefault();
+                        }}
+                        onPaste={event => {
+                          if (!/^\d*$/.test(event.clipboardData.getData('text'))) event.preventDefault();
+                        }}
                         onChange={event => {
+                          // Reject the whole edit; never turn "-1" into 1 or "1,5" into 15.
+                          // Empty is a valid draft while the operator replaces a count.
+                          if (!/^\d*$/.test(event.target.value)) return;
                           setSaved(false);
                           save.reset();
                           setValues(previous => ({
