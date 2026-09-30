@@ -67,4 +67,11 @@ Los 503 clientes comprueban paginación y comportamiento de interfaz con respues
 
 ## Publicación
 
-La evidencia de despliegue y comprobación remota se incorporará después de publicar el build auditado. La verificación en producción bloqueará escrituras de negocio y restaurará cualquier edición local sin guardar.
+Código publicado: `a0905ae`. Despliegue manual del Worker `tienda`, perfil `impulso`: versión `4f318477-65c0-44c9-92d6-1830c921d07d`, 100 %. Origen: `https://tienda.desuplementos.workers.dev`.
+
+- Cinco respuestas 200: `/`, `/app/inventario?tab=movimientos`, `/app/pedidos` y `/app/clientes` sirvieron HTML idéntico por SHA-256 a `dist/index.html`; `/api/health` respondió salud `ok`.
+- Ocho archivos publicados idénticos al build por SHA-256: principal `index-SVQmfHOd.js`, CSS `index-B3z__fXy.css`, Pedidos `OrdersPage-CouZW0qB.js`, Inventario `InventoryPage-C7_CS_ra.js`, Clientes `CustomersPage-C_DrsN9B.js`, pedido manual `CreateOrderPage-lbu2XLzv.js`, importación `ImportOrderPage-BTAkPvfJ.js` y helper `whole-unit-input-DI_65lRz.js`.
+- Navegador protegido de producción, respuesta final `07:11:48 UTC`: comprobación de Inventario en 320×568, 375×812 y 812×375, pestañas completas y main dentro del viewport. Menú con Tab, Escape y fondo liberado; cantidad física borrada, vacío conservado, dígitos aceptados y letras/signos rechazados. Se restauró el valor local original sin guardar. Búsqueda y limpieza de Clientes correctas.
+- Recorrido público de producción, respuesta final `07:13:53 UTC`: tienda→carrito→checkout a 375 px, sin desbordamiento. Agregar y quitar afecta únicamente el carrito local de la sesión propia; se pudo borrar el nombre en checkout. No se envió ni confirmó ningún pedido.
+- El interceptor estuvo activo antes de cargar la sesión propia y permitió únicamente lecturas enumeradas y autenticación. Ambos recorridos finalizaron con **0 errores JavaScript, 0 lecturas fallidas y 0 escrituras de negocio intentadas**. El navegador cargó el principal, Inventario y el helper publicados.
+- Navegador cerrado; sesión propia revocada con alcance `local` y archivo temporal de autenticación eliminado. El control posterior al push conserva el HEAD remoto, la versión activa y una nueva comparación HTTP en la evidencia privada; no se presupone que la versión manual permanece fija.
