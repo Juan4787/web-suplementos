@@ -34,4 +34,11 @@ Evidencia temporal privada: `/tmp/supplements-numeric-20260930/`. La sesión dem
 
 ## Publicación
 
-Preparación validada. La versión desplegada, los archivos servidos y el recorrido protegido en producción se registrarán al completar la publicación.
+Código publicado: `911d6d4`. Publicación manual del Worker `tienda`, perfil `impulso`: versión `6bd6210f-ae45-43f5-bf2d-5c3f7f44666e`, 100 %, `2026-09-30T03:34:14Z`. Origen: `https://tienda.desuplementos.workers.dev`.
+
+- Tres rutas respondieron 200: `/`, `/app/pedidos` y `/api/health`; salud `ok`.
+- Cuatro archivos servidos idénticos por SHA-256 al build auditado: `index-Cbc0bpzy.js`, `OrdersPage-DfLYOeva.js`, `InventoryPage-DfwxcScU.js` e `index-BT8x7WNk.css`.
+- Recorrido protegido final en Chromium (`03:39 UTC`): se comprobaron en un campo real las letras/signos rechazados, el borrado completo de `11`, Tab con vacío conservado, escritura de `7`, cursor en medio del número, selección preservada al rechazar pegados, rechazo de `-1`, `1,5` y dos líneas, normalización de `01`, bloqueo de Guardar con vacío y ancho móvil de 375 px.
+- El navegador cargó explícitamente el archivo principal y Pedidos de esta publicación. Se restauró el valor local original sin guardar: 0 errores JavaScript, 0 lecturas fallidas, 0 escrituras de negocio intentadas. El interceptor solo permitía lecturas y autenticación.
+
+Los identificadores anteriores describen la publicación y el recorrido comprobados. El control posterior al push registra el HEAD remoto, la versión activa y una nueva comprobación de los archivos servidos en la evidencia privada, sin asumir que un identificador de despliegue permanece fijo.
