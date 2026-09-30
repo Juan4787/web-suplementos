@@ -98,3 +98,28 @@ El usuario confirmó que no hay operaciones en curso y que los operadores cerrar
 - Versión previa del Worker para referencia de reversión: `b6dc4171-0418-476d-9cd3-406061b33ef4`. Volver al frontend anterior requiere considerar la compatibilidad de recepción descrita arriba; no se propone borrar datos ni comprobantes.
 - `worker:deploy:dry` aprobado, con validación de destino, TypeScript, build y empaquetado. Conserva los artefactos ya comprobados: `index-C2LWp6t-.js`, `OrdersPage-Dj85U3Ey.js` e `InventoryPage-Cs1AR8fa.js`.
 - El archivo privado `whatsapp-urgent-debug.test.ts` contiene datos personales reales y queda fuera de Git y de la publicación, intacto.
+
+## Publicación verificada
+
+Publicación autorizada completada el 29/09/2026. Commit de código: `01e2f5e`, enviado a `origin/main`. La evidencia posterior se incorpora en un commit de documentación; no cambia el paquete desplegado.
+
+| Capa | Evidencia remota revisada |
+| :--- | :--- |
+| Base de datos | Las dos migraciones se aplicaron correctamente. Historial remoto de 55 migraciones, coincidente con el repositorio y sin pendientes. No se ejecutaron semillas ni pruebas de escritura sobre datos reales. |
+| Funciones y permisos | Los cuerpos de las seis funciones afectadas coinciden con el SQL revisado. Solo cambiaron las tres funciones existentes previstas, además de las tres nuevas. Conservan el control de dueña y el contexto de ejecución definido; el acceso anónimo está revocado y la tabla privada de reintentos no permite acceso directo a los clientes. |
+| Conservación de datos | Después de las migraciones, contratos y navegador, las 22 tablas existentes conservan las mismas cantidades de filas y huellas completas que antes. La tabla nueva de reintentos contiene 0 filas. Stock: 0 saldos inválidos y 0 diferencias entre reservas físicas y totales. |
+| Hosting | Worker `tienda`, versión `28f30576-4150-419f-bc03-4d6b87563b5f`, activo al 100 %, etiquetado `01e2f5e`. Origen: `https://tienda.desuplementos.workers.dev`. |
+| Artefactos servidos | El HTML inicia `index-C2LWp6t-.js`. SHA-256 idéntico al paquete local para el archivo principal, Pedidos, Inventario y `index-BT8x7WNk.css`. Las cinco rutas revisadas respondieron 200 y `/api/health` respondió `{"status":"ok"}`. |
+| Contratos en producción | 14/14 contratos de lectura aprobados con autenticación. Las tres funciones nuevas se comprobaron con identificadores inexistentes: accesibles para la dueña, rechazadas para acceso anónimo y abortadas antes de escribir. `get_purchase_impact` devuelve una lista vacía para la compra inexistente. Esto comprueba exposición y permisos; el comportamiento de escritura se acredita con las pruebas aisladas. |
+
+### Recorrido de la versión publicada
+
+Sesión propia Chromium `production-release-20260929`, autenticada como dueña. Un interceptor permitió únicamente lecturas y autenticación: ninguna operación de negocio de escritura fue intentada. Se revisó la respuesta final y el estado tras los diálogos antes de dar el recorrido por terminado.
+
+- Pedidos reales cargados correctamente. Un campo de armado se borró con teclado, quedó vacío después de perder foco, normalizó `01` a `1` y conservó el borrador al cerrar/reabrir. Se restauró su valor original sin guardar.
+- Pedidos e Inventario: ancho del documento de 375 px dentro del viewport de 375 px, sin desplazamiento horizontal de la página.
+- Entrada directa a Compras: contenido y acción de nuevo pedido visibles para la dueña.
+- Formulario de compra en 320×568: Guardar dentro del viewport; 12 ciclos de Tab mantuvieron el foco dentro del diálogo. Rechazar el cierre con Escape conservó el proveedor escrito; aceptar el descarte con la cruz cerró el diálogo y devolvió el foco a “Nuevo pedido”. No se guardó una compra.
+- Resultado final: 0 errores de JavaScript, 0 consultas fallidas, 0 escrituras intentadas, diálogo cerrado y comprobantes completos de los recorridos. Se cerró únicamente la sesión propia, se revocó solo su sesión de autenticación y se retiró el archivo temporal con tokens. Las sesiones de los operadores no se cerraron globalmente.
+
+Evidencia privada de publicación: `/tmp/supplements-release-20260929-final/`, con respaldo persistente en la ubicación indicada arriba. El último cotejo de tablas se ejecutó a las `2026-09-30T02:41:21Z` (23:41 del 29/09 en Argentina). Los límites de dispositivos, teclado virtual y cobertura descritos en la auditoría siguen vigentes.
