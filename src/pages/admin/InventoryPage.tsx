@@ -40,6 +40,7 @@ import { ErrorState, LoadingState } from '@/components/ui/DataState';
 import { DatePicker, Field, Input, Select, Textarea } from '@/components/ui/Field';
 import { Drawer, Modal } from '@/components/ui/Modal';
 import { StatusChip } from '@/components/ui/StatusChip';
+import { acceptsWholeUnitDraft, wholeUnitInputProps } from '@/components/ui/whole-unit-input';
 import { AppError } from '@/domain/errors';
 import { inventoryStatus, sanitizeDecimalInput, sanitizeIntegerInput, isWholeUnitInput } from '@/domain/inventory';
 import { formatMoney, pesosToCents } from '@/domain/money';
@@ -328,13 +329,12 @@ export function PurchaseFormModal({
                 <Field label="Cantidad">
                   <div className="relative">
                     <Input
-                      type="text"
-                      inputMode="numeric"
-                      pattern="[0-9]*"
+                      {...wholeUnitInputProps}
                       placeholder="1"
                       value={line.quantityDraft ?? String(line.quantity || '')}
                       onFocus={(e) => e.target.select()}
                       onChange={(event) => {
+                        if (!acceptsWholeUnitDraft(event.target.value)) return;
                         const updated = [...lines];
                         const item = updated[index];
                         if (item) {
@@ -914,13 +914,12 @@ export function ReceivePurchaseModal({
                           <div className="flex items-center gap-1.5 bg-white border border-ink-950/15 rounded-xl px-2.5 py-1">
                             <span className="font-semibold text-ink-700">Llegaron:</span>
                             <input
-                              type="text"
-                              inputMode="numeric"
-                              pattern="[0-9]*"
+                              {...wholeUnitInputProps}
                               value={cfg.receivedQtyDraft ?? cfg.receivedQty ?? ''}
                               onFocus={(event) => event.currentTarget.select()}
                               onChange={(e) => {
                                 const raw = e.target.value;
+                                if (!acceptsWholeUnitDraft(raw)) return;
                                 const draft = /^\d+$/.test(raw) ? sanitizeIntegerInput(raw) : raw;
                                 const val = /^\d+$/.test(draft) ? Number(draft) : null;
                                 setMissingConfig((prev) => ({
@@ -1404,6 +1403,7 @@ function StockDetailDrawer({
   onNavigateToMovements: () => void;
 }) {
   const { user } = useAuth();
+  const canConfigureThresholds = can(user, 'adjust_stock');
   const queryClient = useQueryClient();
   const [reorderPointStr, setReorderPointStr] = useState(
     item.reorderPoint > 0 ? String(item.reorderPoint) : ''
@@ -1718,15 +1718,15 @@ function StockDetailDrawer({
 
               <div className="relative flex items-center">
                 <Input
-                  type="text"
-                  inputMode="numeric"
-                  pattern="[0-9]*"
+                  {...wholeUnitInputProps}
                   aria-label="Aviso Comprar"
+                  readOnly={!canConfigureThresholds}
                   disabled={updateThresholds.isPending}
                   value={reorderPointStr}
                   placeholder="0"
                   onFocus={(e) => e.target.select()}
                   onChange={(e) => {
+                    if (!acceptsWholeUnitDraft(e.target.value)) return;
                     const clean = sanitizeIntegerInput(e.target.value);
                     setReorderPointStr(clean);
                   }}
@@ -1747,15 +1747,15 @@ function StockDetailDrawer({
 
               <div className="relative flex items-center">
                 <Input
-                  type="text"
-                  inputMode="numeric"
-                  pattern="[0-9]*"
+                  {...wholeUnitInputProps}
                   aria-label="Aviso Urgente"
+                  readOnly={!canConfigureThresholds}
                   disabled={updateThresholds.isPending}
                   value={safetyStockStr}
                   placeholder="0"
                   onFocus={(e) => e.target.select()}
                   onChange={(e) => {
+                    if (!acceptsWholeUnitDraft(e.target.value)) return;
                     const clean = sanitizeIntegerInput(e.target.value);
                     setSafetyStockStr(clean);
                   }}
@@ -1786,7 +1786,8 @@ function StockDetailDrawer({
               onClick={() => { if (window.confirm('¿Descartar tus números y cargar los avisos actualizados?')) loadThresholds(item); }}>Cargar avisos actualizados</Button>
           </div> : null}
           {/* Vista previa y botón de guardado */}
-          {isDirty && (
+          {!canConfigureThresholds ? <p className="mt-3 text-sm text-ink-600">Los avisos los configura la dueña.</p> : null}
+          {isDirty && canConfigureThresholds && (
             <div className="mt-4 rounded-xl bg-amber-50/70 p-3 border border-amber-200/80">
               <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex items-center gap-2">
@@ -1986,7 +1987,7 @@ function StockDetailDrawer({
             variant="secondary"
             size="sm"
             className="w-full justify-center text-xs font-bold min-h-11"
-            onClick={() => onOpenAdjust(item)}
+            onClick={() => { if (allowLeaving()) onOpenAdjust(item); }}
           >
             <SlidersHorizontal className="size-4" /> Corregir stock
           </Button>
@@ -2066,10 +2067,14 @@ export default function InventoryPage() {
       )
   });
 
+  const currentAdjustmentItem = adjustItem ? inventoryQuery.data?.find(item => item.id === adjustItem.id) : undefined;
+  const adjustmentStockChanged = Boolean(adjustItem && currentAdjustmentItem && currentAdjustmentItem.onHand !== adjustItem.onHand);
+
   // Stock Adjustment Mutation
   const adjustment = useMutation({
     mutationFn: async () => {
       if (!adjustItem) return;
+      if (adjustmentStockChanged) throw new AppError('validation', 'El stock cambió mientras contabas. Volvé a contar antes de guardar.');
       if (!isWholeUnitInput(targetStock)) throw new AppError('validation', 'Ingresá una cantidad entera de unidades.');
       const targetNum = Number(targetStock);
       const calculatedDelta = targetNum - adjustItem.onHand;
@@ -2093,6 +2098,20 @@ export default function InventoryPage() {
       ]);
     },
     onError: () => { void queryClient.invalidateQueries({ queryKey: queryKeys.inventory }); }
+  });
+
+  const adjustmentDirty = Boolean(adjustItem) && (targetStock !== String(adjustItem?.onHand) || reason !== '');
+  const closeAdjustment = () => {
+    if (adjustment.isPending || (adjustmentDirty && !window.confirm('¿Descartar la corrección de stock sin guardar?'))) return;
+    setAdjustItem(null);
+    setTargetStock('');
+    setReason('');
+    adjustment.reset();
+  };
+  useBlocker({
+    shouldBlockFn: () => Boolean(adjustItem) && (adjustment.isPending || (adjustmentDirty &&
+      !window.confirm('Hay una corrección de stock sin guardar. ¿Salir y descartar esos cambios?'))),
+    enableBeforeUnload: Boolean(adjustItem) && (adjustment.isPending || adjustmentDirty)
   });
 
   // Receive Purchase Mutation
@@ -2154,54 +2173,59 @@ export default function InventoryPage() {
       />
 
       {/* Tabs Bar */}
-      <nav className="mb-6 flex gap-2 border-b border-ink-950/8 pb-3" aria-label="Secciones de Inventario">
+      <nav className={cn('mb-6 grid gap-1.5 border-b border-ink-950/8 pb-3 sm:flex sm:gap-2',
+        can(user, 'manage_purchases') ? 'grid-cols-3' : 'grid-cols-2')} aria-label="Secciones de Inventario">
         <button
           type="button"
           onClick={() => setActiveTab('stock')}
+          aria-pressed={activeTab === 'stock'}
           className={cn(
-            'flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-black transition',
+            'flex min-h-14 min-w-0 flex-col items-center justify-center gap-1 rounded-xl px-1 py-2 transition sm:min-h-11 sm:flex-row sm:gap-2 sm:px-4',
             activeTab === 'stock'
               ? 'bg-brand-600 text-white shadow-sm'
               : 'text-ink-600 hover:bg-white hover:text-ink-950'
           )}
         >
-          <Boxes className="size-4" />
-          Stock
+          <Boxes className="size-4 shrink-0" />
+          <span className="inline-flex items-center gap-1 whitespace-nowrap text-[13px] font-black sm:text-sm">Stock
           {attentionCount > 0 ? (
             <span className={cn('ml-1 rounded-full px-2 py-0.5 text-xs font-black', activeTab === 'stock' ? 'bg-white/20 text-white' : 'bg-red-100 text-red-700')}>
               {attentionCount}
             </span>
           ) : null}
+          </span>
         </button>
 
         {can(user, 'manage_purchases') ? (
           <button
             type="button"
             onClick={() => setActiveTab('compras')}
+            aria-pressed={activeTab === 'compras'}
             className={cn(
-              'flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-black transition',
+              'flex min-h-14 min-w-0 flex-col items-center justify-center gap-1 rounded-xl px-1 py-2 transition sm:min-h-11 sm:flex-row sm:gap-2 sm:px-4',
               activeTab === 'compras'
                 ? 'bg-brand-600 text-white shadow-sm'
                 : 'text-ink-600 hover:bg-white hover:text-ink-950'
             )}
           >
-            <Store className="size-4" />
-            Compras
+            <Store className="size-4 shrink-0" />
+            <span className="whitespace-nowrap text-[13px] font-black sm:text-sm">Compras</span>
           </button>
         ) : null}
 
         <button
           type="button"
           onClick={() => setActiveTab('movimientos')}
+          aria-pressed={activeTab === 'movimientos'}
           className={cn(
-            'flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-black transition',
+            'flex min-h-14 min-w-0 flex-col items-center justify-center gap-1 rounded-xl px-1 py-2 transition sm:min-h-11 sm:flex-row sm:gap-2 sm:px-4',
             activeTab === 'movimientos'
               ? 'bg-brand-600 text-white shadow-sm'
               : 'text-ink-600 hover:bg-white hover:text-ink-950'
           )}
         >
-          <History className="size-4" />
-          Movimientos
+          <History className="size-4 shrink-0" />
+          <span className="whitespace-nowrap text-[13px] font-black sm:text-sm">Movimientos</span>
         </button>
       </nav>
 
@@ -2757,6 +2781,7 @@ export default function InventoryPage() {
           item={(inventoryQuery.data ?? []).find((i) => i.id === detailItem.id) ?? detailItem}
           onClose={() => setDetailItem(null)}
           onOpenAdjust={(target) => {
+            adjustment.reset();
             setDetailItem(null);
             setAdjustItem(target);
             setTargetStock(String(target.onHand));
@@ -2771,32 +2796,41 @@ export default function InventoryPage() {
 
       {/* MODAL: Corregir Stock */}
       {adjustItem ? (
-        <Modal isOpen={true} onClose={() => { if (!adjustment.isPending) setAdjustItem(null); }} ariaLabelledBy="adjust-title" maxWidth="lg">
+        <Modal isOpen={true} onClose={closeAdjustment} ariaLabelledBy="adjust-title" maxWidth="lg">
           <div className="flex items-start justify-between">
             <div>
               <h3 id="adjust-title" className="font-display text-2xl font-black text-ink-950">Corregir stock · {adjustItem.name}</h3>
               <p className="mt-1 text-[14px] font-medium text-ink-700">Ajustá la cantidad de unidades que hay realmente en la tienda.</p>
             </div>
-            <button className="grid size-9 place-items-center rounded-full hover:bg-cream-100 text-ink-600 transition" onClick={() => setAdjustItem(null)} disabled={adjustment.isPending} aria-label="Cerrar modal">
+            <button className="grid size-11 shrink-0 place-items-center rounded-full hover:bg-cream-100 text-ink-600 transition" onClick={closeAdjustment} disabled={adjustment.isPending} aria-label="Cerrar modal">
               <X className="size-5" />
             </button>
           </div>
 
           <div className="mt-5 space-y-4">
             <div className="rounded-xl bg-cream-100 p-3 text-sm font-semibold text-ink-800">
-              En depósito: {adjustItem.onHand} · Reservadas para clientes: {adjustItem.reserved} · Libres para vender: {Math.max(0, adjustItem.onHand - adjustItem.reserved)}
+              Registrado al abrir: {adjustItem.onHand} · Reservadas ahora: {currentAdjustmentItem?.reserved ?? adjustItem.reserved} · Libres ahora: {Math.max(0, (currentAdjustmentItem?.onHand ?? adjustItem.onHand) - (currentAdjustmentItem?.reserved ?? adjustItem.reserved))}
             </div>
+            {adjustmentStockChanged ? <div role="alert" className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
+              <p>El stock registrado cambió de {adjustItem.onHand} a {currentAdjustmentItem?.onHand} mientras contabas. Conservamos tu conteo sin guardarlo. Volvé a contar antes de corregir.</p>
+              <Button variant="secondary" size="sm" className="mt-2" disabled={adjustment.isPending}
+                onClick={() => {
+                  if (!currentAdjustmentItem || adjustment.isPending) return;
+                  if (adjustmentDirty && !window.confirm('¿Descartar el conteo anterior y volver a contar con el stock actualizado?')) return;
+                  setAdjustItem(currentAdjustmentItem);
+                  setTargetStock('');
+                  adjustment.reset();
+                }}>Volver a contar</Button>
+            </div> : null}
             <Field label="¿Cuántas unidades hay realmente?" hint="Contá todas las unidades físicas, incluidas las apartadas para clientes.">
               <div className="relative">
                 <Input
-                  type="text"
-                  inputMode="numeric"
-                  pattern="[0-9]*"
+                  {...wholeUnitInputProps}
                   placeholder={`Ej. ${adjustItem.onHand}`}
                   value={targetStock}
                   disabled={adjustment.isPending}
                   onFocus={(e) => e.target.select()}
-                  onChange={(e) => setTargetStock(sanitizeIntegerInput(e.target.value))}
+                  onChange={(e) => { if (acceptsWholeUnitDraft(e.target.value)) setTargetStock(sanitizeIntegerInput(e.target.value)); }}
                   className="text-lg font-black pr-10"
                 />
                 <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm font-bold text-ink-500 pointer-events-none">
@@ -2814,9 +2848,9 @@ export default function InventoryPage() {
               </div>
             )}
 
-            {targetStock !== '' && Number(targetStock) < adjustItem.reserved && (
+            {targetStock !== '' && Number(targetStock) < (currentAdjustmentItem?.reserved ?? adjustItem.reserved) && (
               <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-900">
-                Con este conteo faltarán {adjustItem.reserved - Number(targetStock)} {adjustItem.reserved - Number(targetStock) === 1 ? 'unidad' : 'unidades'} para cubrir las reservas. La corrección no las cancela; revisá los pedidos, las reservas previas y la reposición.
+                Con este conteo faltarán {(currentAdjustmentItem?.reserved ?? adjustItem.reserved) - Number(targetStock)} {(currentAdjustmentItem?.reserved ?? adjustItem.reserved) - Number(targetStock) === 1 ? 'unidad' : 'unidades'} para cubrir las reservas. La corrección no las cancela; revisá los pedidos, las reservas previas y la reposición.
               </div>
             )}
 
@@ -2837,10 +2871,10 @@ export default function InventoryPage() {
           {adjustment.error ? <div className="mt-4"><ErrorState error={adjustment.error} /></div> : null}
 
           <div className="mt-6 flex justify-end gap-3">
-            <Button variant="ghost" onClick={() => setAdjustItem(null)} disabled={adjustment.isPending}>Cancelar</Button>
+            <Button variant="ghost" onClick={closeAdjustment} disabled={adjustment.isPending}>Cancelar</Button>
             <Button
               variant="dark"
-              disabled={!isWholeUnitInput(targetStock) || Number(targetStock) === adjustItem.onHand || Number(targetStock) < 0 || reason.trim().length < 3}
+              disabled={adjustmentStockChanged || !isWholeUnitInput(targetStock) || Number(targetStock) === adjustItem.onHand || Number(targetStock) < 0 || reason.trim().length < 3}
               loading={adjustment.isPending}
               onClick={() => adjustment.mutate()}
             >

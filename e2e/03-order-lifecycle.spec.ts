@@ -29,8 +29,8 @@ async function expectStock(page: Page, onHand: number, reserved: number) {
 test.describe('Operación diaria de pedidos', () => {
   test('el conteo de bolsita admite borrar y reescribir sin completar ceros solo', async ({ page }) => {
     const order = await createDailyOrder(page, 'Cliente conteo auditoría');
-    await order.getByRole('button', { name: 'Completar vacíos con 0' }).click();
     const count = order.getByRole('textbox', { name: 'Unidades en bolsita de Creatina Monohidratada' });
+    await count.fill('0');
     await expect(count).toHaveValue('0');
 
     await count.fill('');
@@ -54,7 +54,7 @@ test.describe('Operación diaria de pedidos', () => {
     const order = await createDailyOrder(page, 'Cliente entrega auditoría');
     await order.getByRole('button', { name: 'Marcar como cobrado' }).click();
     await expect(order.getByRole('button', { name: 'Marcar como cobrado' })).toHaveCount(0);
-    await order.getByRole('button', { name: 'Ya guardé todo lo reservado' }).click();
+    await order.getByRole('textbox', { name: 'Unidades en bolsita de Creatina Monohidratada' }).fill('1');
     await order.getByRole('button', { name: 'Guardar armado' }).click();
     await expect(order.getByText(/Armado completo guardado/)).toBeVisible();
     await order.getByRole('button', { name: 'Marcar listo para entregar' }).click();

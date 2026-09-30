@@ -103,10 +103,10 @@ export default function CustomersPage() {
                         event.preventDefault(); setHistoryPage(1); setSelectedCustomer(customer);
                       }
                     }}
-                    className="grid min-h-[3.75rem] cursor-pointer gap-3 p-4 transition hover:bg-cream-50/80 sm:grid-cols-[1.5fr_1.2fr_1fr_1fr_2rem] sm:items-center sm:px-6 sm:py-3.5"
+                    className="grid min-h-[3.75rem] grid-cols-1 cursor-pointer gap-3 p-4 transition hover:bg-cream-50/80 sm:grid-cols-[1.5fr_1.2fr_1fr_1fr_2rem] sm:items-center sm:px-6 sm:py-3.5"
                   >
-                    <div>
-                      <h3 className="text-[16px] font-black text-ink-950">{customer.name}</h3>
+                    <div className="min-w-0">
+                      <h3 className="break-words text-[16px] font-black text-ink-950">{customer.name}</h3>
                       <span className="text-[14px] text-ink-700 font-semibold sm:hidden">
                         {customer.phone ?? 'Sin teléfono'}
                       </span>
@@ -150,23 +150,25 @@ export default function CustomersPage() {
 
           {customersQuery.data.total > customersQuery.data.pageSize ? (
             <nav
-              className="mt-5 flex items-center justify-between rounded-xl border border-ink-950/8 bg-white p-3.5 shadow-sm"
+              className="mt-5 grid grid-cols-2 items-center gap-2 rounded-xl border border-ink-950/8 bg-white p-3.5 shadow-sm sm:flex sm:justify-between"
               aria-label="Páginas de clientes"
             >
               <Button
                 variant="ghost"
                 size="sm"
+                className="order-2 min-w-0 px-2 sm:order-none sm:px-4"
                 disabled={page === 1}
                 onClick={() => setPage((current) => Math.max(1, current - 1))}
               >
                 <ChevronLeft className="size-4" /> Anterior
               </Button>
-              <span className="text-sm font-bold text-ink-700">
+              <span className="order-1 col-span-2 text-center text-sm font-bold text-ink-700 sm:order-none">
                 Página {page} de {Math.ceil(customersQuery.data.total / customersQuery.data.pageSize)}
               </span>
               <Button
                 variant="ghost"
                 size="sm"
+                className="order-3 min-w-0 px-2 sm:order-none sm:px-4"
                 disabled={page * customersQuery.data.pageSize >= customersQuery.data.total}
                 onClick={() => setPage((current) => current + 1)}
               >
@@ -181,10 +183,10 @@ export default function CustomersPage() {
       {selectedCustomer ? (
         <Drawer isOpen={true} onClose={() => setSelectedCustomer(null)} ariaLabelledBy="customer-drawer-title">
           <div className="flex items-start justify-between">
-            <div>
+            <div className="min-w-0 flex-1 pr-2">
               <h2
                 id="customer-drawer-title"
-                className="font-display text-2xl font-black text-ink-950"
+                className="break-words font-display text-2xl font-black text-ink-950"
               >
                 {selectedCustomer.name}
               </h2>
@@ -195,7 +197,7 @@ export default function CustomersPage() {
                 </p>
               </div>
               <button
-                className="grid size-10 place-items-center rounded-full hover:bg-cream-100 text-ink-600 transition"
+                className="grid size-11 shrink-0 place-items-center rounded-full hover:bg-cream-100 text-ink-600 transition"
                 onClick={() => setSelectedCustomer(null)}
                 aria-label="Cerrar panel"
               >

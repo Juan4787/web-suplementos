@@ -115,6 +115,24 @@ it('acepta el producto activo oculto y distingue un reintento de una reserva nue
   client.clear();
 });
 
+it('muestra la actualización en curso y habilita el resultado solo al terminarla', async () => {
+  const client = await renderPage([{ ...product, onHand: 1, maxOrderQuantity: 1 }]);
+  let finishRefresh!: () => void;
+  const refreshing = new Promise<void>(resolve => { finishRefresh = resolve; });
+  const invalidate = vi.spyOn(client, 'invalidateQueries').mockReturnValue(refreshing);
+  api.confirmImportedOrder.mockResolvedValue({ ...demoOrders[0]!, number: 9002 });
+  fireEvent.click(screen.getByRole('button', { name: 'Confirmar pedido' }));
+  await screen.findByText('Actualizando pedidos y stock…');
+  expect(screen.queryByRole('link', { name: 'Ver pedido #9002' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Importar otro pedido' })).not.toBeInTheDocument();
+  await act(async () => finishRefresh());
+  await screen.findByRole('link', { name: 'Ver pedido #9002' });
+  expect(screen.getByRole('button', { name: 'Importar otro pedido' })).toBeEnabled();
+  expect(api.confirmImportedOrder).toHaveBeenCalledTimes(1);
+  invalidate.mockRestore();
+  client.clear();
+});
+
 it('muestra regalo como regalo en la revisión, sin confundirlo con transferencia', async () => {
   const message = buildWhatsAppProtocol({ ...checkout, paymentMethod: 'gift' }, [line], settings).message;
   const client = await renderPage([{ ...product, onHand: 1 }], message);

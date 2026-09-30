@@ -14,7 +14,7 @@ import { queryKeys } from '@/app/query-keys';
 import { useBusinessQuery } from '@/app/use-business-query';
 import { PageHeader } from '@/components/layout/AdminShell';
 import { Button, buttonStyles } from '@/components/ui/Button';
-import { ErrorState } from '@/components/ui/DataState';
+import { ErrorState, LoadingState } from '@/components/ui/DataState';
 import { Field, Input, Textarea } from '@/components/ui/Field';
 import { AppError } from '@/domain/errors';
 import { formatMoney } from '@/domain/money';
@@ -233,7 +233,8 @@ export default function ImportOrderPage() {
       />
 
       {/* Éxito: Estado posterior a la confirmación */}
-      {created ? (
+      {created && confirm.isPending ? <LoadingState label="Actualizando pedidos y stock…" /> : null}
+      {created && !confirm.isPending ? (
         <div className="mx-auto mt-4 max-w-2xl sm:mt-6">
           <section className="rounded-[2rem] border border-ink-950/8 bg-white p-7 shadow-card sm:p-9">
             {/* Indicador de éxito con badge verde suave */}

@@ -15,9 +15,11 @@ import {
   X
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Logo } from '@/components/brand/Logo';
 import { Button } from '@/components/ui/Button';
 import { ErrorState, LoadingState } from '@/components/ui/DataState';
+import { DialogDepth, useDialogFocus } from '@/components/ui/use-dialog-focus';
 import type { Capability } from '@/domain/permissions';
 import { can } from '@/domain/permissions';
 import { useAuth } from '@/features/auth/AuthProvider';
@@ -178,11 +180,12 @@ function Sidebar({ mobile = false, close }: { mobile?: boolean; close?: (() => v
   return (
     <aside
       className={cn(
-        'flex h-full w-[18.5rem] shrink-0 flex-col bg-ink-950 px-4 py-5 overflow-hidden',
+        'flex h-full shrink-0 flex-col bg-ink-950 px-4 py-5 overflow-hidden',
+        mobile ? 'w-full' : 'w-[18.5rem]',
         !mobile && 'hidden lg:flex'
       )}
     >
-      <div className="mb-8 flex items-center justify-between px-2 min-w-0">
+      <div className={cn('mb-8 flex min-w-0 items-center justify-between px-2', mobile && 'pr-11')}>
         <Logo
           inverted
           className="flex-1"
@@ -200,14 +203,48 @@ function Sidebar({ mobile = false, close }: { mobile?: boolean; close?: (() => v
   );
 }
 
+function MobileNavigation({ onClose }: { onClose: () => void }) {
+  const focus = useDialogFocus(true, onClose);
+  return createPortal(
+    <DialogDepth.Provider value={focus.depth}>
+      <div ref={focus.root} className="fixed inset-0 z-50 lg:hidden">
+        <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={focus.closeTop} aria-hidden="true" />
+        <div
+          ref={focus.panel}
+          className="relative h-full w-[min(19rem,88vw)]"
+          data-dialog-surface={focus.id}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Navegación del panel"
+          tabIndex={-1}
+        >
+          <Sidebar mobile close={focus.closeTop} />
+          <button className="absolute right-2 top-3 grid size-11 place-items-center rounded-full bg-ink-950 text-white" onClick={focus.closeTop} aria-label="Cerrar navegación">
+            <X className="size-5" />
+          </button>
+        </div>
+      </div>
+    </DialogDepth.Provider>,
+    document.body
+  );
+}
+
 export function AdminShell() {
   const { user, loading, isDemo } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const desktop = window.matchMedia('(min-width: 1024px)');
+    const closeOnDesktop = () => { if (desktop.matches) setMobileOpen(false); };
+    closeOnDesktop();
+    desktop.addEventListener('change', closeOnDesktop);
+    return () => desktop.removeEventListener('change', closeOnDesktop);
+  }, [mobileOpen]);
   if (loading && !user) return <LoadingState label="Comprobando tu acceso…" />;
   if (!user) return <Navigate to="/ingresar" />;
   return (
-    <div className="h-screen overflow-hidden bg-cream-100">
-      <div className="flex h-full min-h-[42rem]">
+    <div className="h-dvh overflow-hidden bg-cream-100">
+      <div className="flex h-full min-h-0">
         <Sidebar />
         <div className="flex min-w-0 flex-1 flex-col">
           <header className="flex h-16 shrink-0 items-center justify-between border-b border-ink-950/8 bg-cream-50 px-4 lg:hidden">
@@ -219,7 +256,7 @@ export function AdminShell() {
                 </span>
               ) : null}
             </div>
-            <Button variant="ghost" className="size-11 px-0" onClick={() => setMobileOpen(true)} aria-label="Abrir navegación">
+            <Button variant="ghost" className="size-11 px-0" onClick={() => setMobileOpen(true)} aria-label="Abrir navegación" aria-expanded={mobileOpen} aria-haspopup="dialog">
               <Menu className="size-5" />
             </Button>
           </header>
@@ -230,17 +267,7 @@ export function AdminShell() {
           </main>
         </div>
       </div>
-      {mobileOpen ? (
-        <div className="fixed inset-0 z-50 lg:hidden">
-          <button className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setMobileOpen(false)} aria-label="Cerrar navegación" />
-          <div className="relative h-full w-[min(19rem,88vw)]">
-            <Sidebar mobile close={() => setMobileOpen(false)} />
-            <button className="absolute right-3 top-4 grid size-10 place-items-center rounded-full bg-white/10 text-white" onClick={() => setMobileOpen(false)} aria-label="Cerrar navegación">
-              <X className="size-5" />
-            </button>
-          </div>
-        </div>
-      ) : null}
+      {mobileOpen ? <MobileNavigation onClose={() => setMobileOpen(false)} /> : null}
     </div>
   );
 }

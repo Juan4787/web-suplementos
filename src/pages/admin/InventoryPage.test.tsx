@@ -178,13 +178,13 @@ describe('Carga de compras', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Cargar avisos actualizados' }));
     expect(count).toHaveValue('10');
     fireEvent.change(count, { target: { value: '1,5' } });
-    expect(count).toHaveValue('1,5');
-    expect(screen.getByRole('button', { name: /^Guardar$/ })).toBeDisabled();
+    expect(count).toHaveValue('10');
+    expect(screen.queryByRole('button', { name: /^Guardar$/ })).not.toBeInTheDocument();
     expect(api.updateStockThresholds).not.toHaveBeenCalled();
     client.clear();
   });
 
-  it.each(['5.0', '5e0'])('preserves the raw invalid threshold %s when another operator updates the configuration', async value => {
+  it.each(['2147483648', '9999999999999999'])('preserves the out-of-range threshold %s when another operator updates the configuration', async value => {
     const inventory = [{ ...toDemoInventory([demoProducts[0]!])[0]!, reorderPoint: 5 }];
     api.listInventory.mockResolvedValue(inventory);
     api.listMovements.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 25 });
@@ -227,6 +227,72 @@ describe('Carga de compras', () => {
     await waitFor(() => expect(api.adjustStock).toHaveBeenCalledWith(demoProducts[0]!.id, -1, 'Conteo físico', 7));
   });
 
+  it('protege los avisos al abrir un conteo y el conteo editado al cerrar con Escape, cruz o Cancelar', async () => {
+    api.listInventory.mockResolvedValue(toDemoInventory(demoProducts));
+    api.listMovements.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 25 });
+    api.listPurchases.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 15 });
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    render(<InventoryPage />, { wrapper: Wrapper });
+    fireEvent.click(await screen.findByRole('button', { name: /Creatina Monohidratada.*u\./ }));
+    const urgent = screen.getByRole('textbox', { name: 'Aviso Urgente' });
+    fireEvent.change(urgent, { target: { value: '9' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Corregir stock' }));
+    expect(urgent).toHaveValue('9');
+    expect(screen.queryByLabelText('¿Cuántas unidades hay realmente?')).not.toBeInTheDocument();
+    confirm.mockReturnValue(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Corregir stock' }));
+    confirm.mockReturnValue(false);
+    const count = screen.getByLabelText('¿Cuántas unidades hay realmente?');
+    fireEvent.change(count, { target: { value: '' } });
+    fireEvent.blur(count);
+    fireEvent.change(count, { target: { value: 'abc' } });
+    expect(count).toHaveValue('');
+    fireEvent.change(count, { target: { value: '6' } });
+    fireEvent.change(screen.getByLabelText('Motivo de la corrección'), { target: { value: 'Conteo físico pendiente de revisión' } });
+    fireEvent.keyDown(window, { key: 'Escape' });
+    fireEvent.click(screen.getByRole('button', { name: 'Cerrar modal' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
+    expect(count).toHaveValue('6');
+    expect(screen.getByLabelText('Motivo de la corrección')).toHaveValue('Conteo físico pendiente de revisión');
+    expect(api.adjustStock).not.toHaveBeenCalled();
+    expect(api.updateStockThresholds).not.toHaveBeenCalled();
+    confirm.mockReturnValue(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('bloquea una corrección si cambia el stock y exige un conteo nuevo sin autocompletar el anterior', async () => {
+    const inventory = toDemoInventory(demoProducts);
+    api.listInventory.mockResolvedValue(inventory);
+    api.listMovements.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 25 });
+    api.listPurchases.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 15 });
+    api.adjustStock.mockResolvedValue(undefined);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    render(<QueryClientProvider client={client}><InventoryPage /></QueryClientProvider>);
+    fireEvent.click(await screen.findByRole('button', { name: /Creatina Monohidratada.*u\./ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Corregir stock' }));
+    const count = screen.getByLabelText('¿Cuántas unidades hay realmente?');
+    fireEvent.change(count, { target: { value: '6' } });
+    fireEvent.change(screen.getByLabelText('Motivo de la corrección'), { target: { value: 'Conteo físico' } });
+    client.setQueryData(['inventory'], inventory.map(item => item.id === demoProducts[0]!.id ? { ...item, onHand: 8 } : item));
+    await screen.findByText(/El stock registrado cambió de 7 a 8/);
+    expect(screen.getByText('Registrado al abrir: 7 · Reservadas ahora: 3 · Libres ahora: 5')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Guardar corrección' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Volver a contar' }));
+    expect(count).toHaveValue('6');
+    expect(api.adjustStock).not.toHaveBeenCalled();
+    confirm.mockReturnValue(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Volver a contar' }));
+    fireEvent.blur(count);
+    expect(count).toHaveValue('');
+    expect(screen.getByRole('button', { name: 'Guardar corrección' })).toBeDisabled();
+    fireEvent.change(count, { target: { value: '7' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar corrección' }));
+    await waitFor(() => expect(api.adjustStock).toHaveBeenCalledWith(demoProducts[0]!.id, -1, 'Conteo físico', 8));
+    client.clear();
+  });
+
   it('distingue stock físico de unidades reservadas cuando no alcanza para los pedidos', async () => {
     api.listInventory.mockResolvedValue([{
       ...toDemoInventory([demoProducts[0]!])[0]!,
@@ -265,7 +331,7 @@ describe('Carga de compras', () => {
     expect(product).toHaveTextContent('TODO RESERVADO');
     fireEvent.click(product);
     fireEvent.click(screen.getByRole('button', { name: 'Corregir stock' }));
-    expect(screen.getByText('En depósito: 10 · Reservadas para clientes: 10 · Libres para vender: 0')).toBeVisible();
+    expect(screen.getByText('Registrado al abrir: 10 · Reservadas ahora: 10 · Libres ahora: 0')).toBeVisible();
     fireEvent.change(screen.getByLabelText('¿Cuántas unidades hay realmente?'), { target: { value: '7' } });
     expect(screen.getByText('Ajuste físico: de 10 a 7 unidades.')).toBeVisible();
     expect(screen.getByText('-3 unidades')).toBeVisible();

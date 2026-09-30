@@ -416,9 +416,9 @@ export default function CreateOrderPage() {
       </div>
 
       <PageHeader
-        title={createdOrder ? (createdOrder.alreadyImported ? 'Pedido ya registrado' : 'Pedido registrado') : 'Cargar pedido manual'}
+        title={createdOrder && !confirmMutation.isPending ? (createdOrder.alreadyImported ? 'Pedido ya registrado' : 'Pedido registrado') : 'Cargar pedido manual'}
         description={
-          createdOrder
+          createdOrder && !confirmMutation.isPending
             ? createdOrder.alreadyImported
               ? `El pedido #${createdOrder.number} ya existía. No se reservaron unidades nuevamente.`
               : `El pedido #${createdOrder.number} fue registrado y las unidades fueron reservadas.`
@@ -427,7 +427,7 @@ export default function CreateOrderPage() {
       />
 
       {/* Pantalla de Éxito al Confirmar */}
-      {createdOrder ? (
+      {createdOrder && !confirmMutation.isPending ? (
         <div className="max-w-2xl">
           <section className="rounded-3xl border border-emerald-950/10 bg-white p-6 shadow-card sm:p-8">
             <div className="flex items-center gap-4">

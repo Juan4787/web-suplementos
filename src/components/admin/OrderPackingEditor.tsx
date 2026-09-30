@@ -5,6 +5,7 @@ import { AlertTriangle, ArrowRight, Lock, Minus, Package, Plus } from 'lucide-re
 import { queryKeys } from '@/app/query-keys';
 import { Button } from '@/components/ui/Button';
 import { ErrorState } from '@/components/ui/DataState';
+import { acceptsWholeUnitDraft, wholeUnitInputProps } from '@/components/ui/whole-unit-input';
 import { sanitizeIntegerInput, isWholeUnitInput } from '@/domain/inventory';
 import { packingValues, packingVersion, packingDraftDirty, type PackingDraft, type PackingDraftStore } from '@/domain/packing-draft';
 import type { Order } from '@/domain/types';
@@ -242,23 +243,14 @@ export function OrderPackingEditor({ order: receivedOrder, draftStore, draftEpoc
                       </button>
 
                       <input
-                        type="text"
-                        inputMode="numeric"
-                        pattern="[0-9]*"
+                        {...wholeUnitInputProps}
                         placeholder="—"
                         value={value}
                         onFocus={event => event.currentTarget.select()}
-                        onBeforeInput={event => {
-                          const text = (event.nativeEvent as InputEvent).data;
-                          if (typeof text === 'string' && !/^\d*$/.test(text)) event.preventDefault();
-                        }}
-                        onPaste={event => {
-                          if (!/^\d*$/.test(event.clipboardData.getData('text'))) event.preventDefault();
-                        }}
                         onChange={event => {
                           // Reject the whole edit; never turn "-1" into 1 or "1,5" into 15.
                           // Empty is a valid draft while the operator replaces a count.
-                          if (!/^\d*$/.test(event.target.value)) return;
+                          if (!acceptsWholeUnitDraft(event.target.value)) return;
                           setSaved(false);
                           save.reset();
                           setValues(previous => ({

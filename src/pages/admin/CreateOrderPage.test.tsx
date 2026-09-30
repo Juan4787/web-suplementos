@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { PropsWithChildren } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { demoOrders } from '@/data/demo-data';
@@ -303,6 +303,30 @@ describe('CreateOrderPage', () => {
     fireEvent.click(screen.getByRole('button', { name: /confirmar pedido manual/i }));
     expect(await screen.findByRole('heading', { name: 'Pedido ya registrado' })).toBeInTheDocument();
     expect(screen.getByText(/No se reservaron unidades nuevamente/i)).toBeInTheDocument();
+  });
+
+  it('espera la actualización de las consultas antes de ofrecer acciones de éxito habilitadas', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    let finishRefresh!: () => void;
+    const refreshing = new Promise<void>(resolve => { finishRefresh = resolve; });
+    const invalidate = vi.spyOn(client, 'invalidateQueries').mockReturnValue(refreshing);
+    mockConfirm.mockResolvedValue({ ...demoOrders[0]!, number: 9001 });
+    render(<QueryClientProvider client={client}><CreateOrderPage /></QueryClientProvider>);
+    await screen.findByText('Creatina Creapure');
+    fireEvent.click(screen.getAllByRole('button', { name: /agregar/i })[0]!);
+    fireEvent.change(screen.getByPlaceholderText('Ej. Marta'), { target: { value: 'Cliente' } });
+    fireEvent.change(screen.getByPlaceholderText('Ej. Gómez'), { target: { value: 'Prueba' } });
+    fireEvent.click(screen.getByRole('button', { name: /confirmar pedido manual/i }));
+    await waitFor(() => expect(invalidate).toHaveBeenCalled());
+    expect(screen.queryByRole('link', { name: /Ver pedido #9001/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Cargar otro pedido' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Confirmar pedido manual' })).toBeDisabled();
+    await act(async () => finishRefresh());
+    await screen.findByRole('link', { name: /Ver pedido #9001/ });
+    expect(screen.getByRole('button', { name: 'Cargar otro pedido' })).toBeEnabled();
+    expect(mockConfirm).toHaveBeenCalledTimes(1);
+    invalidate.mockRestore();
+    client.clear();
   });
 
 });

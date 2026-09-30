@@ -180,7 +180,7 @@ describe('Auditoría Adversarial: ReceivePurchaseModal', () => {
     expect(finalizeBtn).toBeDisabled();
   });
 
-  it('Adversarial 3: deja visible un número inválido y bloquea continuar hasta corregirlo', async () => {
+  it('Adversarial 3: conserva números fuera de rango y rechaza signos sin reinterpretar el conteo', async () => {
     api.getPurchaseImpact.mockResolvedValue([]);
     render(<ReceivePurchaseModal purchase={samplePurchase} onClose={vi.fn()} onUnblocked={vi.fn()} />, { wrapper: Wrapper });
     fireEvent.click(await screen.findByText('Llegó con faltante / parte'));
@@ -198,9 +198,9 @@ describe('Auditoría Adversarial: ReceivePurchaseModal', () => {
 
     // Intento 2: Escribir -50 (número negativo)
     fireEvent.change(countInput, { target: { value: '-50' } });
-    expect(countInput).toHaveValue('-50');
+    expect(countInput).toHaveValue('9999');
     expect(continueButton).toBeDisabled();
-    expect(screen.getByText(/Usá un número entero sin signos/i)).toBeVisible();
+    expect(screen.getByText(/Ingresá entre 0 y 9 unidades/i)).toBeVisible();
 
     fireEvent.change(countInput, { target: { value: '7' } });
     expect(countInput).toHaveValue('7');
