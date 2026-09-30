@@ -66,6 +66,7 @@ const state: {
     canonicalPayload: string;
     result: { purchase: Purchase; unblockedOrders: Array<{ id: string; number: number }> };
   }>;
+  shortageOperations: Map<string, { request: string; result: unknown }>;
   revision: number;
 } = {
   settings: structuredClone(demoSettings),
@@ -92,6 +93,7 @@ const state: {
   expenseHistory: [],
   importedProtocols: new Map(),
   purchaseReceipts: new Map(),
+  shortageOperations: new Map(),
   revision: 1
 };
 
@@ -208,6 +210,88 @@ const buildProductPerformance = (orders: Order[]): ProductPerformance[] => {
     }
   }
   return [...products.values()].sort((left, right) => right.units - left.units);
+};
+
+const createPurchaseRecord = (input: PurchaseCreateInput): Purchase => {
+    const consolidatedMap = new Map<string, { quantity: number; totalCost: number }>();
+    for (const item of input.items) {
+      const existing = consolidatedMap.get(item.productId);
+      if (existing) {
+        existing.quantity += item.quantity;
+        existing.totalCost += item.quantity * item.unitCostCents;
+      } else {
+        consolidatedMap.set(item.productId, {
+          quantity: item.quantity,
+          totalCost: item.quantity * item.unitCostCents
+        });
+      }
+    }
+    const consolidatedItems = Array.from(consolidatedMap.entries()).map(([productId, data]) => ({
+      productId,
+      quantity: data.quantity,
+      unitCostCents: Math.round(data.totalCost / (data.quantity || 1))
+    }));
+
+    const items = consolidatedItems.map((item) => {
+      const product = state.products.find((candidate) => candidate.id === item.productId);
+      if (!product) throw new AppError('business', 'Uno de los productos ya no está disponible.');
+      return {
+        id: nextUuid(),
+        productId: product.id,
+        productName: product.name,
+        quantity: item.quantity,
+        receivedQuantity: 0,
+        shortageQuantity: 0,
+        unitCostCents: item.unitCostCents
+      };
+    });
+    const now = new Date().toISOString();
+    const purchase: Purchase = {
+      id: nextUuid(),
+      number: Math.max(...state.purchases.map((entry) => entry.number), 0) + 1,
+      supplierName: input.supplierName?.trim() || 'Proveedor no informado',
+      state: 'ordered',
+      orderedAt: now,
+      expectedAt: input.expectedAt ?? null,
+      receivedAt: null,
+      totalCostCents: items.reduce(
+        (sum, item) => sum + item.quantity * item.unitCostCents,
+        0
+      ),
+      notes: input.notes ?? null,
+      items
+    };
+    for (const item of items) {
+      const product = state.products.find((candidate) => candidate.id === item.productId)!;
+      product.incoming += item.quantity;
+      refreshProductAvailability(product);
+    }
+    state.purchases.unshift(purchase);
+    state.revision += 1;
+    return purchase;
+};
+
+const recordShortage = (purchase: Purchase, item: Purchase['items'][number], quantity: number) => {
+  const product = state.products.find(p => p.id === item.productId)!;
+  item.shortageQuantity = (item.shortageQuantity ?? 0) + quantity;
+  product.incoming -= quantity;
+  let toUncover = quantity;
+  for (const order of [...state.orders].reverse()) {
+    if (order.orderState !== 'confirmed' || order.fulfillmentState !== 'pending') continue;
+    for (const line of order.items) {
+      if (line.productId !== product.id) continue;
+      const take = Math.min(toUncover, line.incomingQuantity ?? 0);
+      line.incomingQuantity = (line.incomingQuantity ?? 0) - take;
+      line.uncoveredQuantity = (line.uncoveredQuantity ?? 0) + take;
+      product.incomingReserved = Math.max(0, (product.incomingReserved ?? 0) - take);
+      toUncover -= take;
+      if (take > 0) order.stockReadiness = 'uncovered';
+    }
+  }
+  if (purchase.items.every(line => (line.receivedQuantity ?? 0) + (line.shortageQuantity ?? 0) === line.quantity)) {
+    purchase.state = 'received'; purchase.receivedAt = new Date().toISOString();
+  }
+  refreshProductAvailability(product);
 };
 
 export const demoBusinessApi: BusinessApi = {
@@ -648,9 +732,10 @@ export const demoBusinessApi: BusinessApi = {
     await latency(undefined);
   },
 
-  async updateStockThresholds({ productId, reorderPoint, safetyStock, leadTimeDays }) {
+  async updateStockThresholds({ productId, reorderPoint, safetyStock, leadTimeDays, expected }) {
     const product = state.products.find((candidate) => candidate.id === productId);
     if (!product) throw new AppError('business', 'No encontramos el producto que querías actualizar.');
+    if (expected && (expected.reorderPoint !== product.reorderPoint || expected.safetyStock !== product.safetyStock || expected.leadTimeDays !== product.leadTimeDays)) throw new AppError('business', 'Los avisos cambiaron mientras editabas.', { nextAction: 'Cargá los avisos actualizados antes de guardar.' });
     if (!Number.isFinite(reorderPoint) || reorderPoint < 0) {
       throw new AppError('validation', 'El punto de pedido debe ser un número igual o mayor a 0.');
     }
@@ -1180,62 +1265,7 @@ export const demoBusinessApi: BusinessApi = {
   },
 
   async createPurchase(input: PurchaseCreateInput) {
-    const consolidatedMap = new Map<string, { quantity: number; totalCost: number }>();
-    for (const item of input.items) {
-      const existing = consolidatedMap.get(item.productId);
-      if (existing) {
-        existing.quantity += item.quantity;
-        existing.totalCost += item.quantity * item.unitCostCents;
-      } else {
-        consolidatedMap.set(item.productId, {
-          quantity: item.quantity,
-          totalCost: item.quantity * item.unitCostCents
-        });
-      }
-    }
-    const consolidatedItems = Array.from(consolidatedMap.entries()).map(([productId, data]) => ({
-      productId,
-      quantity: data.quantity,
-      unitCostCents: Math.round(data.totalCost / (data.quantity || 1))
-    }));
-
-    const items = consolidatedItems.map((item) => {
-      const product = state.products.find((candidate) => candidate.id === item.productId);
-      if (!product) throw new AppError('business', 'Uno de los productos ya no está disponible.');
-      return {
-        id: nextUuid(),
-        productId: product.id,
-        productName: product.name,
-        quantity: item.quantity,
-        receivedQuantity: 0,
-        shortageQuantity: 0,
-        unitCostCents: item.unitCostCents
-      };
-    });
-    const now = new Date().toISOString();
-    const purchase: Purchase = {
-      id: nextUuid(),
-      number: Math.max(...state.purchases.map((entry) => entry.number), 0) + 1,
-      supplierName: input.supplierName?.trim() || 'Proveedor no informado',
-      state: 'ordered',
-      orderedAt: now,
-      expectedAt: input.expectedAt ?? null,
-      receivedAt: null,
-      totalCostCents: items.reduce(
-        (sum, item) => sum + item.quantity * item.unitCostCents,
-        0
-      ),
-      notes: input.notes ?? null,
-      items
-    };
-    for (const item of items) {
-      const product = state.products.find((candidate) => candidate.id === item.productId)!;
-      product.incoming += item.quantity;
-      refreshProductAvailability(product);
-    }
-    state.purchases.unshift(purchase);
-    state.revision += 1;
-    return latency(purchase);
+    return latency(createPurchaseRecord(input));
   },
 
   async updatePurchase(input: PurchaseUpdateInput) {
@@ -1500,16 +1530,16 @@ export const demoBusinessApi: BusinessApi = {
     const result: PurchaseImpactItem[] = purchase.items.map((pi) => {
       const pendingQuantity = Math.max(0, pi.quantity - (pi.receivedQuantity ?? 0) - (pi.shortageQuantity ?? 0));
       const reservedOrders = state.orders
-        .filter((o) => o.stockReadiness === 'waiting_incoming' && o.orderState !== 'cancelled')
+        .filter((o) => (o.stockReadiness === 'waiting_incoming' || o.stockReadiness === 'uncovered') && o.orderState !== 'cancelled')
         .flatMap((o) => {
           const matchLine = o.items.find((line) => line.productId === pi.productId);
-          if (!matchLine) return [];
+          if (!matchLine || (matchLine.incomingQuantity ?? 0) + (matchLine.uncoveredQuantity ?? 0) === 0) return [];
           return [{
             orderId: o.id,
             orderNumber: o.number,
             customerName: o.customerName,
             customerPhone: o.customerPhone,
-            reservedQuantity: matchLine.quantity,
+            reservedQuantity: (matchLine.incomingQuantity ?? 0) + (matchLine.uncoveredQuantity ?? 0),
             paymentState: o.paymentState,
             fulfillmentState: o.fulfillmentState,
             totalCents: o.totalCents
@@ -1527,6 +1557,70 @@ export const demoBusinessApi: BusinessApi = {
         openingReservationsQuantity: 0
       };
     });
+    return latency(result);
+  },
+
+  async declarePurchaseShortages(purchaseId, items, operationId) {
+    const request = JSON.stringify({ kind: 'shortages', purchaseId, items: [...items].sort((a,b) => a.purchaseItemId.localeCompare(b.purchaseItemId)) });
+    const previous = state.shortageOperations.get(operationId);
+    if (previous) {
+      if (previous.request !== request) throw new AppError('business', 'Los datos cambiaron respecto del intento anterior.');
+      return latency(previous.result as Purchase);
+    }
+    const purchase = state.purchases.find(p => p.id === purchaseId);
+    if (!purchase || !items.length || new Set(items.map(i => i.purchaseItemId)).size !== items.length) throw new AppError('validation', 'Revisá los faltantes de la compra.');
+    for (const input of items) {
+      const item = purchase.items.find(i => i.id === input.purchaseItemId);
+      if (!item || !Number.isSafeInteger(input.quantity) || input.quantity <= 0 || input.quantity !== item.quantity-(item.receivedQuantity??0)-(item.shortageQuantity??0)) {
+        throw new AppError('business', 'Las unidades pendientes cambiaron.', { nextAction: 'Cerrá y volvé a abrir la recepción.' });
+      }
+      if (state.orders.some(order => order.orderState === 'confirmed' && order.fulfillmentState === 'pending' &&
+        order.items.some(line => line.productId === item.productId && (line.incomingQuantity ?? 0) + (line.uncoveredQuantity ?? 0) > 0))) {
+        throw new AppError('business', 'Todavía hay reservas esperando este producto.', { nextAction: 'Pedí una reposición o resolvé los pedidos vinculados antes de cerrar el faltante.' });
+      }
+    }
+    for (const input of items) recordShortage(purchase, purchase.items.find(i => i.id === input.purchaseItemId)!, input.quantity);
+    state.revision++;
+    const result = structuredClone(purchase);
+    state.shortageOperations.set(operationId, { request, result });
+    return latency(result);
+  },
+
+  async replacePurchaseShortage(input) {
+    const request = JSON.stringify({ kind:'replacement', ...input, supplierName:input.supplierName.trim() });
+    const previous = state.shortageOperations.get(input.operationId);
+    if (previous) {
+      if (previous.request !== request) throw new AppError('business', 'Los datos cambiaron respecto del intento anterior.');
+      return latency(previous.result as Awaited<ReturnType<BusinessApi['replacePurchaseShortage']>>);
+    }
+    const purchase = state.purchases.find(p => p.items.some(i => i.id === input.purchaseItemId));
+    const item = purchase?.items.find(i => i.id === input.purchaseItemId);
+    if (!purchase || !item || !Number.isSafeInteger(input.expectedPending) || input.expectedPending !== item.quantity-(item.receivedQuantity??0)-(item.shortageQuantity??0) || input.expectedPending <= 0) {
+      throw new AppError('business', 'Las unidades pendientes cambiaron.', { nextAction: 'Cerrá y volvé a abrir la recepción.' });
+    }
+    if (input.supplierName.trim().length < 2 || input.supplierName.trim().length > 120) throw new AppError('validation', 'Ingresá el nombre del proveedor (entre 2 y 120 caracteres).');
+    const replacement = createPurchaseRecord({ supplierName:input.supplierName, expectedAt:input.expectedAt,
+      notes:`Reposición de compra #${purchase.number}`, items:[{productId:item.productId,quantity:input.expectedPending,unitCostCents:item.unitCostCents}] });
+    recordShortage(purchase, item, input.expectedPending);
+    let transferred = 0;
+    const product = state.products.find(p=>p.id===item.productId)!;
+    let capacity = input.expectedPending;
+    for (const order of [...state.orders].reverse()) {
+      if (order.orderState !== 'confirmed' || order.fulfillmentState !== 'pending') continue;
+      const line = order.items.find(i => i.productId === item.productId);
+      if (!line || !(line.uncoveredQuantity ?? 0)) continue;
+      const take = Math.min(capacity, line.uncoveredQuantity ?? 0);
+      if (!take) continue;
+      line.uncoveredQuantity = (line.uncoveredQuantity ?? 0) - take;
+      line.incomingQuantity = (line.incomingQuantity ?? 0) + take;
+      product.incomingReserved = (product.incomingReserved ?? 0) + take;
+      order.stockReadiness = order.items.some(i => (i.uncoveredQuantity ?? 0)>0) ? 'uncovered' : 'waiting_incoming';
+      order.expectedArrivalAt = replacement.expectedAt;
+      capacity -= take; transferred++;
+    }
+    refreshProductAvailability(product);
+    const result = structuredClone({ oldPurchase:purchase, newPurchase:replacement, transferredReservations:transferred });
+    state.shortageOperations.set(input.operationId,{request,result});
     return latency(result);
   },
 

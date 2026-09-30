@@ -1,6 +1,6 @@
 import type { PropsWithChildren } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { demoOrders } from '@/data/demo-data';
 import type { AdminProduct, CartLine, CheckoutData, StoreSettings } from '@/domain/types';
@@ -8,8 +8,11 @@ import { buildWhatsAppProtocol } from '@/domain/whatsapp';
 import ImportOrderPage from './ImportOrderPage';
 
 const api = vi.hoisted(() => ({ listAdminProducts: vi.fn(), confirmImportedOrder: vi.fn() }));
+const navigation = vi.hoisted(() => vi.fn<(options: { enableBeforeUnload: boolean;
+  shouldBlockFn: (input: { current: { pathname: string }; next: { pathname: string } }) => boolean }) => void>());
 vi.mock('@/services/business-api', () => ({ getBusinessApi: async () => api }));
 vi.mock('@tanstack/react-router', () => ({
+  useBlocker: navigation,
   Link: ({ children, to }: PropsWithChildren<{ to: string }>) => <a href={to}>{children}</a>
 }));
 
@@ -59,6 +62,35 @@ afterEach(() => {
   cleanup();
   api.listAdminProducts.mockReset();
   api.confirmImportedOrder.mockReset();
+  vi.restoreAllMocks();
+});
+
+it('keeps the submitted review locked until the result and preserves it after a failed request', async () => {
+  let reject!: (error: Error) => void;
+  api.confirmImportedOrder.mockImplementationOnce(() => new Promise((_resolve, fail) => { reject = fail; }));
+  const client = await renderPage([{ ...product, onHand: 3 }]);
+  fireEvent.click(screen.getByRole('button', { name: /Corregir datos del pedido/ }));
+  const firstName = screen.getByRole('textbox', { name: 'Nombre *' });
+  fireEvent.change(firstName, { target: { value: 'Natalia' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Confirmar pedido' }));
+  await waitFor(() => expect(api.confirmImportedOrder).toHaveBeenCalledTimes(1));
+  expect(screen.getByRole('button', { name: 'Volver' })).toBeDisabled();
+  expect(firstName).toBeDisabled();
+  const blocked = navigation.mock.lastCall![0];
+  expect(blocked.enableBeforeUnload).toBe(true);
+  const dialog = vi.spyOn(window, 'confirm').mockReturnValue(false);
+  expect(blocked.shouldBlockFn({ current: { pathname: '/app/pedidos/importar' }, next: { pathname: '/app/inventario' } })).toBe(true);
+  expect(dialog).toHaveBeenCalledWith(expect.stringContaining('pedido se está guardando'));
+  fireEvent.click(screen.getByRole('button', { name: 'Volver' }));
+  expect(screen.getByRole('heading', { name: 'Revisá el pedido' })).toBeInTheDocument();
+  expect(api.confirmImportedOrder.mock.calls[0]![0].customerFirstName).toBe('Natalia');
+  await act(async () => reject(new Error('Sin conexión')));
+  expect(firstName).toHaveValue('Natalia');
+  await waitFor(() => expect(firstName).toBeEnabled());
+  expect(screen.getByRole('button', { name: 'Volver' })).toBeEnabled();
+  expect(navigation.mock.lastCall![0].enableBeforeUnload).toBe(false);
+  expect(screen.queryByRole('heading', { name: 'Pedido confirmado' })).not.toBeInTheDocument();
+  client.clear();
 });
 
 it('muestra la falta real y no permite confirmar unidades que no están libres ni en camino', async () => {

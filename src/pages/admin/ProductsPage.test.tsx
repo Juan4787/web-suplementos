@@ -9,7 +9,7 @@ import InventoryPage from './InventoryPage';
 
 vi.mock('@/services/business-api', () => ({ getBusinessApi: async () => demoBusinessApi }));
 vi.mock('@/features/auth/AuthProvider', () => ({ useAuth: () => ({ user: demoOwner }) }));
-vi.mock('@tanstack/react-router', () => ({ useSearch: () => ({}) }));
+vi.mock('@tanstack/react-router', () => ({ useSearch: () => ({}), useBlocker: vi.fn() }));
 
 const clients: QueryClient[] = [];
 afterEach(() => {
@@ -99,7 +99,9 @@ describe('Compras reflejadas en Productos', () => {
         const countInput = screen.getByRole('textbox', { name: `Unidades recibidas de ${product.name}` });
         fireEvent.change(countInput, { target: { value: String(quantity) } });
         fireEvent.click(screen.getByRole('button', { name: /Continuar/ }));
-        fireEvent.click(screen.getByRole('button', { name: /Finalizar recepción/ }));
+        const finish = await screen.findByRole('button', { name: /Finalizar revisión de faltantes/ });
+        await waitFor(() => expect(finish).toBeEnabled());
+        fireEvent.click(finish);
       }
       await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     };
@@ -123,7 +125,9 @@ describe('Compras reflejadas en Productos', () => {
     fireEvent.click(checkbox);
     fireEvent.click(screen.getByRole('button', { name: /Continuar/ }));
     fireEvent.click(await screen.findByRole('button', { name: /NO \(Faltante definitivo\)/ }));
-    fireEvent.click(screen.getByRole('button', { name: /Finalizar recepción/ }));
+    const finish = await screen.findByRole('button', { name: /Finalizar revisión de faltantes/ });
+    await waitFor(() => expect(finish).toBeEnabled());
+    fireEvent.click(finish);
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     await stock(30, 0);
 

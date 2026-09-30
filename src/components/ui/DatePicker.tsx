@@ -61,6 +61,8 @@ export function DatePicker({
   // View state for month navigation
   const [viewDate, setViewDate] = useState<Date>(() => selectedDate || new Date());
 
+  useEffect(() => { if (disabled) setIsOpen(false); }, [disabled]);
+
   // Close when clicking outside with composedPath check to prevent closing when child nodes are re-rendered
   useEffect(() => {
     if (!isOpen) return;
@@ -80,7 +82,7 @@ export function DatePicker({
     };
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
+      if (event.key === 'Escape' && !containerRef.current?.closest('[inert]')) {
         setIsOpen(false);
         containerRef.current?.querySelector('button')?.focus();
       }
@@ -98,6 +100,7 @@ export function DatePicker({
   }, [isOpen]);
 
   const handleSelectDate = (date: Date) => {
+    if (disabled) return;
     const formatted = format(date, 'yyyy-MM-dd');
     onChange?.(formatted);
     setViewDate(date);
@@ -197,6 +200,8 @@ export function DatePicker({
         <>
           {/* Mobile backdrop */}
           <div
+            data-modal-popover="backdrop"
+            data-dialog-owner={containerRef.current?.closest<HTMLElement>('[data-dialog-surface]')?.dataset.dialogSurface}
             className="fixed inset-0 z-[60] bg-black/40 backdrop-blur-xs sm:hidden animate-in fade-in duration-150"
             onClick={() => setIsOpen(false)}
             aria-hidden="true"
@@ -204,7 +209,8 @@ export function DatePicker({
 
           <div
             ref={calendarRef}
-            data-modal-popover="date"
+            data-dialog-owner={containerRef.current?.closest<HTMLElement>('[data-dialog-surface]')?.dataset.dialogSurface}
+          data-modal-popover="date"
             role="dialog"
             aria-label="Elegir fecha"
             className="overflow-y-auto rounded-[1.75rem] border border-ink-950/10 bg-white p-4 shadow-[0_20px_50px_rgba(15,23,42,0.25)] select-none"

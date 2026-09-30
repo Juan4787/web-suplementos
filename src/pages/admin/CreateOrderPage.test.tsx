@@ -7,6 +7,7 @@ import type { AdminProduct, Order, StoreSettings } from '@/domain/types';
 import CreateOrderPage from './CreateOrderPage';
 
 vi.mock('@tanstack/react-router', () => ({
+  useBlocker: vi.fn(),
   Link: ({ children, to, className, search }: PropsWithChildren<{ to?: string; className?: string; search?: any }>) => (
     <a href={to || '#'} className={className} data-search={JSON.stringify(search)}>
       {children}

@@ -145,6 +145,7 @@ export function Select({
   }, [options, searchTerm]);
 
   const handleSelect = (val: string) => {
+    if (disabled) return;
     if (!isControlled) {
       setInternalValue(val);
     }
@@ -154,6 +155,8 @@ export function Select({
     setSearchTerm('');
     containerRef.current?.querySelector('button')?.focus();
   };
+
+  useEffect(() => { if (disabled) setIsOpen(false); }, [disabled]);
 
   // Close when clicking outside with composedPath support
   useEffect(() => {
@@ -175,7 +178,7 @@ export function Select({
     };
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
+      if (event.key === 'Escape' && !containerRef.current?.closest('[inert]')) {
         setIsOpen(false);
         setSearchTerm('');
         containerRef.current?.querySelector('button')?.focus();
@@ -256,6 +259,7 @@ export function Select({
       {isOpen && createPortal(
         <div
           ref={menuRef}
+          data-dialog-owner={containerRef.current?.closest<HTMLElement>('[data-dialog-surface]')?.dataset.dialogSurface}
           data-modal-popover="select"
           style={position}
           role="listbox"

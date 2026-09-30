@@ -38,12 +38,13 @@ export const suggestedPurchase = (
 
 /**
  * Sanitizes whole-unit fields while preserving the number the operator typed.
- * - Filters non-digit characters and strips leading zeroes ("012" -> "12").
+ * - Keeps malformed input visible so it can be corrected, never turning "1,5" into 15.
  * - Preserves meaningful trailing zeroes ("10" must stay 10).
  * - Allows empty string while typing so the user can backspace completely.
  */
 export const sanitizeIntegerInput = (newValue: string): string => {
-  let digits = newValue.replace(/\D/g, '');
+  if (!/^\d*$/.test(newValue)) return newValue;
+  let digits = newValue;
 
   if (digits === '') {
     return '';
@@ -56,6 +57,9 @@ export const sanitizeIntegerInput = (newValue: string): string => {
 
   return digits;
 };
+
+export const isWholeUnitInput = (value: string): boolean =>
+  /^\d+$/.test(value) && Number.isSafeInteger(Number(value)) && Number(value) <= 2147483647;
 
 export const sanitizeDecimalInput = (newValue: string): string => {
   let clean = newValue.replace(/,/g, '.');

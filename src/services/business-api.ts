@@ -66,6 +66,7 @@ export type ProductUpdate = {
 };
 
 export interface UpdateStockThresholdsInput {
+  expected?: { reorderPoint: number; safetyStock: number; leadTimeDays: number };
   productId: string;
   reorderPoint: number;
   safetyStock: number;
@@ -154,6 +155,8 @@ export interface BusinessApi {
   closePurchaseWithShortage(purchaseId: string, notes?: string): Promise<ReceivePurchaseResult>;
   getPurchaseImpact(purchaseId: string): Promise<PurchaseImpactItem[]>;
   declareItemShortage(purchaseItemId: string, quantity: number, notes?: string): Promise<Purchase>;
+  declarePurchaseShortages(purchaseId: string, items: Array<{ purchaseItemId: string; quantity: number }>, operationId: string): Promise<Purchase>;
+  replacePurchaseShortage(input: { purchaseItemId: string; expectedPending: number; supplierName: string; expectedAt: string | null; operationId: string }): Promise<{ oldPurchase: Purchase; newPurchase: Purchase; transferredReservations: number }>;
   reassignPurchaseReservations(oldPurchaseItemId: string, newPurchaseId: string): Promise<{ oldPurchase: Purchase; newPurchase: Purchase; transferredReservations: number }>;
   listMovements(page?: number, pageSize?: number, search?: string, filter?: 'all' | 'sales' | 'purchases' | 'adjustments'): Promise<Page<StockMovement>>;
   listCustomers(page?: number, pageSize?: number, search?: string): Promise<Page<Customer>>;

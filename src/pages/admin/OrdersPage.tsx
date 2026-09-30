@@ -1,4 +1,4 @@
-import { Link, useSearch } from '@tanstack/react-router';
+import { Link, useSearch, useBlocker } from '@tanstack/react-router';
 import {
   AlertTriangle,
   Banknote,
@@ -20,7 +20,7 @@ import {
   Truck,
   X
 } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from '@/app/query-keys';
 import { useBusinessQuery } from '@/app/use-business-query';
@@ -42,7 +42,11 @@ import { cn } from '@/lib/cn';
 import { buildWhatsAppUrl } from '@/lib/whatsapp-url';
 import { getBusinessApi } from '@/services/business-api';
 
+import { packingDraftDirty, packingValues, type PackingDraftStore } from '@/domain/packing-draft';
+import { can } from '@/domain/permissions';
+import { useAuth } from '@/features/auth/AuthProvider';
 import { cleanSearchTerm } from '@/lib/search';
+import { AppError } from '@/domain/errors';
 
 const normalizeOrderSearch = (value: unknown): string =>
   cleanSearchTerm(value).replace(/^(?:pedido\s*)?#\s*(\d+)$/i, '$1');
@@ -53,6 +57,18 @@ const needsUnverifiedBagConfirmation = (order: Order, action: OrderAction): bool
 
 export default function OrdersPage() {
   const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const [draftStore] = useState<PackingDraftStore>(() => new Map());
+  const [draftEpoch, setDraftEpoch] = useState(0);
+  const notifyDraft = useCallback(() => setDraftEpoch(epoch => epoch + 1), []);
+  const unsaved = [...draftStore.values()].filter(draft => draft.saving || packingDraftDirty(draft));
+  useBlocker({
+    shouldBlockFn: ({ current, next }) => current.pathname !== next.pathname && unsaved.length > 0 &&
+      !window.confirm(unsaved.some(draft => draft.saving)
+        ? `El armado se está guardando y puede completarse aunque salgas.${unsaved.some(draft => !draft.saving) ? ' Los otros conteos sin guardar se perderán al salir.' : ''} Revisá después los pedidos antes de volver a guardar. ¿Salir ahora?`
+        : 'Hay armados sin guardar. ¿Salir y descartar esos cambios?'),
+    enableBeforeUnload: unsaved.length > 0
+  });
   const [page, setPage] = useState(1);
   const routeSearchParams = useSearch({ strict: false }) as { search?: string | number } | undefined;
   const initialSearch = useMemo(() => {
@@ -101,17 +117,22 @@ export default function OrdersPage() {
   });
   const ordersQuery = useBusinessQuery({
     queryKey: [...queryKeys.orders(page), debouncedSearch, filter],
+    refetchOnWindowFocus: 'always',
     queryFn: (api) => api.listOrders(page, 50, debouncedSearch, filter)
   });
 
   const transition = useMutation({
     mutationFn: async (variables: { orderId: string; action: OrderAction }) =>
-      (await getBusinessApi()).transitionOrder(variables.orderId, variables.action),
+      {
+        const draft = draftStore.get(variables.orderId);
+        if (draft && (draft.saving || packingDraftDirty(draft))) throw new AppError('business', 'Hay un conteo de bolsita sin guardar.', { nextAction: 'Guardá o descartá ese conteo antes de cambiar el estado del pedido.' });
+        return (await getBusinessApi()).transitionOrder(variables.orderId, variables.action);
+      },
     onSuccess: async (order, variables) => {
       setMutationError(null);
       const cancelled = order.orderState === 'cancelled';
       const isGift = order.paymentState === 'gifted';
-      const completed = cancelled || isGift || (order.paymentState === 'paid' && order.fulfillmentState === 'delivered');
+      const completed = cancelled || ((isGift || order.paymentState === 'paid') && order.fulfillmentState === 'delivered');
       const state =
         variables.action === 'mark_ready'
           ? 'marcado como listo para entrega'
@@ -155,12 +176,14 @@ export default function OrdersPage() {
   const readyPickupCount = ordersQuery.data?.readyPickupTotal ?? 0;
   const filteredOrders = items;
 
-  // Si se buscó un pedido específico (ej: desde "Ver pedido #1049"), autoexpandir su tarjeta
+  const autoExpandedSearch = useRef<string | null>(null);
+  // Open a new single-result search once; respect subsequent manual collapse and refreshes.
   useEffect(() => {
-    if (search && filteredOrders.length === 1 && !expanded) {
-      setExpanded(filteredOrders[0]?.id ?? null);
-    }
-  }, [search, filteredOrders, expanded]);
+    const result = filteredOrders.length === 1 ? filteredOrders[0] : undefined;
+    const signature = debouncedSearch && result ? JSON.stringify([debouncedSearch, result.id]) : null;
+    if (signature && signature !== autoExpandedSearch.current) setExpanded(result!.id);
+    autoExpandedSearch.current = signature;
+  }, [debouncedSearch, filteredOrders]);
 
   return (
     <div className="page-enter">
@@ -256,14 +279,30 @@ export default function OrdersPage() {
         </div>
       </div>
 
+      {unsaved.length ? <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
+        <p className="font-bold">Tenés armados sin guardar. Se conservan al cerrar las acciones o cambiar los filtros de Pedidos.</p>
+        <div className="mt-2 flex flex-wrap gap-2">{unsaved.map(draft => {
+          const latest = ordersQuery.data?.items.find(order => order.id === draft.baseline.id);
+          const editorUnavailable = !latest || latest.orderState !== 'confirmed' || latest.fulfillmentState !== 'pending';
+          return <div key={draft.baseline.id} className="flex flex-wrap gap-2"><Button variant="secondary" size="sm"
+            onClick={() => { setPage(1); setFilter('all'); setSearch(String(draft.baseline.number)); setExpanded(draft.baseline.id); }}>
+            Ver pedido #{draft.baseline.number}{draft.saving ? ' · Guardando…' : ''}
+          </Button>{editorUnavailable && !draft.saving ? <Button variant="ghost" size="sm" onClick={() => {
+            if (window.confirm(`¿Descartar el conteo sin guardar del pedido #${draft.baseline.number}?`)) {
+              const baseline = latest ?? draft.baseline;
+              draftStore.set(baseline.id, { baseline, values: packingValues(baseline) }); notifyDraft();
+            }
+          }}>Descartar conteo #{draft.baseline.number}</Button> : null}</div>;
+        })}</div>
+      </div> : null}
       {successNotice ? (
         <div ref={noticeRef} tabIndex={-1} className="mb-5 flex flex-wrap items-center gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-950">
           <p role="status" className="flex-1 font-semibold">{successNotice.message}</p>
-          {successNotice.completed ? <Button variant="secondary" size="sm" onClick={() => {
+          <Button variant="secondary" size="sm" onClick={() => {
             const order = successNotice.order;
-            setPage(1); setFilter('completed'); setSearch(String(order.number));
+            setPage(1); setFilter('all'); setSearch(String(order.number));
             setDebouncedSearch(String(order.number)); setExpanded(order.id); setSuccessNotice(null);
-          }}>Ver pedido</Button> : null}
+          }}>Ver pedido</Button>
           <button type="button" className="grid size-11 place-items-center rounded-full hover:bg-emerald-100" aria-label="Cerrar aviso" onClick={() => setSuccessNotice(null)}><X className="size-5" /></button>
         </div>
       ) : null}
@@ -283,7 +322,7 @@ export default function OrdersPage() {
         <div className="space-y-3">
           {filteredOrders.length === 0 ? (
             <div className="rounded-2xl bg-white p-8 text-center text-sm font-semibold text-ink-600 shadow-sm border border-ink-950/8">
-              No hay pedidos en esta vista. ¡Todo al día!
+              {debouncedSearch ? 'No encontramos pedidos con esa búsqueda. Probá otro número o nombre.' : 'No hay pedidos en esta vista.'}
             </div>
           ) : (
             filteredOrders.map((order) => {
@@ -291,7 +330,7 @@ export default function OrdersPage() {
               const isSelected = open;
               const isCompleted =
                 order.orderState === 'cancelled' ||
-                (order.fulfillmentState === 'delivered' && order.paymentState === 'paid');
+                (order.fulfillmentState === 'delivered' && (order.paymentState === 'paid' || order.paymentState === 'gifted'));
               const actions = availableOrderActions(order);
               const hasPhysicalUnitsToPack = order.items.some(item =>
                 (item.physicalReservedQuantity ?? item.quantity) > 0 || (item.packedQuantity ?? 0) > 0
@@ -406,7 +445,7 @@ export default function OrdersPage() {
                           </div>
 
                           {order.orderState === 'confirmed' && order.fulfillmentState === 'pending' ? (
-                            <OrderPackingEditor order={order} />
+                            <OrderPackingEditor order={order} draftStore={draftStore} draftEpoch={draftEpoch} onDraftChange={notifyDraft} canReceivePurchases={can(user, 'manage_purchases')} />
                           ) : null}
 
                           {/* Resumen de Pago y Entrega */}
@@ -747,7 +786,7 @@ export default function OrdersPage() {
           {confirmAction ? (
             <Modal
               isOpen={Boolean(confirmAction)}
-              onClose={() => setConfirmAction(null)}
+              onClose={() => { if (!transition.isPending) setConfirmAction(null); }}
               maxWidth="md"
               ariaLabelledBy="confirm-order-action-title"
             >

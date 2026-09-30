@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { OpeningReservations } from '@/features/inventory/OpeningReservations';
-import { Link, useSearch } from '@tanstack/react-router';
+import { Link, useSearch, useBlocker } from '@tanstack/react-router';
 import {
   AlertTriangle,
   ArrowDown,
@@ -31,7 +31,7 @@ import {
 import { buildWhatsAppUrl } from '@/lib/whatsapp-url';
 import { format, isBefore, isValid, parseISO, startOfDay } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { queryKeys } from '@/app/query-keys';
 import { useBusinessQuery } from '@/app/use-business-query';
 import { PageHeader } from '@/components/layout/AdminShell';
@@ -41,7 +41,7 @@ import { DatePicker, Field, Input, Select, Textarea } from '@/components/ui/Fiel
 import { Drawer, Modal } from '@/components/ui/Modal';
 import { StatusChip } from '@/components/ui/StatusChip';
 import { AppError } from '@/domain/errors';
-import { inventoryStatus, sanitizeDecimalInput, sanitizeIntegerInput } from '@/domain/inventory';
+import { inventoryStatus, sanitizeDecimalInput, sanitizeIntegerInput, isWholeUnitInput } from '@/domain/inventory';
 import { formatMoney, pesosToCents } from '@/domain/money';
 import { can } from '@/domain/permissions';
 import { formatProducts, formatUnits } from '@/domain/quantity';
@@ -107,7 +107,7 @@ const movementKindLabels = {
   reservation_release: 'Reserva cancelada'
 } as const;
 
-type DraftLine = { productId: string; quantity: number; unitCostPesos: string };
+type DraftLine = { productId: string; quantityDraft?: string; quantity: number; unitCostPesos: string };
 
 export function PurchaseFormModal({
   purchase,
@@ -133,6 +133,10 @@ export function PurchaseFormModal({
     }
     return [{ productId: '', quantity: 1, unitCostPesos: '0' }];
   });
+  const draftSignature = JSON.stringify({ supplier, expectedAt, notes,
+    lines: lines.map(line => [line.productId, line.quantityDraft ?? String(line.quantity), line.unitCostPesos]) });
+  const [initialDraftSignature] = useState(draftSignature);
+  const isDirty = draftSignature !== initialDraftSignature;
   const productsQuery = useBusinessQuery({ queryKey: queryKeys.products, queryFn: (api) => api.listAdminProducts() });
   const saveMutation = useMutation({
     mutationFn: async () => {
@@ -197,15 +201,27 @@ export function PurchaseFormModal({
     : lines.some(line => !Number.isFinite(Number(line.unitCostPesos.replace(',', '.'))) || Number(line.unitCostPesos.replace(',', '.')) < 0) ? 'Revisá el costo por unidad: debe ser cero o un importe positivo.'
     : null;
   const valid = purchaseIssue === null;
+  const discardQuestion = 'Hay datos de la compra sin guardar. ¿Cerrar y descartar esos cambios?';
+  const closeForm = () => {
+    if (saveMutation.isPending || (isDirty && !window.confirm(discardQuestion))) return;
+    onClose();
+  };
+  useBlocker({
+    shouldBlockFn: ({ current, next }) => current.pathname !== next.pathname && (saveMutation.isPending
+      ? !window.confirm('La compra se está guardando y puede completarse aunque salgas. Revisá Compras antes de volver a cargarla. ¿Salir ahora?')
+      : isDirty && !window.confirm(discardQuestion)),
+    enableBeforeUnload: isDirty || saveMutation.isPending
+  });
   return (
     <Modal
       isOpen={true}
-      onClose={() => { if (!saveMutation.isPending) onClose(); }}
+      onClose={closeForm}
       ariaLabelledBy="purchase-title"
       maxWidth="lg"
       className="p-0 sm:p-0 flex flex-col max-h-[90vh] overflow-hidden"
     >
       {/* Header fijo */}
+      <fieldset disabled={saveMutation.isPending} className="min-w-0 min-h-0 max-h-[90vh] flex flex-1 flex-col">
       <div className="flex items-start justify-between border-b border-ink-950/6 bg-white px-6 pt-6 pb-4 sm:px-8 sm:pt-8 shrink-0">
         <div>
           <h2 id="purchase-title" className="font-display text-2xl sm:text-3xl font-black text-ink-950">
@@ -217,7 +233,7 @@ export function PurchaseFormModal({
         </div>
         <button
           className="grid size-11 shrink-0 place-items-center rounded-full hover:bg-cream-100 text-ink-600 transition"
-          onClick={() => { if (!saveMutation.isPending) onClose(); }}
+          onClick={closeForm}
           aria-label="Cerrar modal"
         >
           <X className="size-5" />
@@ -238,6 +254,7 @@ export function PurchaseFormModal({
         {/* Cuándo debería llegar */}
         <Field label="Cuándo debería llegar">
           <DatePicker
+            disabled={saveMutation.isPending}
             value={expectedAt}
             onChange={(val) => setExpectedAt(val)}
             placeholder="dd/mm/aaaa"
@@ -269,6 +286,7 @@ export function PurchaseFormModal({
                 <div className="flex items-center gap-2">
                   <div className="flex-1">
                     <Select
+                      disabled={saveMutation.isPending}
                       aria-label={`Producto de la fila ${index + 1}`}
                       placeholder="Seleccionar producto…"
                       value={line.productId}
@@ -314,14 +332,15 @@ export function PurchaseFormModal({
                       inputMode="numeric"
                       pattern="[0-9]*"
                       placeholder="1"
-                      value={line.quantity || ''}
+                      value={line.quantityDraft ?? String(line.quantity || '')}
                       onFocus={(e) => e.target.select()}
                       onChange={(event) => {
                         const updated = [...lines];
                         const item = updated[index];
                         if (item) {
                           const clean = sanitizeIntegerInput(event.target.value);
-                          item.quantity = clean === '' ? 0 : parseInt(clean, 10);
+                          item.quantityDraft = clean;
+                          item.quantity = isWholeUnitInput(clean) ? Number(clean) : 0;
                         }
                         setLines(updated);
                       }}
@@ -379,7 +398,7 @@ export function PurchaseFormModal({
 
       {/* Footer fijo sticky */}
       <div className="flex items-center justify-end gap-3 border-t border-ink-950/8 bg-cream-50/70 px-6 py-4 sm:px-8 shrink-0 rounded-b-[2rem]">
-        <Button variant="ghost" onClick={() => { if (!saveMutation.isPending) onClose(); }} className="min-h-12 px-5 text-[15px] font-bold">
+        <Button variant="ghost" onClick={closeForm} className="min-h-12 px-5 text-[15px] font-bold">
           Cancelar
         </Button>
         <Button
@@ -392,6 +411,7 @@ export function PurchaseFormModal({
           {isEdit ? 'Guardar cambios' : 'Guardar pedido'}
         </Button>
       </div>
+      </fieldset>
     </Modal>
   );
 }
@@ -407,7 +427,7 @@ type MissingItemConfig = {
 };
 
 export function ReceivePurchaseModal({
-  purchase,
+  purchase: initialPurchase,
   onClose,
   onUnblocked
 }: {
@@ -416,6 +436,12 @@ export function ReceivePurchaseModal({
   onUnblocked: (orders: Array<{ id: string; number: number }>) => void;
 }) {
   const queryClient = useQueryClient();
+  const [purchase, setPurchase] = useState(initialPurchase);
+  const [arrivalRecorded, setArrivalRecorded] = useState(false);
+  const [arrivalUnits, setArrivalUnits] = useState(0);
+  const [unblockedFromArrival, setUnblockedFromArrival] = useState<Array<{ id: string; number: number }>>([]);
+  const [shortageOperationId] = useState(() => crypto.randomUUID());
+  const [replacementOperationIds] = useState<Record<string, string>>({});
   const [step, setStep] = useState<WizardStep>('choice');
   const [error, setError] = useState<unknown>(null);
   const [operationId] = useState(() => crypto.randomUUID());
@@ -423,6 +449,7 @@ export function ReceivePurchaseModal({
   // Consulta de impacto de reservas comprometidas con este pedido
   const impactQuery = useBusinessQuery({
     queryKey: ['purchase-impact', purchase.id],
+    refetchOnWindowFocus: 'always',
     queryFn: (api) => api.getPurchaseImpact(purchase.id)
   });
 
@@ -446,8 +473,7 @@ export function ReceivePurchaseModal({
   });
 
   // Seguimiento de pedidos de clientes resueltos (cancelados o reembolsados) en esta sesión
-  const [resolvedOrders, setResolvedOrders] = useState<Record<string, 'cancelled' | 'refunded'>>({});
-  const [actionLoadingOrder, setActionLoadingOrder] = useState<string | null>(null);
+  const resolvedOrders: Record<string, string> = {};
 
   // Estado del mini-modal para crear reposición a otro proveedor
   const [reorderingItem, setReorderingItem] = useState<{
@@ -458,6 +484,7 @@ export function ReceivePurchaseModal({
   const [newSupplierName, setNewSupplierName] = useState('');
   const [newExpectedAt, setNewExpectedAt] = useState('');
   const [reorderLoading, setReorderLoading] = useState(false);
+  const replacementInFlight = useRef(false);
 
   // Totales de unidades pendientes
   const totalPendingUnits = useMemo(() => {
@@ -466,6 +493,9 @@ export function ReceivePurchaseModal({
       0
     );
   }, [purchase.items]);
+
+  const pendingPurchaseItems = useMemo(() => (purchase.items ?? []).filter(item =>
+    item.quantity > (item.receivedQuantity ?? 0) + (item.shortageQuantity ?? 0)), [purchase.items]);
 
   const missingItemsList = useMemo(() => {
     return (purchase.items ?? []).filter((item) => missingConfig[item.id]?.isMissing);
@@ -501,7 +531,7 @@ export function ReceivePurchaseModal({
         const pendingOrders = (impactItem?.reservedOrders ?? []).filter(
           (o) => !resolvedOrders[o.orderId]
         );
-        if (pendingOrders.length > 0) {
+        if (pendingOrders.length > 0 || (impactItem?.openingReservationsQuantity ?? 0) > 0) {
           return true;
         }
       }
@@ -509,54 +539,23 @@ export function ReceivePurchaseModal({
     return false;
   }, [step, purchase.items, missingConfig, impactQuery.data, resolvedOrders]);
 
-  // Acción: Cancelar o Reembolsar un pedido de cliente en 1 toque
-  const handleResolveOrder = async (order: ReservedCustomerOrder) => {
-    setActionLoadingOrder(order.orderId);
-    setError(null);
-    try {
-      const api = await getBusinessApi();
-      if (order.paymentState === 'paid') {
-        await api.transitionOrder(order.orderId, 'mark_refunded');
-      }
-      await api.transitionOrder(order.orderId, 'cancel');
-      setResolvedOrders((prev) => ({
-        ...prev,
-        [order.orderId]: order.paymentState === 'paid' ? 'refunded' : 'cancelled'
-      }));
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: queryKeys.ordersRoot }),
-        queryClient.invalidateQueries({ queryKey: ['purchase-impact', purchase.id] }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.inventory }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.dashboard })
-      ]);
-    } catch (err) {
-      setError(err);
-    } finally {
-      setActionLoadingOrder(null);
-    }
-  };
-
   // Acción: Crear pedido de reposición a otro proveedor y transferir reservas
   const handleCreateReplacement = async () => {
-    if (!reorderingItem || !newSupplierName.trim()) return;
+    if (!reorderingItem || replacementInFlight.current || newSupplierName.trim().length < 2 || newSupplierName.trim().length > 120) return;
+    replacementInFlight.current = true;
     setReorderLoading(true);
     setError(null);
     try {
       const api = await getBusinessApi();
-      const newPurchase = await api.createPurchase({
+      const result = await api.replacePurchaseShortage({
+        purchaseItemId: reorderingItem.item.id,
+        expectedPending: reorderingItem.missingQty,
         supplierName: newSupplierName.trim(),
-        expectedAt: newExpectedAt ? newExpectedAt : null,
-        notes: `Reposición por faltante en compra #${purchase.number} de ${purchase.supplierName}`,
-        items: [
-          {
-            productId: reorderingItem.item.productId,
-            quantity: reorderingItem.missingQty,
-            unitCostCents: reorderingItem.item.unitCostCents
-          }
-        ]
+        expectedAt: newExpectedAt ? new Date(`${newExpectedAt}T12:00:00-03:00`).toISOString() : null,
+        operationId: replacementOperationIds[reorderingItem.item.id] ??= crypto.randomUUID()
       });
-
-      await api.reassignPurchaseReservations(reorderingItem.item.id, newPurchase.id);
+      const newPurchase = result.newPurchase;
+      setPurchase(result.oldPurchase);
 
       setMissingConfig((prev) => ({
         ...prev,
@@ -575,14 +574,16 @@ export function ReceivePurchaseModal({
     } catch (err) {
       setError(err);
     } finally {
+      replacementInFlight.current = false;
       setReorderLoading(false);
     }
   };
 
   // Mutación principal para registrar recepción
   const receiveMutation = useMutation({
+    onMutate: () => setError(null),
     mutationFn: async () => {
-      if (step !== 'complete_confirm' && hasInvalidMissingQuantity) {
+      if (step === 'missing_checklist' && hasInvalidMissingQuantity) {
         throw new AppError('validation', 'Falta revisar cuántas unidades llegaron de cada producto marcado con faltante.');
       }
       const api = await getBusinessApi();
@@ -598,41 +599,36 @@ export function ReceivePurchaseModal({
         return api.receivePurchase(purchase.id, itemsPayload, operationId);
       }
 
-      const itemsPayload = (purchase.items ?? [])
-        .map((item) => {
-          const pending = Math.max(0, item.quantity - (item.receivedQuantity ?? 0) - (item.shortageQuantity ?? 0));
-          const cfg = missingConfig[item.id];
-          const received = cfg?.isMissing ? (cfg.receivedQty ?? 0) : pending;
-          return {
-            purchaseItemId: item.id,
-            receivedQuantity: received
-          };
-        })
-        .filter((item) => item.receivedQuantity > 0);
-
-      let receiveResult = null;
-      if (itemsPayload.length > 0) {
-        receiveResult = await api.receivePurchase(purchase.id, itemsPayload, operationId);
-      } else {
-        receiveResult = { purchase, unblockedOrders: [] };
+      if (step === 'missing_checklist') {
+        const itemsPayload = purchase.items.map(item => ({
+          purchaseItemId: item.id,
+          receivedQuantity: missingConfig[item.id]?.isMissing ? (missingConfig[item.id]?.receivedQty ?? 0)
+            : Math.max(0, item.quantity - (item.receivedQuantity ?? 0) - (item.shortageQuantity ?? 0))
+        })).filter(item => item.receivedQuantity > 0);
+        return itemsPayload.length ? api.receivePurchase(purchase.id, itemsPayload, operationId) : { purchase, unblockedOrders: [] };
       }
-
-      // Asentar faltantes definitivos para aquellos ítems no reasignados
-      for (const item of purchase.items ?? []) {
+      const shortages = purchase.items.flatMap(item => {
         const cfg = missingConfig[item.id];
-        if (cfg?.isMissing && cfg.delayedResolution === 'definitive' && !cfg.reassignedPurchaseNumber) {
-          const pending = Math.max(0, item.quantity - (item.receivedQuantity ?? 0) - (item.shortageQuantity ?? 0));
-          const missingQty = pending - (cfg.receivedQty ?? 0);
-          if (missingQty > 0) {
-            await api.declareItemShortage(item.id, missingQty, 'Faltante definitivo informado por el distribuidor');
-          }
-        }
-      }
-
+        const pending = item.quantity - (item.receivedQuantity ?? 0) - (item.shortageQuantity ?? 0);
+        return cfg?.isMissing && cfg.delayedResolution === 'definitive' && !cfg.reassignedPurchaseNumber && pending > 0
+          ? [{ purchaseItemId: item.id, quantity: pending }] : [];
+      });
+      const updated = shortages.length ? await api.declarePurchaseShortages(purchase.id, shortages, shortageOperationId) : purchase;
+      const receiveResult = { purchase: updated, unblockedOrders: unblockedFromArrival };
       return receiveResult;
     },
     onSuccess: async (data) => {
+      const partialArrival = step === 'missing_checklist';
+      if (partialArrival) {
+        setPurchase(data.purchase);
+        setArrivalRecorded(true);
+        setArrivalUnits(totalReceivedUnits);
+        setUnblockedFromArrival(data.unblockedOrders ?? []);
+        setMissingConfig(current => Object.fromEntries(Object.entries(current).map(([id,cfg]) => [id, { ...cfg, receivedQty: 0, receivedQtyDraft: '0' }])));
+        setStep('missing_resolution');
+      }
       await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['purchase-impact', purchase.id] }),
         queryClient.invalidateQueries({ queryKey: queryKeys.openingReservations }),
         queryClient.invalidateQueries({ queryKey: queryKeys.storefrontProducts }),
         queryClient.invalidateQueries({ queryKey: ['storefront-product'] }),
@@ -643,6 +639,7 @@ export function ReceivePurchaseModal({
         queryClient.invalidateQueries({ queryKey: queryKeys.dashboard }),
         queryClient.invalidateQueries({ queryKey: queryKeys.products })
       ]);
+      if (partialArrival) return;
       onClose();
       if (data.unblockedOrders && data.unblockedOrders.length > 0) {
         onUnblocked(data.unblockedOrders);
@@ -662,6 +659,9 @@ export function ReceivePurchaseModal({
       className="p-0 sm:p-0 flex flex-col max-h-[92vh] overflow-hidden"
     >
       {/* Header del modal */}
+      <fieldset disabled={receiveMutation.isPending || reorderLoading} className="min-w-0 min-h-0 max-h-[90vh] flex flex-1 flex-col">
+      {arrivalRecorded ? <p role="status" className="mb-4 rounded-xl bg-emerald-50 p-3 text-sm font-semibold text-emerald-950">Llegada registrada: {arrivalUnits} unidades. Ahora revisá lo pendiente; cerrar esta pantalla conserva la llegada.</p> : null}
+      {impactQuery.isError ? <ErrorState error={impactQuery.error} onRetry={() => void impactQuery.refetch()} /> : null}
       <div className="flex items-start justify-between border-b border-ink-950/6 bg-white px-6 pt-6 pb-4 sm:px-8 sm:pt-8 shrink-0">
         <div>
           <div className="flex items-center gap-2">
@@ -725,7 +725,7 @@ export function ReceivePurchaseModal({
                   Llegó TODO completo
                 </h3>
                 <p className="mt-1 text-xs font-medium text-ink-700 leading-relaxed">
-                  Llegaron todas las {totalPendingUnits} unidades pendientes de los {purchase.items?.length ?? 0} productos pedidos.
+                  Llegó todo lo pendiente: {totalPendingUnits} u. en {pendingPurchaseItems.length} {pendingPurchaseItems.length === 1 ? 'producto' : 'productos'}.
                 </p>
                 <div className="mt-5 pt-3 border-t border-emerald-200/60 w-full flex items-center justify-between text-xs font-bold text-emerald-800">
                   <span>Ingresar todo a stock</span>
@@ -780,7 +780,7 @@ export function ReceivePurchaseModal({
                 Detalle de productos a ingresar
               </p>
               <div className="space-y-2 max-h-[48vh] overflow-y-auto pr-1 custom-scrollbar">
-                {(purchase.items ?? []).map((item) => {
+                {pendingPurchaseItems.map((item) => {
                   const pending = Math.max(0, item.quantity - (item.receivedQuantity ?? 0) - (item.shortageQuantity ?? 0));
                   return (
                     <div
@@ -825,7 +825,7 @@ export function ReceivePurchaseModal({
             </div>
 
             <div className="space-y-3 max-h-[50vh] overflow-y-auto pr-1 custom-scrollbar">
-              {(purchase.items ?? []).map((item) => {
+              {pendingPurchaseItems.map((item) => {
                 const pending = Math.max(0, item.quantity - (item.receivedQuantity ?? 0) - (item.shortageQuantity ?? 0));
                 const cfg: MissingItemConfig = missingConfig[item.id] || { isMissing: false, receivedQty: pending, delayedResolution: 'later' };
                 const invalidReceivedQty = cfg.isMissing && (cfg.receivedQty === null ||
@@ -841,10 +841,10 @@ export function ReceivePurchaseModal({
                         : "border-ink-950/8 bg-white hover:border-ink-950/20"
                     )}
                   >
-                    <div className="flex items-start justify-between gap-3">
+                    <div className="flex flex-col sm:flex-row items-start justify-between gap-3">
                       <label
                         htmlFor={`check-missing-${item.id}`}
-                        className="flex items-start gap-3 cursor-pointer flex-1 select-none"
+                        className="flex min-w-0 w-full sm:w-auto items-start gap-3 cursor-pointer flex-1 select-none"
                       >
                         <input
                           id={`check-missing-${item.id}`}
@@ -987,7 +987,8 @@ export function ReceivePurchaseModal({
                       <div>
                         <h4 className="text-base font-black text-ink-950">{item.productName}</h4>
                         <p className="text-xs font-bold text-rose-700 mt-0.5">
-                          Faltan {missingUnits} unidades {(cfg.receivedQty ?? 0) > 0 ? `(llegaron ${cfg.receivedQty} de ${pending})` : `(no llegó ninguna de ${pending})`}
+                          {isReassigned ? `Faltante con reposición en Compra #${cfg.reassignedPurchaseNumber}`
+                            : `Quedan pendientes ${missingUnits} unidades · Recibidas hasta ahora: ${item.receivedQuantity ?? 0} de ${item.quantity}`}
                         </p>
                       </div>
                       <span className="text-xs font-bold text-ink-500">
@@ -996,7 +997,7 @@ export function ReceivePurchaseModal({
                     </div>
 
                     {/* Pregunta: ¿El proveedor te lo envía después? */}
-                    <div className="rounded-xl bg-cream-50 p-3.5 border border-ink-950/6 space-y-2.5">
+                    {!isReassigned ? <div className="rounded-xl bg-cream-50 p-3.5 border border-ink-950/6 space-y-2.5">
                       <p className="text-xs font-black text-ink-900 uppercase tracking-wide">
                         ¿El proveedor te lo envía después?
                       </p>
@@ -1047,7 +1048,7 @@ export function ReceivePurchaseModal({
                           </p>
                         </button>
                       </div>
-                    </div>
+                    </div> : null}
 
                     {/* Si es Faltante Definitivo: Análisis de clientes reservados */}
                     {isDefinitive && (
@@ -1059,7 +1060,9 @@ export function ReceivePurchaseModal({
                               Reposición creada en <strong>Compra #{cfg.reassignedPurchaseNumber}</strong>. Las reservas de los clientes se trasladaron automáticamente.
                             </span>
                           </div>
-                        ) : reservedOrders.length === 0 ? (
+                        ) : impactQuery.isPending || impactQuery.isFetching || impactQuery.isError ? (
+                          <p role="status" className="text-sm text-ink-700">{impactQuery.isError ? 'No pudimos verificar los pedidos y reservas. Reintentá la consulta antes de resolver este faltante.' : 'Actualizando los pedidos y las reservas de este producto…'}</p>
+                        ) : reservedOrders.length === 0 && !(impactItem?.openingReservationsQuantity ?? 0) ? (
                           <div className="rounded-xl bg-slate-50 border border-slate-200 p-3 text-xs text-slate-700 flex items-center gap-2">
                             <Check className="size-4 text-slate-500 shrink-0" />
                             <span>
@@ -1072,7 +1075,7 @@ export function ReceivePurchaseModal({
                             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-rose-200 pb-2">
                               <div>
                                 <h5 className="text-xs font-black uppercase tracking-wide text-rose-950 flex items-center gap-1.5">
-                                  <span>⚠️</span> {reservedOrders.length} clientes esperando este producto
+                                  <span>⚠️</span> {reservedOrders.length > 0 ? `${reservedOrders.length} clientes esperando este producto` : `${impactItem?.openingReservationsQuantity ?? 0} unidades de reservas previas pendientes`}
                                 </h5>
                                 <p className="text-[11.5px] font-medium text-rose-900 mt-0.5">
                                   Para no dejarlos en el aire, elegí cómo proceder con sus pedidos:
@@ -1092,6 +1095,7 @@ export function ReceivePurchaseModal({
                                   });
                                   setNewSupplierName('');
                                   setNewExpectedAt('');
+                                  setError(null);
                                 }}
                                 className="shrink-0 text-xs font-black rounded-xl bg-white hover:bg-cream-100 border border-rose-300 text-rose-950"
                               >
@@ -1125,7 +1129,7 @@ export function ReceivePurchaseModal({
                                         <span>{formatMoney(ord.totalCents)}</span>
                                         <span>·</span>
                                         <span className={ord.paymentState === 'paid' ? "text-emerald-700 font-bold" : "text-amber-800 font-bold"}>
-                                          {ord.paymentState === 'paid' ? 'Pagado' : 'Pago pendiente'}
+                                          {ord.paymentState === 'paid' ? 'Pagado' : ord.paymentState === 'gifted' ? 'Cortesía' : ord.paymentState === 'refunded' ? 'Reintegrado' : 'Pago pendiente'}
                                         </span>
                                         {ord.customerPhone && (
                                           <>
@@ -1158,17 +1162,7 @@ export function ReceivePurchaseModal({
                                               <MessageCircle className="size-3.5" /> WhatsApp
                                             </a>
                                           )}
-                                          <Button
-                                            type="button"
-                                            variant="secondary"
-                                            size="sm"
-                                            loading={actionLoadingOrder === ord.orderId}
-                                            onClick={() => handleResolveOrder(ord)}
-                                            className="text-rose-700 hover:bg-rose-100/70 border border-rose-200 font-black text-xs rounded-xl shadow-xs"
-                                            title="Registrar en la base de datos la cancelación/reembolso y liberar la reserva"
-                                          >
-                                            {ord.paymentState === 'paid' ? 'Reembolsar y cancelar en app' : 'Cancelar pedido en app'}
-                                          </Button>
+                                          <p className="max-w-64 text-xs text-ink-700">Abrí el pedido para acordar su resolución. Registrá un reintegro sólo después de devolver el dinero.</p>
                                           <a
                                             href={`/app/pedidos?search=${ord.orderNumber}`}
                                             target="_blank"
@@ -1176,7 +1170,7 @@ export function ReceivePurchaseModal({
                                             className="text-[11px] font-bold text-ink-600 hover:text-ink-950 underline px-1"
                                             title="Abrir este pedido en una nueva pestaña"
                                           >
-                                            Ver pedido ↗
+                                            Gestionar pedido ↗
                                           </a>
                                         </>
                                       )}
@@ -1258,10 +1252,11 @@ export function ReceivePurchaseModal({
                   variant="primary"
                   size="md"
                   disabled={missingCount === 0 || hasInvalidMissingQuantity || receiveMutation.isPending}
-                  onClick={() => setStep('missing_resolution')}
+                  loading={receiveMutation.isPending}
+                  onClick={() => receiveMutation.mutate()}
                   className="font-black"
                 >
-                  Continuar ({missingCount} con faltante) →
+                  Continuar: registrar lo recibido ({totalReceivedUnits} u.) →
                 </Button>
               </div>
             </>
@@ -1272,26 +1267,26 @@ export function ReceivePurchaseModal({
               <Button
                 variant="ghost"
                 size="md"
-                onClick={() => setStep('missing_checklist')}
+                onClick={onClose}
                 disabled={receiveMutation.isPending}
               >
-                Volver a la lista
+                Cerrar
               </Button>
               <div className="flex flex-col sm:flex-row items-end sm:items-center gap-2">
                 {hasUnresolvedBlockers && (
                   <span className="text-xs font-bold text-rose-800 text-right">
-                    Resolvé los clientes esperando productos con faltante definitivo para finalizar.
+                    Resolvé los pedidos y las reservas previas de los productos con faltante definitivo para finalizar.
                   </span>
                 )}
                 <Button
                   variant="primary"
                   size="md"
                   loading={receiveMutation.isPending}
-                  disabled={hasUnresolvedBlockers || receiveMutation.isPending}
+                  disabled={hasUnresolvedBlockers || receiveMutation.isPending || reorderLoading || impactQuery.isFetching || impactQuery.isError}
                   onClick={() => receiveMutation.mutate()}
                   className="font-black bg-brand-500 hover:bg-brand-600"
                 >
-                  <CheckCircle2 className="size-4" /> Finalizar recepción ({totalReceivedUnits} u. a ingresar)
+                  <CheckCircle2 className="size-4" /> Finalizar revisión de faltantes
                 </Button>
               </div>
             </>
@@ -1300,6 +1295,7 @@ export function ReceivePurchaseModal({
       </div>
 
       {/* Mini-Modal de Creación de Reposición a otro proveedor */}
+      </fieldset>
       {reorderingItem && (
         <Modal
           isOpen={true}
@@ -1307,7 +1303,9 @@ export function ReceivePurchaseModal({
           ariaLabelledBy="reorder-title"
           maxWidth="sm"
         >
+          <fieldset disabled={reorderLoading} className="min-w-0">
           <div className="space-y-4">
+            {error ? <ErrorState error={error} /> : null}
             <div>
               <span className="text-xs font-black uppercase tracking-wider text-brand-600">
                 {reorderingItem.item.productName}
@@ -1356,7 +1354,7 @@ export function ReceivePurchaseModal({
                 variant="primary"
                 size="sm"
                 loading={reorderLoading}
-                disabled={!newSupplierName.trim()}
+                disabled={newSupplierName.trim().length < 2 || newSupplierName.trim().length > 120 || reorderLoading}
                 onClick={handleCreateReplacement}
                 className="font-black"
               >
@@ -1364,6 +1362,7 @@ export function ReceivePurchaseModal({
               </Button>
             </div>
           </div>
+          </fieldset>
         </Modal>
       )}
     </Modal>
@@ -1416,12 +1415,16 @@ function StockDetailDrawer({
   const [showCalculation, setShowCalculation] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
-  useEffect(() => {
-    setReorderPointStr(item.reorderPoint > 0 ? String(item.reorderPoint) : '');
-    setSafetyStockStr(item.safetyStock > 0 ? String(item.safetyStock) : '');
-    setLeadTimeDaysStr(String(item.leadTimeDays));
+  const [thresholdBaseline, setThresholdBaseline] = useState(() => ({
+    reorderPoint: item.reorderPoint, safetyStock: item.safetyStock, leadTimeDays: item.leadTimeDays
+  }));
+  const loadThresholds = (next: typeof thresholdBaseline) => {
+    setThresholdBaseline(next);
+    setReorderPointStr(next.reorderPoint > 0 ? String(next.reorderPoint) : '');
+    setSafetyStockStr(next.safetyStock > 0 ? String(next.safetyStock) : '');
+    setLeadTimeDaysStr(String(next.leadTimeDays));
     setSaveSuccess(false);
-  }, [item.id, item.reorderPoint, item.safetyStock, item.leadTimeDays]);
+  };
 
   const movementsQuery = useBusinessQuery({
     queryKey: queryKeys.movements(1),
@@ -1429,6 +1432,7 @@ function StockDetailDrawer({
   });
   const reservationsQuery = useBusinessQuery({
     queryKey: queryKeys.productReservations(item.id),
+    refetchOnWindowFocus: 'always',
     queryFn: (api) => api.listProductReservations(item.id)
   });
   const orderReservations = reservationsQuery.data ?? [];
@@ -1438,37 +1442,53 @@ function StockDetailDrawer({
   const reservedWithoutBag = inOrders - packedKnown - unverified;
   const otherReservations = Math.max(0, item.reserved - inOrders);
 
-  const reorderPoint = reorderPointStr === '' ? 0 : parseInt(reorderPointStr, 10);
-  const safetyStock = safetyStockStr === '' ? 0 : parseInt(safetyStockStr, 10);
+  const reorderPoint = reorderPointStr === '' ? 0 : Number(reorderPointStr);
+  const safetyStock = safetyStockStr === '' ? 0 : Number(safetyStockStr);
   const leadTimeDays = leadTimeDaysStr === '' ? item.leadTimeDays : parseInt(leadTimeDaysStr, 10);
 
+  const invalidThresholds = [reorderPointStr, safetyStockStr, leadTimeDaysStr].some(value => value !== '' && !isWholeUnitInput(value));
   const isDirty =
-    reorderPoint !== item.reorderPoint ||
-    safetyStock !== item.safetyStock ||
-    leadTimeDays !== item.leadTimeDays;
+    reorderPointStr !== (thresholdBaseline.reorderPoint > 0 ? String(thresholdBaseline.reorderPoint) : '') ||
+    safetyStockStr !== (thresholdBaseline.safetyStock > 0 ? String(thresholdBaseline.safetyStock) : '') ||
+    leadTimeDaysStr !== String(thresholdBaseline.leadTimeDays);
+  const thresholdConflict = item.reorderPoint !== thresholdBaseline.reorderPoint ||
+    item.safetyStock !== thresholdBaseline.safetyStock || item.leadTimeDays !== thresholdBaseline.leadTimeDays;
 
   const updateThresholds = useMutation({
-    mutationFn: async () => {
-      await (await getBusinessApi()).updateStockThresholds({
-        productId: item.id,
-        reorderPoint: Number(reorderPoint),
-        safetyStock: Number(safetyStock),
-        leadTimeDays: Number(leadTimeDays)
-      });
+    mutationFn: async (input: { productId: string; reorderPoint: number; safetyStock: number; leadTimeDays: number;
+      expected: { reorderPoint: number; safetyStock: number; leadTimeDays: number } }) => {
+      if (invalidThresholds || thresholdConflict) throw new AppError('validation', 'Revisá los avisos actualizados antes de guardar.');
+      await (await getBusinessApi()).updateStockThresholds(input);
     },
-    onSuccess: async () => {
+    onSuccess: async (_data, input) => {
+      const next = { reorderPoint: input.reorderPoint, safetyStock: input.safetyStock, leadTimeDays: input.leadTimeDays };
+      await queryClient.cancelQueries({ queryKey: queryKeys.inventory });
+      queryClient.setQueryData<InventoryItem[]>(queryKeys.inventory, current => current?.map(product => product.id === input.productId
+        ? { ...product, ...next, status: inventoryStatus(product.available, next.reorderPoint, next.safetyStock) } : product));
+      loadThresholds(next);
       setSaveSuccess(true);
-      setTimeout(() => setSaveSuccess(false), 3500);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: queryKeys.inventory }),
         queryClient.invalidateQueries({ queryKey: queryKeys.products }),
         queryClient.invalidateQueries({ queryKey: queryKeys.dashboard })
       ]);
-    }
+    },
+    onError: () => { void queryClient.invalidateQueries({ queryKey: queryKeys.inventory }); }
   });
 
-  const previewStatus = inventoryStatus(item.available, reorderPoint, safetyStock);
-  const ranges = getExclusiveRanges(reorderPoint, safetyStock);
+  useEffect(() => {
+    if (thresholdConflict && !isDirty && !updateThresholds.isPending) loadThresholds(item);
+  }, [item.id, item.reorderPoint, item.safetyStock, item.leadTimeDays, updateThresholds.isPending]);
+  useBlocker({ shouldBlockFn: () => updateThresholds.isPending || (isDirty &&
+    !window.confirm('Hay avisos de inventario sin guardar. ¿Salir y descartar esos cambios?')),
+    enableBeforeUnload: isDirty || updateThresholds.isPending });
+  const allowLeaving = () => !updateThresholds.isPending && (!isDirty ||
+    window.confirm('¿Descartar los cambios de avisos sin guardar?'));
+  const closeDetails = () => { if (allowLeaving()) onClose(); };
+
+
+  const previewStatus = inventoryStatus(item.available, invalidThresholds ? thresholdBaseline.reorderPoint : reorderPoint, invalidThresholds ? thresholdBaseline.safetyStock : safetyStock);
+  const ranges = getExclusiveRanges(invalidThresholds ? thresholdBaseline.reorderPoint : reorderPoint, invalidThresholds ? thresholdBaseline.safetyStock : safetyStock);
 
   const scaleSegments: { label: string; tone: string }[] = [
     { label: `OK: ${ranges.ok}`, tone: 'text-emerald-700' }
@@ -1494,7 +1514,7 @@ function StockDetailDrawer({
     : item.averageDailySales.toLocaleString('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 1 });
 
   return (
-    <Drawer isOpen={true} onClose={onClose} ariaLabelledBy="drawer-title">
+    <Drawer isOpen={true} onClose={closeDetails} ariaLabelledBy="drawer-title">
       {/* 1. CABECERA DEL PRODUCTO (Con botón cerrar de 44x44px target) */}
       <div className="flex items-start justify-between">
         <div className="min-w-0 pr-2">
@@ -1508,7 +1528,7 @@ function StockDetailDrawer({
         </div>
         <button
           className="grid size-11 shrink-0 place-items-center rounded-full hover:bg-cream-100 text-ink-600 transition -mr-2"
-          onClick={onClose}
+          onClick={closeDetails}
           aria-label="Cerrar panel"
         >
           <X className="size-5" />
@@ -1701,6 +1721,8 @@ function StockDetailDrawer({
                   type="text"
                   inputMode="numeric"
                   pattern="[0-9]*"
+                  aria-label="Aviso Comprar"
+                  disabled={updateThresholds.isPending}
                   value={reorderPointStr}
                   placeholder="0"
                   onFocus={(e) => e.target.select()}
@@ -1728,6 +1750,8 @@ function StockDetailDrawer({
                   type="text"
                   inputMode="numeric"
                   pattern="[0-9]*"
+                  aria-label="Aviso Urgente"
+                  disabled={updateThresholds.isPending}
                   value={safetyStockStr}
                   placeholder="0"
                   onFocus={(e) => e.target.select()}
@@ -1756,6 +1780,11 @@ function StockDetailDrawer({
             </div>
           </div>
 
+          {thresholdConflict && isDirty ? <div role="alert" className="mt-3 rounded-xl bg-amber-50 p-3 text-sm text-amber-950">
+            <p>Los avisos cambiaron mientras editabas. Conservamos tus números sin guardarlos.</p>
+            <Button variant="secondary" size="sm" className="mt-2" disabled={updateThresholds.isPending}
+              onClick={() => { if (window.confirm('¿Descartar tus números y cargar los avisos actualizados?')) loadThresholds(item); }}>Cargar avisos actualizados</Button>
+          </div> : null}
           {/* Vista previa y botón de guardado */}
           {isDirty && (
             <div className="mt-4 rounded-xl bg-amber-50/70 p-3 border border-amber-200/80">
@@ -1773,7 +1802,10 @@ function StockDetailDrawer({
                     variant="ghost"
                     size="sm"
                     className="min-h-10 px-3"
+                    disabled={updateThresholds.isPending}
                     onClick={() => {
+                      if (!window.confirm('¿Descartar los cambios de avisos sin guardar?')) return;
+                      setThresholdBaseline({ reorderPoint: item.reorderPoint, safetyStock: item.safetyStock, leadTimeDays: item.leadTimeDays });
                       setReorderPointStr(item.reorderPoint > 0 ? String(item.reorderPoint) : '');
                       setSafetyStockStr(item.safetyStock > 0 ? String(item.safetyStock) : '');
                       setLeadTimeDaysStr(String(item.leadTimeDays));
@@ -1786,8 +1818,9 @@ function StockDetailDrawer({
                     variant="dark"
                     size="sm"
                     className="min-h-10 px-4"
+                    disabled={invalidThresholds || thresholdConflict}
                     loading={updateThresholds.isPending}
-                    onClick={() => updateThresholds.mutate()}
+                    onClick={() => updateThresholds.mutate({ productId: item.id, reorderPoint, safetyStock, leadTimeDays, expected: thresholdBaseline })}
                   >
                     Guardar
                   </Button>
@@ -1796,6 +1829,7 @@ function StockDetailDrawer({
             </div>
           )}
 
+          {invalidThresholds ? <p role="alert" className="mt-3 text-sm font-semibold text-rose-800">Ingresá cantidades enteras, sin signos ni decimales.</p> : null}
           {saveSuccess && (
             <div className="mt-3 flex items-center gap-2 rounded-xl bg-emerald-50 p-2.5 text-xs font-bold text-emerald-800 border border-emerald-200">
               <Check className="size-4 text-emerald-700" />
@@ -1903,7 +1937,7 @@ function StockDetailDrawer({
             {recentMovements.length > 0 ? (
               <button
                 type="button"
-                onClick={onNavigateToMovements}
+                onClick={() => { if (allowLeaving()) onNavigateToMovements(); }}
                 className="flex items-center min-h-11 px-2 -mr-2 text-xs font-bold text-brand-600 hover:text-brand-700 active:opacity-75 transition"
               >
                 Ver todos →
@@ -1960,7 +1994,7 @@ function StockDetailDrawer({
       </div>
 
       <div className="mt-8 flex justify-end border-t border-ink-950/8 pt-4">
-        <Button variant="ghost" size="sm" className="min-h-10 px-4" onClick={onClose}>
+        <Button variant="ghost" size="sm" className="min-h-10 px-4" onClick={closeDetails}>
           Cerrar
         </Button>
       </div>
@@ -1970,11 +2004,12 @@ function StockDetailDrawer({
 
 export default function InventoryPage() {
   const searchParams = useSearch({ strict: false }) as { tab?: string };
-  const initialTab = searchParams.tab === 'compras' ? 'compras' : searchParams.tab === 'movimientos' ? 'movimientos' : 'stock';
+  const { user } = useAuth();
+  const initialTab = searchParams.tab === 'compras' && can(user, 'manage_purchases') ? 'compras' : searchParams.tab === 'movimientos' ? 'movimientos' : 'stock';
   const [activeTab, setActiveTab] = useState<'stock' | 'compras' | 'movimientos'>(initialTab);
 
-  const { user } = useAuth();
   const queryClient = useQueryClient();
+  useEffect(() => { setActiveTab(initialTab); }, [searchParams.tab]);
 
   // Stock State
   const [stockFilter, setStockFilter] = useState<'all' | 'attention' | 'ok'>('all');
@@ -2010,6 +2045,7 @@ export default function InventoryPage() {
   // Queries
   const inventoryQuery = useBusinessQuery({
     queryKey: queryKeys.inventory,
+    refetchOnWindowFocus: 'always',
     queryFn: (api) => api.listInventory()
   });
 
@@ -2020,6 +2056,7 @@ export default function InventoryPage() {
 
   const purchasesQuery = useBusinessQuery({
     queryKey: queryKeys.purchases(purchasesPage, purchaseFilter),
+    refetchOnWindowFocus: 'always',
     enabled: can(user, 'manage_purchases'),
     queryFn: (api) =>
       api.listPurchases(
@@ -2033,7 +2070,8 @@ export default function InventoryPage() {
   const adjustment = useMutation({
     mutationFn: async () => {
       if (!adjustItem) return;
-      const targetNum = parseInt(targetStock, 10);
+      if (!isWholeUnitInput(targetStock)) throw new AppError('validation', 'Ingresá una cantidad entera de unidades.');
+      const targetNum = Number(targetStock);
       const calculatedDelta = targetNum - adjustItem.onHand;
       await (await getBusinessApi()).adjustStock(
         adjustItem.id,
@@ -2167,6 +2205,7 @@ export default function InventoryPage() {
         </button>
       </nav>
 
+      {searchParams.tab === 'compras' && !can(user, 'manage_purchases') ? <p role="status" className="mb-4 rounded-xl bg-brand-50 p-3 text-sm font-semibold text-brand-950">Las compras las registra la dueña. Acá podés consultar el stock y las reservas de clientes.</p> : null}
       {/* TAB 1: STOCK */}
       {activeTab === 'stock' ? (
         <section aria-labelledby="stock-section-title">
@@ -2714,6 +2753,7 @@ export default function InventoryPage() {
       {/* DRAWER: Detalle y Configuración de Stock */}
       {detailItem ? (
         <StockDetailDrawer
+          key={detailItem.id}
           item={(inventoryQuery.data ?? []).find((i) => i.id === detailItem.id) ?? detailItem}
           onClose={() => setDetailItem(null)}
           onOpenAdjust={(target) => {
@@ -2765,7 +2805,7 @@ export default function InventoryPage() {
               </div>
             </Field>
 
-            {targetStock !== '' && !isNaN(Number(targetStock)) && Number(targetStock) !== adjustItem.onHand && (
+            {isWholeUnitInput(targetStock) && Number(targetStock) !== adjustItem.onHand && (
               <div className="rounded-xl bg-cream-100 p-3 text-xs font-bold text-ink-800 flex items-center justify-between">
                 <span>Ajuste físico: de {adjustItem.onHand} a {Number(targetStock)} unidades.</span>
                 <span className={cn('font-black text-sm', Number(targetStock) - adjustItem.onHand > 0 ? 'text-emerald-700' : 'text-red-700')}>
@@ -2790,6 +2830,7 @@ export default function InventoryPage() {
             </Field>
           </div>
 
+          {targetStock !== '' && !isWholeUnitInput(targetStock) ? <p role="alert" className="mt-3 text-sm font-semibold text-rose-800">Ingresá una cantidad entera, sin signos ni decimales.</p> : null}
           {targetStock === '' || Number(targetStock) === adjustItem.onHand || reason.trim().length < 3 ? (
             <p role="status" className="mt-4 text-sm font-semibold text-amber-900">{targetStock === '' ? 'Ingresá la cantidad real de unidades.' : Number(targetStock) === adjustItem.onHand ? 'La cantidad coincide con el stock actual: no hace falta corregirla.' : 'Explicá el motivo de la corrección (al menos 3 caracteres).'}</p>
           ) : null}
@@ -2799,7 +2840,7 @@ export default function InventoryPage() {
             <Button variant="ghost" onClick={() => setAdjustItem(null)} disabled={adjustment.isPending}>Cancelar</Button>
             <Button
               variant="dark"
-              disabled={targetStock === '' || isNaN(Number(targetStock)) || Number(targetStock) === adjustItem.onHand || Number(targetStock) < 0 || reason.trim().length < 3}
+              disabled={!isWholeUnitInput(targetStock) || Number(targetStock) === adjustItem.onHand || Number(targetStock) < 0 || reason.trim().length < 3}
               loading={adjustment.isPending}
               onClick={() => adjustment.mutate()}
             >

@@ -154,3 +154,5 @@ textarea:focus-visible {
     transition-duration: 0.01ms !important;
   }
 }
+/* A popover belonging to an underlying dialog cannot cover a nested dialog. */
+[data-modal-popover][inert] { visibility: hidden; }

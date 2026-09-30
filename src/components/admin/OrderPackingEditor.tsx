@@ -1,54 +1,78 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { AlertTriangle, ArrowRight, Lock, Minus, Package, Plus, Sparkles } from 'lucide-react';
+import { AlertTriangle, ArrowRight, Lock, Minus, Package, Plus } from 'lucide-react';
 import { queryKeys } from '@/app/query-keys';
 import { Button } from '@/components/ui/Button';
 import { ErrorState } from '@/components/ui/DataState';
-import { sanitizeIntegerInput } from '@/domain/inventory';
+import { sanitizeIntegerInput, isWholeUnitInput } from '@/domain/inventory';
+import { packingValues, packingVersion, packingDraftDirty, type PackingDraft, type PackingDraftStore } from '@/domain/packing-draft';
 import type { Order } from '@/domain/types';
 import { cn } from '@/lib/cn';
 import { getBusinessApi } from '@/services/business-api';
 
-const startingValues = (order: Order): Record<string, string> =>
-  Object.fromEntries(
-    order.items.map(item => {
-      const physical = item.physicalReservedQuantity ?? item.quantity;
-      const maxPacked = Math.min(item.quantity, physical);
-      if (item.packedQuantity != null) {
-        return [item.id, String(Math.min(item.packedQuantity, maxPacked))];
-      }
-      if (maxPacked === 0) {
-        return [item.id, '0'];
-      }
-      return [item.id, ''];
-    })
-  );
-
-export function OrderPackingEditor({ order }: { order: Order }) {
+export function OrderPackingEditor({ order: receivedOrder, draftStore, draftEpoch, onDraftChange, canReceivePurchases = true }: {
+  order: Order;
+  draftStore?: PackingDraftStore;
+  draftEpoch?: number;
+  onDraftChange?: () => void;
+  canReceivePurchases?: boolean;
+}) {
   const queryClient = useQueryClient();
-  const [values, setValues] = useState<Record<string, string>>(() => startingValues(order));
+  const [draft, setDraftState] = useState<PackingDraft>(() => draftStore?.get(receivedOrder.id)
+    ?? { baseline: receivedOrder, values: packingValues(receivedOrder) });
+  const draftRef = useRef(draft);
+  const persist = (next: PackingDraft) => {
+    draftRef.current = next;
+    draftStore?.set(next.baseline.id, next);
+    setDraftState(next);
+    onDraftChange?.();
+  };
   const [saved, setSaved] = useState(false);
-  const physicalByItem = Object.fromEntries(order.items.map(item => [item.id, item.physicalReservedQuantity ?? item.quantity]));
-  const physicalSignature = order.items.map(item => `${item.id}:${physicalByItem[item.id]}`).join('|');
-  const previousSnapshot = useRef({ id: order.id, revision: order.packingRevision, physicalByItem });
+  useEffect(() => {
+    const cached = draftStore?.get(receivedOrder.id);
+    if (cached && cached !== draftRef.current) {
+      draftRef.current = cached;
+      setDraftState(cached);
+    }
+  }, [draftEpoch, receivedOrder.id]);
+  // A successful save is authoritative even while a stale list response is still on screen.
+  const order = (receivedOrder.packingRevision ?? 0) < (draft.baseline.packingRevision ?? 0)
+    ? draft.baseline : receivedOrder;
+  const values = draft.values;
+  const conflict = packingVersion(order) !== packingVersion(draft.baseline);
+  const physicalSignature = order.items.map(item => `${item.id}:${item.physicalReservedQuantity ?? item.quantity}`).join('|');
 
   useEffect(() => {
-    const previous = previousSnapshot.current;
-    if (previous.id !== order.id || previous.revision !== order.packingRevision) {
-      setValues(startingValues(order));
-    } else if (order.items.some(item => previous.physicalByItem[item.id] !== physicalByItem[item.id])) {
+    const current = draftRef.current;
+    if (current.baseline.id !== order.id) {
+      persist(draftStore?.get(order.id) ?? { baseline: order, values: packingValues(order) });
       setSaved(false);
-      setValues(current => Object.fromEntries(order.items.map(item => {
-        const before = previous.physicalByItem[item.id] ?? 0;
-        const now = physicalByItem[item.id] ?? 0;
-        const value = current[item.id] ?? '';
-        // Un 0 impuesto por el candado no equivale a un conteo físico hecho por la operadora.
-        return [item.id, before === 0 && now > 0 && item.packedQuantity == null && value === '0' ? '' : value];
-      })));
+      return;
     }
-    previousSnapshot.current = { id: order.id, revision: order.packingRevision, physicalByItem };
-  }, [order.id, order.packingRevision, physicalSignature]);
+    if (current.saving) return;
+    if (packingVersion(current.baseline) !== packingVersion(order)) {
+      if (!packingDraftDirty(current)) {
+        persist({ baseline: order, values: packingValues(order) });
+        setSaved(false);
+      }
+      return;
+    }
+    const before = current.baseline;
+    if (before.items.some(item => (item.physicalReservedQuantity ?? item.quantity) !==
+      (order.items.find(next => next.id === item.id)?.physicalReservedQuantity ?? item.quantity))) {
+      const nextValues = { ...current.values };
+      for (const item of order.items) {
+        const old = before.items.find(previous => previous.id === item.id);
+        if ((old?.physicalReservedQuantity ?? old?.quantity) === 0 &&
+          (item.physicalReservedQuantity ?? item.quantity) > 0 && item.packedQuantity == null && nextValues[item.id] === '0') {
+          nextValues[item.id] = '';
+        }
+      }
+      persist({ baseline: order, values: nextValues });
+      setSaved(false);
+    }
+  }, [order.id, order.packingRevision, packingVersion(order), physicalSignature]);
 
   const hasUnknown = order.items.some(item => item.packedQuantity == null);
 
@@ -67,59 +91,45 @@ export function OrderPackingEditor({ order }: { order: Order }) {
     const physical = item.physicalReservedQuantity ?? item.quantity;
     const maxPacked = Math.min(item.quantity, physical);
     const value = values[item.id] ?? '';
-    return !/^(0|[1-9][0-9]*)$/.test(value) || Number(value) > maxPacked;
+    return !isWholeUnitInput(value) || Number(value) > maxPacked;
   });
 
   const changed = order.items.some(item =>
     (values[item.id] ?? '') !== (item.packedQuantity == null ? '' : String(item.packedQuantity))
   );
 
-  const canFillAllAvailable = hasAnyPhysicalStock && order.items.some(item => {
-    const physical = item.physicalReservedQuantity ?? item.quantity;
-    const maxPacked = Math.min(item.quantity, physical);
-    return maxPacked > 0 && (values[item.id] ?? '') !== String(maxPacked);
-  });
-
   const save = useMutation({
-    mutationFn: async () => (await getBusinessApi()).saveOrderPacking(
-      order.id,
-      order.items.map(item => ({ orderItemId: item.id, packedQuantity: Number(values[item.id] || 0) })),
-      order.packingRevision ?? 0
+    mutationFn: async (request: PackingDraft) => (await getBusinessApi()).saveOrderPacking(
+      request.baseline.id,
+      request.baseline.items.map(item => ({ orderItemId: item.id, packedQuantity: Number(request.values[item.id]) })),
+      request.baseline.packingRevision ?? 0
     ),
-    onSuccess: async () => {
-      setSaved(true);
+    onSuccess: async (updated, request) => {
+      const next = { baseline: updated, values: packingValues(updated) };
+      // Also update the page cache if the card was collapsed while the request was in flight.
+      draftStore?.set(request.baseline.id, next);
+      if (draftRef.current.baseline.id === request.baseline.id) {
+        persist(next);
+        setSaved(true);
+      } else onDraftChange?.();
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: queryKeys.ordersRoot }),
         queryClient.invalidateQueries({ queryKey: queryKeys.productReservationsRoot })
       ]);
+    },
+    onError: (error, request) => {
+      const next = { ...request, saving: false, error };
+      draftStore?.set(request.baseline.id, next);
+      if (draftRef.current.baseline.id === request.baseline.id) persist(next);
+      else onDraftChange?.();
     }
   });
-
-  const fillAllAvailable = () => {
+  const busy = save.isPending || Boolean(draft.saving);
+  const setValues = (update: (current: Record<string, string>) => Record<string, string>) => {
+    if (draftRef.current.saving) return;
     setSaved(false);
     save.reset();
-    setValues(previous =>
-      Object.fromEntries(
-        order.items.map(item => {
-          const physical = item.physicalReservedQuantity ?? item.quantity;
-          const maxPacked = Math.min(item.quantity, physical);
-          return [item.id, maxPacked > 0 ? String(maxPacked) : (previous[item.id] ?? '0')];
-        })
-      )
-    );
-  };
-
-  const fillZeros = () => {
-    setSaved(false);
-    save.reset();
-    setValues(previous =>
-      Object.fromEntries(
-        order.items.map(item => [
-          item.id,
-          previous[item.id] !== '' ? previous[item.id]! : '0'
-        ])
-      )
-    );
+    persist({ ...draftRef.current, error: undefined, values: update(draftRef.current.values) });
   };
 
   const hasIncomingItems = order.items.some(item => (item.incomingQuantity ?? 0) > 0);
@@ -142,17 +152,26 @@ export function OrderPackingEditor({ order }: { order: Order }) {
         ) : null}
       </div>
 
+      {conflict ? (
+        <div role="alert" className="mt-3 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
+          <p>El pedido cambió mientras lo editabas. Conservamos tu conteo sin guardarlo. Revisá el armado actualizado antes de continuar.</p>
+          <Button variant="secondary" size="sm" className="mt-2" disabled={busy}
+            onClick={() => { if (window.confirm('¿Descartar tu conteo sin guardar y cargar el armado actualizado?')) {
+              persist({ baseline: order, values: packingValues(order) }); setSaved(false); save.reset();
+            } }}>Cargar armado actualizado</Button>
+        </div>
+      ) : null}
       <div className="mt-4 space-y-3">
         {order.items.map(item => {
           const physical = item.physicalReservedQuantity ?? item.quantity;
           const incoming = item.incomingQuantity ?? 0;
           const uncovered = item.uncoveredQuantity ?? 0;
           const maxPacked = Math.min(item.quantity, physical);
-          const isLocked = maxPacked === 0;
+          const isLocked = maxPacked === 0 && (values[item.id] ?? '0') === '0';
           const isPartial = physical > 0 && physical < item.quantity;
           const value = values[item.id] ?? (isLocked ? '0' : '');
           const isEmpty = !isLocked && value === '';
-          const invalid = !isLocked && value !== '' && (!/^(0|[1-9][0-9]*)$/.test(value) || Number(value) > maxPacked);
+          const invalid = !isLocked && value !== '' && (!isWholeUnitInput(value) || Number(value) > maxPacked);
 
           return (
             <div
@@ -215,8 +234,8 @@ export function OrderPackingEditor({ order }: { order: Order }) {
                           const current = Number(value || 0);
                           setValues(prev => ({ ...prev, [item.id]: String(Math.max(0, current - 1)) }));
                         }}
-                        disabled={Number(value || 0) <= 0 || save.isPending}
-                        className="inline-flex size-8 items-center justify-center rounded-lg border border-ink-950/15 bg-white text-ink-800 transition hover:bg-cream-100 disabled:opacity-30 disabled:pointer-events-none"
+                        disabled={!isWholeUnitInput(value) || Number(value) <= 0 || busy}
+                        className="inline-flex size-11 items-center justify-center rounded-lg border border-ink-950/15 bg-white text-ink-800 transition hover:bg-cream-100 disabled:opacity-30 disabled:pointer-events-none"
                         aria-label={`Restar una unidad de ${item.productName}`}
                       >
                         <Minus className="size-3.5" />
@@ -237,12 +256,12 @@ export function OrderPackingEditor({ order }: { order: Order }) {
                             [item.id]: sanitizeIntegerInput(event.target.value)
                           }));
                         }}
-                        disabled={save.isPending}
+                        disabled={busy}
                         aria-label={`Unidades en bolsita de ${item.productName}`}
                         aria-describedby={`packing-limit-${item.id}`}
                         aria-invalid={invalid || isEmpty}
                         className={cn(
-                          'h-9 w-14 rounded-lg border bg-white px-1 text-center text-sm font-black text-ink-950 focus:outline-none focus:ring-2',
+                          'h-11 w-16 rounded-lg border bg-white px-1 text-center text-sm font-black text-ink-950 focus:outline-none focus:ring-2',
                           invalid
                             ? 'border-rose-500 focus:ring-rose-400/30'
                             : isEmpty
@@ -259,8 +278,8 @@ export function OrderPackingEditor({ order }: { order: Order }) {
                           const current = Number(value || 0);
                           setValues(prev => ({ ...prev, [item.id]: String(Math.min(maxPacked, current + 1)) }));
                         }}
-                        disabled={Number(value || 0) >= maxPacked || save.isPending}
-                        className="inline-flex size-8 items-center justify-center rounded-lg border border-ink-950/15 bg-white text-ink-800 transition hover:bg-cream-100 disabled:opacity-30 disabled:pointer-events-none"
+                        disabled={(value !== '' && !isWholeUnitInput(value)) || Number(value || 0) >= maxPacked || busy}
+                        className="inline-flex size-11 items-center justify-center rounded-lg border border-ink-950/15 bg-white text-ink-800 transition hover:bg-cream-100 disabled:opacity-30 disabled:pointer-events-none"
                         aria-label={`Sumar una unidad de ${item.productName}`}
                       >
                         <Plus className="size-3.5" />
@@ -280,7 +299,9 @@ export function OrderPackingEditor({ order }: { order: Order }) {
 
               {invalid ? (
                 <p className="mt-2 text-xs font-semibold text-rose-800">
-                  Ingresá entre 0 y {maxPacked} unidades de este pedido reservadas físicamente.
+                  {maxPacked === 0 ? 'Ya no hay unidades físicas reservadas para este producto. Conservamos tu conteo; revisá el pedido antes de guardar.'
+                    : !isWholeUnitInput(value) ? `Usá un número entero sin signos, entre 0 y ${maxPacked}.`
+                      : `Ingresá entre 0 y ${maxPacked} unidades de este pedido reservadas físicamente.`}
                 </p>
               ) : null}
             </div>
@@ -294,10 +315,10 @@ export function OrderPackingEditor({ order }: { order: Order }) {
         </p>
       ) : null}
 
-      {save.error ? (
+      {save.error || draft.error ? (
         <div className="mt-3">
           <ErrorState
-            error={save.error}
+            error={save.error ?? draft.error}
             onRetry={() => void queryClient.invalidateQueries({ queryKey: queryKeys.ordersRoot })}
           />
         </div>
@@ -313,7 +334,7 @@ export function OrderPackingEditor({ order }: { order: Order }) {
 
       {/* Pie de acción inteligente */}
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-ink-950/6 pt-3">
-        {!hasAnyPhysicalStock ? (
+        {!hasAnyPhysicalStock && !hasInvalid ? (
           <div className={cn(
             'flex w-full flex-wrap items-center justify-between gap-3 rounded-xl border p-3.5',
             hasUncoveredItems
@@ -336,10 +357,10 @@ export function OrderPackingEditor({ order }: { order: Order }) {
               to="/app/inventario"
               target="_blank"
               rel="noopener noreferrer"
-              search={{ tab: hasIncomingItems ? 'compras' : 'stock' }}
+              search={{ tab: hasIncomingItems && canReceivePurchases ? 'compras' : 'stock' }}
               className="inline-flex min-h-10 items-center gap-1.5 rounded-xl bg-brand-600 px-3.5 py-1.5 text-xs font-black text-white shadow-xs hover:bg-brand-700 transition"
             >
-              <span>{hasIncomingItems ? 'Ver compra en Inventario' : 'Revisar Inventario'}</span>
+              <span>{hasIncomingItems && canReceivePurchases ? 'Ver compra en Inventario' : 'Revisar Inventario'}</span>
               <ArrowRight className="size-3.5" />
             </Link>
           </div>
@@ -351,43 +372,34 @@ export function OrderPackingEditor({ order }: { order: Order }) {
                   to="/app/inventario"
                   target="_blank"
                   rel="noopener noreferrer"
-                  search={{ tab: 'compras' }}
+                  search={{ tab: canReceivePurchases ? 'compras' : 'stock' }}
                   className="inline-flex items-center gap-1.5 text-xs font-bold text-brand-800 hover:text-brand-950 hover:underline"
                 >
                   <Package className="size-3.5 text-brand-600" />
-                  <span>Hay productos en camino. Ver compra en Inventario →</span>
+                  <span>{canReceivePurchases ? 'Hay productos en camino. Ver compra en Inventario →' : 'Hay productos en camino. La dueña puede recibir la compra en Inventario.'}</span>
                 </Link>
               ) : null}
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
-              {canFillAllAvailable ? (
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  onClick={fillAllAvailable}
-                  disabled={save.isPending}
-                  className="inline-flex items-center gap-1.5"
-                >
-                  <Sparkles className="size-3.5 text-brand-600" />
-                  <span>Ya guardé todo lo reservado</span>
-                </Button>
-              ) : null}
-              {hasEmpty ? (
-                <Button type="button" variant="secondary" size="sm" onClick={fillZeros} disabled={save.isPending}>
-                  Completar vacíos con 0
-                </Button>
-              ) : null}
+              {packingDraftDirty(draft) && !conflict ? <Button type="button" variant="ghost" size="sm" disabled={busy}
+                onClick={() => { if (window.confirm('¿Descartar las cantidades que escribiste sin guardar?')) {
+                  persist({ baseline: order, values: packingValues(order) }); setSaved(false); save.reset();
+                } }}>Descartar cambios</Button> : null}
               <Button
                 type="button"
                 variant="dark"
                 size="sm"
-                onClick={() => save.mutate()}
-                disabled={hasInvalid || hasEmpty || !changed || save.isPending}
-                loading={save.isPending}
+                onClick={() => {
+                  if (draftRef.current.saving || conflict || hasInvalid || hasEmpty || !changed) return;
+                  const request = { ...draftRef.current, error: undefined, baseline: order, saving: true };
+                  persist(request);
+                  save.mutate(request);
+                }}
+                disabled={conflict || hasInvalid || hasEmpty || !changed || busy}
+                loading={busy}
               >
-                {save.isPending ? 'Guardando...' : !changed && !hasUnknown ? 'Sin cambios' : 'Guardar armado'}
+                {busy ? 'Guardando...' : !changed && !hasUnknown ? 'Sin cambios' : 'Guardar armado'}
               </Button>
             </div>
           </>

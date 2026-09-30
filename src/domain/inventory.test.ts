@@ -78,8 +78,11 @@ describe('inventory domain logic', () => {
     expect(sanitizeIntegerInput('100')).toBe('100');
     expect(sanitizeIntegerInput('')).toBe('');
     expect(sanitizeIntegerInput('7')).toBe('7');
-    expect(sanitizeIntegerInput('5a')).toBe('5');
-    expect(sanitizeIntegerInput('abc')).toBe('');
+    expect(sanitizeIntegerInput('5a')).toBe('5a');
+    expect(sanitizeIntegerInput('abc')).toBe('abc');
+    expect(sanitizeIntegerInput('1,5')).toBe('1,5');
+    expect(sanitizeIntegerInput('1.5')).toBe('1.5');
+    expect(sanitizeIntegerInput('-2')).toBe('-2');
   });
 
   it('sanitizes decimal and percentage input cleanly', () => {

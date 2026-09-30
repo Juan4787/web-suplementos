@@ -1,8 +1,9 @@
-import type { PropsWithChildren } from 'react';
+import { useState, type PropsWithChildren } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { demoOrders } from '@/data/demo-data';
+import type { PackingDraftStore } from '@/domain/packing-draft';
 import type { Order } from '@/domain/types';
 import { OrderPackingEditor } from './OrderPackingEditor';
 
@@ -73,7 +74,8 @@ it('requires an explicit count for available products and locks units in transit
   expect(saveButton).toBeDisabled();
 
   // Fill empty available fields
-  fireEvent.click(screen.getByRole('button', { name: 'Completar vacíos con 0' }));
+  fireEvent.change(screen.getByRole('textbox', { name: 'Unidades en bolsita de Omapure' }), { target: { value: '0' } });
+  fireEvent.change(bComplex, { target: { value: '0' } });
   expect(bComplex).toHaveValue('0');
 
   // Exceeding physical max disables save button
@@ -98,7 +100,7 @@ it('requires an explicit count for available products and locks units in transit
   client.clear();
 });
 
-it('completes only empty counts and does not erase units already recorded or typed', async () => {
+it('keeps counts independent and requires explicit input for each product', async () => {
   const order = sampleOrder();
   order.items[0]!.packedQuantity = 1;
   order.items[0]!.physicalReservedQuantity = 3;
@@ -113,7 +115,7 @@ it('completes only empty counts and does not erase units already recorded or typ
   const second = screen.getByRole('textbox', { name: 'Unidades en bolsita de Omapure' });
   expect(screen.getByText('/ 2 máximo')).toBeInTheDocument();
   fireEvent.change(first, { target: { value: '2' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Completar vacíos con 0' }));
+  fireEvent.change(screen.getByRole('textbox', { name: 'Unidades en bolsita de Omapure' }), { target: { value: '0' } });
   expect(first).toHaveValue('2');
   expect(second).toHaveValue('0');
   fireEvent.change(first, { target: { value: '3' } });
@@ -170,7 +172,7 @@ it('renders locked rows with 0 en bolsita and direct inventory link when all ite
   client.clear();
 });
 
-it('supports stepper buttons, quick fill of all available units, and transitions to Sin cambios', async () => {
+it('offers one save action and allows touch steppers without implicitly filling other products', async () => {
   const order = sampleOrder();
   api.saveOrderPacking.mockResolvedValue({ ...order, packingRevision: 1 });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -181,18 +183,20 @@ it('supports stepper buttons, quick fill of all available units, and transitions
   );
 
   // Quick fill all available
-  const fillAllButton = screen.getByRole('button', { name: /Ya guardé todo lo reservado/i });
-  expect(fillAllButton).toBeInTheDocument();
-  fireEvent.click(fillAllButton);
+  expect(screen.queryByRole('button', { name: /Ya guardé todo lo reservado/i })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Sumar una unidad de B Complex' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Sumar una unidad de Omapure' }));
 
   const bComplex = screen.getByRole('textbox', { name: 'Unidades en bolsita de B Complex' });
   const omapure = screen.getByRole('textbox', { name: 'Unidades en bolsita de Omapure' });
   expect(bComplex).toHaveValue('1');
   expect(omapure).toHaveValue('1');
+  expect(screen.getAllByRole('button', { name: 'Descartar cambios' })).toHaveLength(1);
 
   // Test decrement stepper on B Complex
   const minusB = screen.getByRole('button', { name: 'Restar una unidad de B Complex' });
   fireEvent.click(minusB);
+  fireEvent.change(bComplex, { target: { value: '0' } });
   expect(bComplex).toHaveValue('0');
 
   // Test increment stepper on B Complex
@@ -276,8 +280,9 @@ it('reemplaza el cero previo al escribir una unidad y guarda el número visible'
   api.saveOrderPacking.mockResolvedValue({ ...order, packingRevision: 1 });
   render(<QueryClientProvider client={client}><OrderPackingEditor order={order} /></QueryClientProvider>);
 
-  fireEvent.click(screen.getByRole('button', { name: 'Completar vacíos con 0' }));
+  fireEvent.change(screen.getByRole('textbox', { name: 'Unidades en bolsita de Omapure' }), { target: { value: '0' } });
   const bComplex = screen.getByRole('textbox', { name: 'Unidades en bolsita de B Complex' });
+  fireEvent.change(bComplex, { target: { value: '0' } });
   expect(bComplex).toHaveValue('0');
   fireEvent.change(bComplex, { target: { value: '01' } });
   expect(bComplex).toHaveValue('1');
@@ -338,5 +343,100 @@ it('opens inventory links in a new tab with target _blank and noopener noreferre
   expect(incomingLink).toHaveAttribute('rel', 'noopener noreferrer');
   expect(incomingLink).toHaveAttribute('href', '/app/inventario');
 
+  client.clear();
+});
+
+it('preserves a dirty count on an external revision and never silently adopts the new revision', () => {
+  const order = sampleOrder();
+  const client = new QueryClient();
+  const { rerender } = render(<QueryClientProvider client={client}><OrderPackingEditor order={order} /></QueryClientProvider>);
+  const count = screen.getByRole('textbox', { name: 'Unidades en bolsita de B Complex' });
+  fireEvent.change(count, { target: { value: '1' } });
+  const changed = { ...order, packingRevision: 1, items: order.items.map(item => ({ ...item, packedQuantity: 0 })) };
+  rerender(<QueryClientProvider client={client}><OrderPackingEditor order={changed} /></QueryClientProvider>);
+  expect(count).toHaveValue('1');
+  expect(screen.getByRole('alert')).toHaveTextContent('El pedido cambió');
+  expect(screen.getByRole('button', { name: 'Guardar armado' })).toBeDisabled();
+  vi.spyOn(window, 'confirm').mockReturnValue(false);
+  fireEvent.click(screen.getByRole('button', { name: 'Cargar armado actualizado' }));
+  expect(count).toHaveValue('1');
+  vi.mocked(window.confirm).mockReturnValue(true);
+  fireEvent.click(screen.getByRole('button', { name: 'Cargar armado actualizado' }));
+  expect(count).toHaveValue('0');
+  expect(api.saveOrderPacking).not.toHaveBeenCalled();
+  client.clear();
+});
+
+it('retains empty and malformed drafts across unmounts, and keeps a reduced physical limit actionable', () => {
+  const order = sampleOrder();
+  const store: PackingDraftStore = new Map();
+  const client = new QueryClient();
+  const view = render(<QueryClientProvider client={client}><OrderPackingEditor order={order} draftStore={store} /></QueryClientProvider>);
+  fireEvent.change(screen.getByRole('textbox', { name: 'Unidades en bolsita de B Complex' }), { target: { value: '1,5' } });
+  view.unmount();
+  const next = render(<QueryClientProvider client={client}><OrderPackingEditor order={order} draftStore={store} /></QueryClientProvider>);
+  const count = screen.getByRole('textbox', { name: 'Unidades en bolsita de B Complex' });
+  expect(count).toHaveValue('1,5');
+  expect(screen.getByRole('button', { name: 'Sumar una unidad de B Complex' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Restar una unidad de B Complex' })).toBeDisabled();
+  fireEvent.change(count, { target: { value: '1' } });
+  const reduced = { ...order, items: order.items.map(item => ({ ...item, physicalReservedQuantity: 0 })) };
+  next.rerender(<QueryClientProvider client={client}><OrderPackingEditor order={reduced} draftStore={store} /></QueryClientProvider>);
+  expect(count).toHaveValue('1');
+  expect(screen.getByText(/Ya no hay unidades físicas reservadas/)).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Guardar armado' })).toBeDisabled();
+  fireEvent.change(count, { target: { value: '' } });
+  fireEvent.blur(count);
+  expect(count).toHaveValue('');
+  client.clear();
+});
+
+it('uses the authoritative save response, stays locked during saving and preserves input after failure', async () => {
+  const order = sampleOrder();
+  let reject!: (error: Error) => void;
+  api.saveOrderPacking.mockImplementationOnce(() => new Promise((_resolve, fail) => { reject = fail; }));
+  const client = new QueryClient();
+  render(<QueryClientProvider client={client}><OrderPackingEditor order={order} /></QueryClientProvider>);
+  fireEvent.change(screen.getByRole('textbox', { name: 'Unidades en bolsita de B Complex' }), { target: { value: '1' } });
+  fireEvent.change(screen.getByRole('textbox', { name: 'Unidades en bolsita de Omapure' }), { target: { value: '0' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar armado' }));
+  await waitFor(() => expect(api.saveOrderPacking).toHaveBeenCalledTimes(1));
+  expect(screen.getByRole('textbox', { name: 'Unidades en bolsita de B Complex' })).toBeDisabled();
+  await act(async () => reject(new Error('Sin conexión')));
+  expect(screen.getByRole('textbox', { name: 'Unidades en bolsita de B Complex' })).toHaveValue('1');
+  expect(screen.getByRole('button', { name: 'Guardar armado' })).toBeEnabled();
+  api.saveOrderPacking.mockResolvedValueOnce({ ...order, packingRevision: 1,
+    items: order.items.map(item => ({ ...item, packedQuantity: item.id === 'line-one' ? 1 : 0 })) });
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar armado' }));
+  expect(await screen.findByRole('button', { name: 'Sin cambios' })).toBeDisabled();
+  expect(screen.getByRole('textbox', { name: 'Unidades en bolsita de B Complex' })).toHaveValue('1');
+  expect(screen.queryByText(/El pedido cambió/)).not.toBeInTheDocument();
+  client.clear();
+});
+
+it('shows an in-flight save failure after collapsing and reopening the editor without losing its draft', async () => {
+  const order = sampleOrder();
+  const drafts: PackingDraftStore = new Map();
+  const client = new QueryClient();
+  let reject!: (error: Error) => void;
+  api.saveOrderPacking.mockImplementationOnce(() => new Promise((_resolve, fail) => { reject = fail; }));
+  function Host({ show }: { show: boolean }) {
+    const [epoch, setEpoch] = useState(0);
+    return <QueryClientProvider client={client}>{show ? <OrderPackingEditor order={order} draftStore={drafts}
+      draftEpoch={epoch} onDraftChange={() => setEpoch(n => n + 1)} /> : null}</QueryClientProvider>;
+  }
+  const view = render(<Host show />);
+  fireEvent.change(screen.getByRole('textbox', { name: 'Unidades en bolsita de B Complex' }), { target: { value: '1' } });
+  fireEvent.change(screen.getByRole('textbox', { name: 'Unidades en bolsita de Omapure' }), { target: { value: '0' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar armado' }));
+  await waitFor(() => expect(api.saveOrderPacking).toHaveBeenCalledTimes(1));
+  view.rerender(<Host show={false} />);
+  view.rerender(<Host show />);
+  expect(screen.getByRole('textbox', { name: 'Unidades en bolsita de B Complex' })).toBeDisabled();
+  await act(async () => reject(new Error('Sin conexión')));
+  expect(await screen.findByText('No pudimos completar la acción.')).toBeVisible();
+  expect(screen.getByRole('textbox', { name: 'Unidades en bolsita de B Complex' })).toHaveValue('1');
+  expect(screen.getByRole('button', { name: 'Guardar armado' })).toBeEnabled();
+  expect(api.saveOrderPacking).toHaveBeenCalledTimes(1);
   client.clear();
 });

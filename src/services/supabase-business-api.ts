@@ -32,9 +32,14 @@ const configurationError = (): AppError =>
 export const translateDatabaseError = (error: { message?: string; code?: string }): AppError => {
   const diagnostic = `${error.code ?? ''} ${error.message ?? ''}`;
   const businessMessages: Record<string, [string, string]> = {
+    PURCHASE_RECEIPT_REQUIRED: ['Primero falta registrar la llegada real de esta compra.', 'Volvé a abrir la recepción y anotá cuántas unidades llegaron antes de pedir una reposición.'],
+    PURCHASE_SHORTAGE_UNRESOLVED: ['Todavía hay clientes o reservas previas esperando estas unidades.', 'Revisá los pedidos afectados o asigná una reposición antes de cerrar el faltante.'],
+    PURCHASE_SHORTAGE_CHANGED: ['Las unidades pendientes de esta compra cambiaron.', 'Cerrá la recepción y volvé a abrirla para revisar lo que ya quedó registrado.'],
+    INSUFFICIENT_TARGET_CAPACITY: ['La reposición no alcanza para las reservas pendientes.', 'Revisá las cantidades de la compra de reposición antes de transferir las reservas.'],
     OPENING_RESERVATION_NOT_RECEIVED: ['No hay suficientes unidades recibidas de esta reserva.', 'Registrá primero la recepción de la compra o revisá si otra persona ya anotó la entrega.'],
     OPENING_RESERVATION_CHANGED: ['Esta reserva cambió o ya fue resuelta.', 'Actualizá Inventario y revisá las unidades pendientes antes de continuar.'],
     INVALID_OPENING_RESERVATION_ACTION: ['La cantidad de la reserva no es válida.', 'Ingresá unidades enteras, entre una y la cantidad pendiente.'],
+    STOCK_THRESHOLDS_CHANGED: ['Los avisos de este producto cambiaron mientras editabas.', 'Cargá los avisos actualizados y revisá tus números antes de guardar.'],
     STALE_STOCK_COUNT: ['El stock cambió mientras hacías el conteo.', 'Cerrá esta corrección y volvé a abrirla para revisar el stock actualizado antes de guardar.'],
     CANNOT_DELIVER_ORDER_WAITING_FOR_STOCK: ['Todavía falta mercadería para entregar este pedido.', 'Registrá la recepción de la compra pendiente en Inventario antes de continuar.'],
     IDEMPOTENCY_KEY_REUSE_MISMATCH: ['Los datos cambiaron respecto del intento anterior.', 'Revisá si la operación ya aparece en Pedidos o Compras antes de iniciar otra.'],
@@ -304,10 +309,11 @@ export const supabaseBusinessApi: BusinessApi = {
       ...(expectedOnHand === undefined ? {} : { p_expected_on_hand: expectedOnHand })
     });
   },
-  updateStockThresholds: async ({ productId, reorderPoint, safetyStock, leadTimeDays }) => {
-    await rpc('update_stock_thresholds', {
+  updateStockThresholds: async ({ productId, reorderPoint, safetyStock, leadTimeDays, expected }) => {
+    await rpc(expected ? 'update_stock_thresholds_checked' : 'update_stock_thresholds', {
       p_product_id: productId, p_reorder_point: reorderPoint,
-      p_safety_stock: safetyStock, p_lead_time_days: leadTimeDays ?? null
+      p_safety_stock: safetyStock, p_lead_time_days: leadTimeDays ?? null,
+      ...(expected ? { p_expected: expected } : {})
     });
   },
   listOrders: async (page = 1, pageSize = 20, search = '', state = 'all') => {
@@ -423,6 +429,13 @@ export const supabaseBusinessApi: BusinessApi = {
     });
     return { ...res, items: res?.items ?? [] };
   },
+  declarePurchaseShortages: (purchaseId, items, operationId) => rpc('declare_purchase_shortages', {
+    p_purchase_id: purchaseId, p_items: items, p_operation_id: operationId
+  }),
+  replacePurchaseShortage: input => rpc('replace_purchase_shortage', {
+    p_purchase_item_id: input.purchaseItemId, p_expected_pending: input.expectedPending,
+    p_supplier_name: input.supplierName, p_expected_at: input.expectedAt, p_operation_id: input.operationId
+  }),
   reassignPurchaseReservations: async (oldPurchaseItemId, newPurchaseId) => {
     const res = await rpc<{ oldPurchase: Purchase; newPurchase: Purchase; transferredReservations: number }>(
       'reassign_purchase_reservations',

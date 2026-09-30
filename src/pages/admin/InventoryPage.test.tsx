@@ -18,16 +18,19 @@ const api = vi.hoisted(() => ({
   getPurchaseImpact: vi.fn(),
   receivePurchase: vi.fn(),
   declareItemShortage: vi.fn(),
+  declarePurchaseShortages: vi.fn(),
+  replacePurchaseShortage: vi.fn(),
   reassignPurchaseReservations: vi.fn(),
   transitionOrder: vi.fn(),
   listProductReservations: vi.fn(),
+  updateStockThresholds: vi.fn(),
   getSettings: vi.fn()
 }));
-const auth = vi.hoisted(() => ({ staff: false }));
+const auth = vi.hoisted(() => ({ staff: false, tab: '' }));
 vi.mock('@/services/business-api', () => ({ getBusinessApi: async () => api }));
 vi.mock('@/features/auth/AuthProvider', () => ({ useAuth: () => ({ user: { ...demoOwner, role: auth.staff ? 'staff' : 'owner' } }) }));
 vi.mock('@tanstack/react-router', () => ({
-  useSearch: () => ({}),
+  useSearch: () => ({ tab: auth.tab }), useBlocker: vi.fn(),
   Link: ({ children, to, ...props }: PropsWithChildren<{ to: string } & Record<string, unknown>>) => (
     <a href={to} {...props}>{children}</a>
   )
@@ -42,11 +45,42 @@ describe('Carga de compras', () => {
   beforeEach(() => {
     vi.resetAllMocks();
     auth.staff = false;
+    auth.tab = '';
     api.listAdminProducts.mockResolvedValue(demoProducts);
     api.listOpeningReservations.mockResolvedValue([]);
     api.listProductReservations.mockResolvedValue([]);
   });
   afterEach(cleanup);
+
+  it('daily purchase: protects edited data from Escape, close and Cancel without saving implicitly', async () => {
+    const onClose = vi.fn();
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    render(<PurchaseFormModal onClose={onClose} />, { wrapper: Wrapper });
+    const supplier = screen.getByLabelText('Proveedor · opcional');
+    fireEvent.change(supplier, { target: { value: 'Compra que estoy preparando' } });
+    fireEvent.keyDown(supplier, { key: 'Escape' });
+    fireEvent.click(screen.getByRole('button', { name: 'Cerrar modal' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
+    expect(onClose).not.toHaveBeenCalled();
+    expect(supplier).toHaveValue('Compra que estoy preparando');
+    expect(confirm).toHaveBeenCalledTimes(3);
+    confirm.mockReturnValue(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(api.createPurchase).not.toHaveBeenCalled();
+    expect(api.updatePurchase).not.toHaveBeenCalled();
+    confirm.mockRestore();
+  });
+
+  it('daily purchase: closes an unchanged form without confirmation', () => {
+    const onClose = vi.fn();
+    const confirm = vi.spyOn(window, 'confirm');
+    render(<PurchaseFormModal onClose={onClose} />, { wrapper: Wrapper });
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(confirm).not.toHaveBeenCalled();
+    confirm.mockRestore();
+  });
 
   it('permite editar un pedido existente al proveedor precargando los datos', async () => {
     const onClose = vi.fn();
@@ -121,6 +155,62 @@ describe('Carga de compras', () => {
     fireEvent.click(await screen.findByRole('button', { name: /Intentar de nuevo/ }));
     await screen.findByText('Elegí el producto de la fila 1.');
     expect(supplier).toHaveValue('Proveedor habitual');
+  });
+
+  it('conserva el aviso escrito ante cambios externos y exige revisar la configuración actual', async () => {
+    const inventory = toDemoInventory([demoProducts[0]!]);
+    api.listInventory.mockResolvedValue(inventory);
+    api.listMovements.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 25 });
+    api.listPurchases.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 15 });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={client}><InventoryPage /></QueryClientProvider>);
+    fireEvent.click(await screen.findByRole('button', { name: /Creatina Monohidratada.*u\./ }));
+    const count = screen.getByRole('textbox', { name: 'Aviso Comprar' });
+    fireEvent.change(count, { target: { value: '11' } });
+    client.setQueryData(['inventory'], [{ ...inventory[0]!, reorderPoint: 10 }]);
+    await screen.findByText(/Los avisos cambiaron mientras editabas/);
+    expect(count).toHaveValue('11');
+    expect(screen.getByRole('button', { name: /^Guardar$/ })).toBeDisabled();
+    fireEvent.change(count, { target: { value: '' } });
+    fireEvent.blur(count);
+    expect(count).toHaveValue('');
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Cargar avisos actualizados' }));
+    expect(count).toHaveValue('10');
+    fireEvent.change(count, { target: { value: '1,5' } });
+    expect(count).toHaveValue('1,5');
+    expect(screen.getByRole('button', { name: /^Guardar$/ })).toBeDisabled();
+    expect(api.updateStockThresholds).not.toHaveBeenCalled();
+    client.clear();
+  });
+
+  it.each(['5.0', '5e0'])('preserves the raw invalid threshold %s when another operator updates the configuration', async value => {
+    const inventory = [{ ...toDemoInventory([demoProducts[0]!])[0]!, reorderPoint: 5 }];
+    api.listInventory.mockResolvedValue(inventory);
+    api.listMovements.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 25 });
+    api.listPurchases.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 15 });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={client}><InventoryPage /></QueryClientProvider>);
+    fireEvent.click(await screen.findByRole('button', { name: /Creatina Monohidratada.*u\./ }));
+    const count = screen.getByRole('textbox', { name: 'Aviso Comprar' });
+    fireEvent.change(count, { target: { value } });
+    expect(count).toHaveValue(value);
+    client.setQueryData(['inventory'], [{ ...inventory[0]!, reorderPoint: 10 }]);
+    await screen.findByText(/Los avisos cambiaron mientras editabas/);
+    expect(count).toHaveValue(value);
+    expect(screen.getByRole('button', { name: /^Guardar$/ })).toBeDisabled();
+    expect(api.updateStockThresholds).not.toHaveBeenCalled();
+    client.clear();
+  });
+
+  it('muestra stock y explica el acceso a compras cuando entra personal por un enlace directo', async () => {
+    auth.staff = true; auth.tab = 'compras';
+    api.listInventory.mockResolvedValue(toDemoInventory(demoProducts));
+    api.listMovements.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 25 });
+    render(<InventoryPage />, { wrapper: Wrapper });
+    expect(await screen.findByRole('button', { name: /Creatina Monohidratada.*u\./ })).toBeInTheDocument();
+    expect(screen.getByText(/Las compras las registra la dueña/)).toBeInTheDocument();
+    expect(api.listPurchases).not.toHaveBeenCalled();
   });
 
   it('envía el stock que vio la dueña al abrir el conteo para detectar operaciones posteriores', async () => {
@@ -248,9 +338,17 @@ describe('Recepción asistida de compras (ReceivePurchaseModal)', () => {
   beforeEach(() => {
     vi.resetAllMocks();
     auth.staff = false;
+    auth.tab = '';
     api.listAdminProducts.mockResolvedValue(demoProducts);
     api.listOpeningReservations.mockResolvedValue([]);
     api.getSettings.mockResolvedValue({ storeName: 'Sophos Suplementos' });
+    api.receivePurchase.mockImplementation(async (_id, received) => ({
+      purchase: { ...samplePurchase, items: samplePurchase.items.map(item => ({ ...item,
+        receivedQuantity: (item.receivedQuantity ?? 0) + (received.find((line: { purchaseItemId: string }) => line.purchaseItemId === item.id)?.receivedQuantity ?? 0) })) },
+      unblockedOrders: []
+    }));
+    api.declarePurchaseShortages.mockResolvedValue({ ...samplePurchase, state: 'received' });
+
     api.getPurchaseImpact.mockResolvedValue([
       {
         purchaseItemId: 'pi-1',
@@ -333,6 +431,42 @@ describe('Recepción asistida de compras (ReceivePurchaseModal)', () => {
     expect(continueBtn).toBeEnabled();
   });
 
+  it('daily receipt: controls only outstanding products after previous arrivals and declared shortages', async () => {
+    const remainingItem = {
+      id: 'pi-pending', productId: demoProducts[2]!.id, productName: demoProducts[2]!.name,
+      quantity: 6, receivedQuantity: 2, shortageQuantity: 1, unitCostCents: 150000
+    };
+    const repeatedPurchase: Purchase = { ...samplePurchase, state: 'ordered', items: [
+      { ...samplePurchase.items[0]!, receivedQuantity: 10 },
+      { ...samplePurchase.items[1]!, shortageQuantity: 4 },
+      remainingItem
+    ] };
+    api.receivePurchase.mockResolvedValue({ purchase: { ...repeatedPurchase, state: 'received', items: [
+      ...repeatedPurchase.items.slice(0, 2), { ...remainingItem, receivedQuantity: 5 }
+    ] }, unblockedOrders: [] });
+    const onClose = vi.fn();
+    render(<ReceivePurchaseModal purchase={repeatedPurchase} onClose={onClose} onUnblocked={vi.fn()} />, { wrapper: Wrapper });
+    expect(await screen.findByText('Llegó todo lo pendiente: 3 u. en 1 producto.')).toBeVisible();
+    fireEvent.click(screen.getByText('Llegó con faltante / parte'));
+    expect(screen.getAllByRole('checkbox')).toHaveLength(1);
+    expect(screen.queryByText(samplePurchase.items[0]!.productName)).not.toBeInTheDocument();
+    expect(screen.queryByText(samplePurchase.items[1]!.productName)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('checkbox'));
+    expect(screen.getByRole('textbox', { name: `Unidades recibidas de ${remainingItem.productName}` })).toHaveValue('0');
+    expect(screen.queryByText(/entre 0 y -1/)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Continuar: registrar/ })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: /^Volver$/ }));
+    fireEvent.click(screen.getByText('Llegó TODO completo'));
+    expect(screen.getByText(/Ingresan 3 unidades/)).toBeVisible();
+    expect(screen.queryByText(samplePurchase.items[0]!.productName)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Confirmar ingreso completo/ }));
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+    expect(api.receivePurchase).toHaveBeenCalledWith(repeatedPurchase.id, [
+      { purchaseItemId: remainingItem.id, receivedQuantity: 3 }
+    ], expect.any(String));
+    expect(repeatedPurchase.items.map(item => [item.receivedQuantity, item.shortageQuantity])).toEqual([[10, 0], [0, 4], [2, 1]]);
+  });
+
   it('permite borrar y reescribir unidades recibidas sin convertir un vacío temporal en cero', async () => {
     render(<ReceivePurchaseModal purchase={samplePurchase} onClose={vi.fn()} onUnblocked={vi.fn()} />, { wrapper: Wrapper });
     fireEvent.click(await screen.findByText('Llegó con faltante / parte'));
@@ -375,7 +509,6 @@ describe('Recepción asistida de compras (ReceivePurchaseModal)', () => {
 
   it('diagnóstico con "SÍ, viene después": permite finalizar sin bloqueos', async () => {
     const onClose = vi.fn();
-    api.receivePurchase.mockResolvedValue({ purchase: samplePurchase, unblockedOrders: [] });
     render(<ReceivePurchaseModal purchase={samplePurchase} onClose={onClose} onUnblocked={vi.fn()} />, { wrapper: Wrapper });
     fireEvent.click(await screen.findByText('Llegó con faltante / parte'));
 
@@ -386,7 +519,7 @@ describe('Recepción asistida de compras (ReceivePurchaseModal)', () => {
     expect(await screen.findByText('Diagnóstico de productos con faltante')).toBeVisible();
     expect(screen.getByRole('button', { name: /SÍ, viene después/ })).toBeVisible();
 
-    const finalizeBtn = screen.getByRole('button', { name: /Finalizar recepción/ });
+    const finalizeBtn = screen.getByRole('button', { name: /Finalizar revisión de faltantes/ });
     expect(finalizeBtn).toBeEnabled();
 
     fireEvent.click(finalizeBtn);
@@ -399,7 +532,6 @@ describe('Recepción asistida de compras (ReceivePurchaseModal)', () => {
   it('diagnóstico con "NO (Faltante definitivo)" y clientes reservados: guía a resolver en app', async () => {
     const onClose = vi.fn();
     api.transitionOrder.mockResolvedValue({});
-    api.receivePurchase.mockResolvedValue({ purchase: samplePurchase, unblockedOrders: [] });
     api.declareItemShortage.mockResolvedValue({ ...samplePurchase, state: 'received' });
 
     render(<ReceivePurchaseModal purchase={samplePurchase} onClose={onClose} onUnblocked={vi.fn()} />, { wrapper: Wrapper });
@@ -414,27 +546,19 @@ describe('Recepción asistida de compras (ReceivePurchaseModal)', () => {
     expect(await screen.findByText('1 clientes esperando este producto')).toBeVisible();
     expect(screen.getByText('· María Soledad Tur')).toBeVisible();
 
-    const finalizeBtn = screen.getByRole('button', { name: /Finalizar recepción/ });
+    const finalizeBtn = screen.getByRole('button', { name: /Finalizar revisión de faltantes/ });
     expect(finalizeBtn).toBeDisabled();
 
-    const resolveBtn = screen.getByRole('button', { name: 'Reembolsar y cancelar en app' });
-    fireEvent.click(resolveBtn);
-
-    await waitFor(() => expect(api.transitionOrder).toHaveBeenCalledWith('ord-2504', 'mark_refunded'));
-    await waitFor(() => expect(api.transitionOrder).toHaveBeenCalledWith('ord-2504', 'cancel'));
-    expect(await screen.findByText(/Registrado en sistema \(reembolsado y cancelado\)/)).toBeVisible();
-
-    expect(finalizeBtn).toBeEnabled();
-    fireEvent.click(finalizeBtn);
-
-    await waitFor(() => expect(api.receivePurchase).toHaveBeenCalled());
-    await waitFor(() => expect(api.declareItemShortage).toHaveBeenCalledWith('pi-2', 4, expect.any(String)));
-    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole('link', { name: /Gestionar pedido/ })).toHaveAttribute('href', '/app/pedidos?search=2504');
+    expect(api.transitionOrder).not.toHaveBeenCalled();
+    // Until the order is resolved and the impact refreshes, closing the shortage stays blocked.
+    expect(finalizeBtn).toBeDisabled();
+    expect(onClose).not.toHaveBeenCalled();
   });
 
   it('permite pedir reposición a otro proveedor y traslada automáticamente las reservas', async () => {
-    api.createPurchase.mockResolvedValue({ id: 'purch-new-99', number: 2050, items: [{ id: 'new-pi-1', productId: demoProducts[1]!.id }] });
-    api.reassignPurchaseReservations.mockResolvedValue({ transferredReservations: 1 });
+    api.replacePurchaseShortage.mockResolvedValue({ oldPurchase: { ...samplePurchase, state: 'received' },
+      newPurchase: { id: 'purch-new-99', number: 2050, items: [{ id: 'new-pi-1', productId: demoProducts[1]!.id }] }, transferredReservations: 1 });
 
     render(<ReceivePurchaseModal purchase={samplePurchase} onClose={vi.fn()} onUnblocked={vi.fn()} />, { wrapper: Wrapper });
     fireEvent.click(await screen.findByText('Llegó con faltante / parte'));
@@ -450,15 +574,15 @@ describe('Recepción asistida de compras (ReceivePurchaseModal)', () => {
     fireEvent.change(screen.getByLabelText(/Nombre del nuevo proveedor/), { target: { value: 'Distribuidora Natulab' } });
     fireEvent.click(screen.getByRole('button', { name: 'Confirmar reposición' }));
 
-    await waitFor(() => expect(api.createPurchase).toHaveBeenCalledWith(expect.objectContaining({
-      supplierName: 'Distribuidora Natulab',
-      items: [{ productId: demoProducts[1]!.id, quantity: 4, unitCostCents: 200000 }]
+    await waitFor(() => expect(api.replacePurchaseShortage).toHaveBeenCalledWith(expect.objectContaining({
+      supplierName: 'Distribuidora Natulab', purchaseItemId: 'pi-2', expectedPending: 4, operationId: expect.any(String)
     })));
-    await waitFor(() => expect(api.reassignPurchaseReservations).toHaveBeenCalledWith('pi-2', 'purch-new-99'));
+    expect(api.createPurchase).not.toHaveBeenCalled();
+    expect(api.reassignPurchaseReservations).not.toHaveBeenCalled();
 
     expect(await screen.findByText(/Reposición creada en/)).toBeVisible();
-    expect(screen.getByText(/2050/)).toBeVisible();
-    expect(screen.getByRole('button', { name: /Finalizar recepción/ })).toBeEnabled();
+    expect(screen.getByText(/Reposición creada en/)).toHaveTextContent('Compra #2050');
+    expect(screen.getByRole('button', { name: /Finalizar revisión de faltantes/ })).toBeEnabled();
   });
 });
 
@@ -466,6 +590,7 @@ describe('Ordenamiento estricto de inventario (getStockPriority y lista renderiz
   beforeEach(() => {
     vi.resetAllMocks();
     auth.staff = false;
+    auth.tab = '';
     api.listAdminProducts.mockResolvedValue(demoProducts);
     api.listOpeningReservations.mockResolvedValue([]);
     api.getSettings.mockResolvedValue({ storeName: 'Sophos Suplementos' });
@@ -582,4 +707,3 @@ describe('Ordenamiento estricto de inventario (getStockPriority y lista renderiz
     expect(orderLink).toHaveAttribute('href', '/app/pedidos');
   });
 });
-

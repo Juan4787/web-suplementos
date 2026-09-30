@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Link } from '@tanstack/react-router';
+import { Link, useBlocker } from '@tanstack/react-router';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -9,7 +9,7 @@ import {
   Plus,
   RotateCcw,
 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { queryKeys } from '@/app/query-keys';
 import { useBusinessQuery } from '@/app/use-business-query';
 import { PageHeader } from '@/components/layout/AdminShell';
@@ -38,6 +38,7 @@ export default function ImportOrderPage() {
   const [parseError, setParseError] = useState<unknown>(null);
   const [created, setCreated] = useState<Order | null>(null);
   const queryClient = useQueryClient();
+  const activeImport = useRef<ImportOrderInput | null>(null);
 
   const productsQuery = useBusinessQuery({
     queryKey: queryKeys.products,
@@ -72,7 +73,8 @@ export default function ImportOrderPage() {
   const confirm = useMutation({
     mutationFn: async (input: ImportOrderInput) =>
       (await getBusinessApi()).confirmImportedOrder(input),
-    onSuccess: async (order) => {
+    onSuccess: async (order, input) => {
+      if (activeImport.current !== input) return;
       setCreated(order);
       setReview(null);
       setShowEditFields(false);
@@ -84,10 +86,18 @@ export default function ImportOrderPage() {
         queryClient.invalidateQueries({ queryKey: queryKeys.products }),
         queryClient.invalidateQueries({ queryKey: queryKeys.storefrontProducts })
       ]);
-    }
+    },
+    onSettled: (_data, _error, input) => { if (activeImport.current === input) activeImport.current = null; }
+  });
+  useBlocker({
+    shouldBlockFn: ({ current, next }) => confirm.isPending && current.pathname !== next.pathname &&
+      !window.confirm('El pedido se está guardando. Si salís, revisá después la lista de Pedidos antes de volver a cargarlo. ¿Salir ahora?'),
+    enableBeforeUnload: confirm.isPending
   });
 
   const analyze = () => {
+    if (confirm.isPending || activeImport.current) return;
+    confirm.reset();
     setParseError(null);
     setCreated(null);
     setShowEditFields(false);
@@ -288,7 +298,9 @@ export default function ImportOrderPage() {
                 variant="secondary"
                 size="lg"
                 className="flex-1 border-ink-950/15"
+                disabled={confirm.isPending}
                 onClick={() => {
+                  if (confirm.isPending) return;
                   setCreated(null);
                   setMessage('');
                   setReview(null);
@@ -343,6 +355,7 @@ export default function ImportOrderPage() {
 
       {/* Paso 2: Pantalla de Verificación y Control Visual */}
       {!created && review ? (
+        <fieldset disabled={confirm.isPending} className="min-w-0">
         <div className="grid gap-6 xl:grid-cols-[1fr_21rem]">
           <section className="rounded-[2rem] bg-white p-5 shadow-card sm:p-7">
             <div className="flex items-center justify-between gap-4 border-b border-ink-950/8 pb-4">
@@ -352,7 +365,7 @@ export default function ImportOrderPage() {
                   Comprobá productos, cantidades y precios antes de confirmarlo.
                 </p>
               </div>
-              <Button variant="ghost" size="sm" onClick={() => setReview(null)}>
+              <Button variant="ghost" size="sm" disabled={confirm.isPending} onClick={() => { if (!confirm.isPending && !activeImport.current) { setReview(null); confirm.reset(); } }}>
                 Volver
               </Button>
             </div>
@@ -778,8 +791,9 @@ export default function ImportOrderPage() {
               disabled={
                 missingCustomer || missingAddress || missingPhone || stockIssues.length > 0 || productsQuery.isFetching
               }
-              onClick={() =>
-                confirm.mutate({
+              onClick={() => {
+                if (confirm.isPending || activeImport.current) return;
+                const input: ImportOrderInput = {
                   customerFirstName: review.customerFirstName.trim(),
                   customerLastName: review.customerLastName.trim(),
                   customerName: `${review.customerFirstName.trim()} ${review.customerLastName.trim()}`.trim(),
@@ -805,8 +819,10 @@ export default function ImportOrderPage() {
                   quotedTotalCents: totals.total,
                   protocolOrderId: review.source.protocolOrderId,
                   protocolChecksum: review.source.protocolChecksum
-                })
-              }
+                };
+                activeImport.current = input;
+                confirm.mutate(input);
+              }}
             >
               Confirmar pedido
             </Button>
@@ -815,6 +831,7 @@ export default function ImportOrderPage() {
             </p>
           </aside>
         </div>
+        </fieldset>
       ) : null}
     </div>
   );

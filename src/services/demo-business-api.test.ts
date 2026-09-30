@@ -718,6 +718,66 @@ describe('demoBusinessApi lifecycle and domain guarantees', () => {
     expect([stockAfterFailures.onHand, stockAfterFailures.reserved]).toEqual([0, 0]);
   });
 
+  it('records arrival before replacement and preserves packing through simultaneous retries', async () => {
+    const product = await demoBusinessApi.saveProduct({
+      sku: 'SAFE_REPLACE', slug: 'safe-replace', name: 'Reposición aislada', presentation: '1 unidad',
+      description: 'Prueba aislada', category: 'Pruebas', priceCents: 100000, currentCostCents: 60000,
+      reorderPoint: 0, safetyStock: 0, leadTimeDays: 1, imageUrl: '/test.svg', imageAlt: 'Prueba',
+      published: true, active: true, featured: false
+    });
+    const purchase = await demoBusinessApi.createPurchase({ supplierName: 'Origen aislado', expectedAt: null, notes: null,
+      items: [{ productId: product.id, quantity: 10, unitCostCents: 60000 }] });
+    const order = await demoBusinessApi.confirmImportedOrder({ customerName: 'Cliente aislado', paymentMethod: 'cash',
+      deliveryMethod: 'pickup', shippingType: null, address: null, addressNumber: null, phone: null,
+      shippingFeeCents: 0, quotedSubtotalCents: 700000, quotedTotalCents: 700000,
+      protocolOrderId: crypto.randomUUID(), protocolChecksum: 'ABCD9981', lines: [{
+        productId: product.id, sku: product.sku, slug: product.slug, name: product.name,
+        presentation: product.presentation, imageUrl: product.imageUrl, quantity: 7, unitPriceCents: 100000
+      }] });
+    await demoBusinessApi.receivePurchase(purchase.id, [{ purchaseItemId: purchase.items[0]!.id, receivedQuantity: 5 }], crypto.randomUUID());
+    const impact = await demoBusinessApi.getPurchaseImpact(purchase.id);
+    expect(impact[0]?.reservedOrders[0]?.reservedQuantity).toBe(2);
+    await demoBusinessApi.saveOrderPacking(order.id, [{ orderItemId: order.items[0]!.id, packedQuantity: 5 }], 0);
+    await expect(demoBusinessApi.declarePurchaseShortages(purchase.id, [{ purchaseItemId: purchase.items[0]!.id, quantity: 5 }], crypto.randomUUID()))
+      .rejects.toThrow(/reservas esperando/i);
+    const input = { purchaseItemId: purchase.items[0]!.id, expectedPending: 5, supplierName: 'Reposición aislada', expectedAt: null, operationId: crypto.randomUUID() };
+    const [first, repeated] = await Promise.all([demoBusinessApi.replacePurchaseShortage(input), demoBusinessApi.replacePurchaseShortage(input)]);
+    expect(first).toEqual(repeated);
+    expect(first.oldPurchase.items[0]).toMatchObject({ receivedQuantity: 5, shortageQuantity: 5 });
+    expect(first.newPurchase.items[0]).toMatchObject({ quantity: 5, receivedQuantity: 0, shortageQuantity: 0 });
+    expect(first.transferredReservations).toBe(1);
+    const stock = (await demoBusinessApi.listAdminProducts()).find(p => p.id === product.id)!;
+    expect([stock.onHand, stock.reserved, stock.incoming, stock.incomingReserved, stock.incomingAvailable]).toEqual([5, 5, 5, 2, 3]);
+    const refreshed = (await demoBusinessApi.listOrders(1, 100, String(order.number), 'all')).items[0]!;
+    expect(refreshed.items[0]).toMatchObject({ packedQuantity: 5, physicalReservedQuantity: 5, incomingQuantity: 2, uncoveredQuantity: 0 });
+    await expect(demoBusinessApi.replacePurchaseShortage({ ...input, supplierName: 'Distinto proveedor' })).rejects.toThrow(/intento anterior/);
+    await expect(demoBusinessApi.replacePurchaseShortage({ ...input, operationId: crypto.randomUUID() })).rejects.toThrow(/pendientes cambiaron/);
+    const replacements = (await demoBusinessApi.listPurchases(1, 100, 'all')).items.filter(p => p.supplierName === 'Reposición aislada');
+    expect(replacements).toHaveLength(1);
+  });
+
+  it('validates all shortages before changing a demo purchase and does not duplicate a batch', async () => {
+    const products = [];
+    for (const suffix of ['A', 'B']) products.push(await demoBusinessApi.saveProduct({
+      sku: `SAFE_BATCH_${suffix}`, slug: `safe-batch-${suffix.toLowerCase()}`, name: `Lote ${suffix}`, presentation: '1 unidad',
+      description: 'Prueba aislada', category: 'Pruebas', priceCents: 100000, currentCostCents: 60000,
+      reorderPoint: 0, safetyStock: 0, leadTimeDays: 1, imageUrl: '/test.svg', imageAlt: 'Prueba',
+      published: true, active: true, featured: false
+    }));
+    const purchase = await demoBusinessApi.createPurchase({ supplierName: 'Lote aislado', expectedAt: null, notes: null,
+      items: products.map(product => ({ productId: product.id, quantity: 3, unitCostCents: 60000 })) });
+    const items = purchase.items.map(item => ({ purchaseItemId: item.id, quantity: 3 }));
+    const attempt = crypto.randomUUID();
+    await expect(demoBusinessApi.declarePurchaseShortages(purchase.id, [items[0]!, { ...items[1]!, quantity: 2 }], attempt)).rejects.toThrow(/pendientes cambiaron/);
+    const untouched = (await demoBusinessApi.listPurchases(1, 100, 'all')).items.find(p => p.id === purchase.id)!;
+    expect(untouched.items.map(item => item.shortageQuantity)).toEqual([0, 0]);
+    const result = await demoBusinessApi.declarePurchaseShortages(purchase.id, items, attempt);
+    expect(result.state).toBe('received');
+    expect(result.items.map(item => item.shortageQuantity)).toEqual([3, 3]);
+    expect(await demoBusinessApi.declarePurchaseShortages(purchase.id, [...items].reverse(), attempt)).toEqual(result);
+    for (const product of products) expect((await demoBusinessApi.listAdminProducts()).find(p => p.id === product.id)?.incoming).toBe(0);
+  });
+
   it('generates a complete authorized export dataset with all 13 tables', async () => {
     const dataset = await demoBusinessApi.getExportDataset();
     expect(dataset.products.length).toBeGreaterThan(0);

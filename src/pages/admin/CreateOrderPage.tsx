@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Link, useNavigate } from '@tanstack/react-router';
+import { Link, useNavigate, useBlocker } from '@tanstack/react-router';
 import {
   AlertCircle,
   ArrowLeft,
@@ -246,6 +246,11 @@ export default function CreateOrderPage() {
   });
 
   // Validación y envío del formulario
+  useBlocker({
+    shouldBlockFn: ({ current, next }) => confirmMutation.isPending && current.pathname !== next.pathname &&
+      !window.confirm('El pedido se está guardando. Si salís, revisá después la lista de Pedidos antes de volver a cargarlo. ¿Salir ahora?'),
+    enableBeforeUnload: confirmMutation.isPending
+  });
   const handleSubmit = () => {
     if (confirmMutation.isPending) return;
     setValidationError(null);
@@ -400,7 +405,7 @@ export default function CreateOrderPage() {
   if (settingsQuery.isError) return <ErrorState error={settingsQuery.error} onRetry={() => void settingsQuery.refetch()} />;
 
   return (
-    <div className="page-enter min-w-0">
+    <fieldset disabled={confirmMutation.isPending} className="page-enter min-w-0" onClickCapture={event => { if (confirmMutation.isPending && (event.target as HTMLElement).closest('a')) event.preventDefault(); }}>
       <div className="mb-4">
         <Link
           to="/app/pedidos"
@@ -1239,6 +1244,6 @@ export default function CreateOrderPage() {
           </div>
         </div>
       )}
-    </div>
+    </fieldset>
   );
 }
