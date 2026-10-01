@@ -379,6 +379,7 @@ export type ProductPerformance = {
 export type AnalyticsSummary = {
   from: string;
   to: string;
+  /** Legacy contract field. Complete date ranges have no monthly cutoff. */
   comparisonCutoffDay: number | null;
   revenueCents: number;
   costCents: number;
@@ -387,7 +388,9 @@ export type AnalyticsSummary = {
   miscExpensesCents: number;
   miscExpenseOccurrences: number;
   estimatedMarginCents: number;
+  /** Revenue / paid orders, including cost sales, rounded once to cents. */
   averageTicketCents: number;
+  /** Paid orders including cost sales; gifts are counted separately. */
   orders: number;
   giftOrders?: number;
   giftCostCents?: number;

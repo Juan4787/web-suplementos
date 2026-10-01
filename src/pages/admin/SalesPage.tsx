@@ -10,7 +10,7 @@ import {
   Tag,
   TrendingUp
 } from 'lucide-react';
-import { Fragment, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   endOfMonth,
   endOfWeek,
@@ -42,7 +42,9 @@ import { Button } from '@/components/ui/Button';
 import { ErrorState, LoadingState } from '@/components/ui/DataState';
 import { DatePicker, Input, Select } from '@/components/ui/Field';
 import { formatMoney } from '@/domain/money';
+import { isIsoCalendarDate } from '@/domain/misc-expenses';
 import { formatUnits } from '@/domain/quantity';
+import { salesReferenceDate } from '@/domain/sales-date';
 import { cn } from '@/lib/cn';
 
 type DatePreset =
@@ -57,7 +59,7 @@ type DatePreset =
 
 const monthLabel = (period: string): string => {
   const [year, month] = period.split('-').map(Number);
-  return new Intl.DateTimeFormat('es-AR', { month: 'short' }).format(
+  return new Intl.DateTimeFormat('es-AR', { month: 'short', year: '2-digit' }).format(
     new Date(year!, month! - 1, 1)
   );
 };
@@ -70,16 +72,19 @@ export default function SalesPage() {
 
   // Selector de período con presets
   const [preset, setPreset] = useState<DatePreset>('this_month');
-  const [from, setFrom] = useState(() => format(startOfMonth(new Date()), 'yyyy-MM-dd'));
-  const [to, setTo] = useState(() => format(new Date(), 'yyyy-MM-dd'));
+  const [initialDate] = useState(salesReferenceDate);
+  const [from, setFrom] = useState(() => format(startOfMonth(initialDate), 'yyyy-MM-dd'));
+  const [to, setTo] = useState(() => format(initialDate, 'yyyy-MM-dd'));
+  const validPeriod = isIsoCalendarDate(from) && isIsoCalendarDate(to) && from <= to &&
+    (Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86400000 <= 3660;
 
   // Ordenamiento de tabla de productos
   const [productSortField, setProductSortField] = useState<'name' | 'units' | 'revenue' | 'share'>('revenue');
   const [productSortAsc, setProductSortAsc] = useState(false);
 
-  const handlePresetChange = (nextPreset: DatePreset) => {
+  const handlePresetChange = useCallback((nextPreset: DatePreset) => {
     setPreset(nextPreset);
-    const refDate = new Date();
+    const refDate = salesReferenceDate();
 
     if (nextPreset === 'this_month') {
       setFrom(format(startOfMonth(refDate), 'yyyy-MM-dd'));
@@ -95,7 +100,7 @@ export default function SalesPage() {
       setFrom(format(startOfMonth(prev), 'yyyy-MM-dd'));
       setTo(format(endOfMonth(prev), 'yyyy-MM-dd'));
     } else if (nextPreset === 'last_30_days') {
-      setFrom(format(subDays(refDate, 30), 'yyyy-MM-dd'));
+      setFrom(format(subDays(refDate, 29), 'yyyy-MM-dd'));
       setTo(format(refDate, 'yyyy-MM-dd'));
     } else if (nextPreset === 'last_6_months') {
       setFrom(format(startOfMonth(subMonths(refDate, 5)), 'yyyy-MM-dd'));
@@ -104,24 +109,38 @@ export default function SalesPage() {
       setFrom(format(startOfYear(refDate), 'yyyy-MM-dd'));
       setTo(format(refDate, 'yyyy-MM-dd'));
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    const refresh = () => { if (preset !== 'custom') handlePresetChange(preset); };
+    const onVisible = () => { if (document.visibilityState === 'visible') refresh(); };
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [preset, handlePresetChange]);
 
   const handleTabChange = (nextTab: 'orders' | 'evolution' | 'products' | 'profitability') => {
     setActiveTab(nextTab);
-    if (nextTab === 'evolution' && preset === 'this_month') {
-      handlePresetChange('last_6_months');
-    }
   };
 
   useEffect(() => { setPage(1); setExpandedOrderId(null); }, [from, to]);
 
   const analyticsQuery = useBusinessQuery({
     queryKey: queryKeys.analytics(from, to),
+    enabled: validPeriod,
+    staleTime: 0,
+    refetchOnWindowFocus: 'always',
     queryFn: (api) => api.getAnalytics(from, to)
   });
 
   const ordersQuery = useBusinessQuery({
     queryKey: [...queryKeys.paidOrders(page), from, to],
+    enabled: validPeriod,
+    staleTime: 0,
+    refetchOnWindowFocus: 'always',
     queryFn: (api) => api.listPaidOrders(page, 20, from, to)
   });
 
@@ -155,8 +174,8 @@ export default function SalesPage() {
         valA = a.revenueCents;
         valB = b.revenueCents;
       } else if (productSortField === 'share') {
-        valA = a.revenueCents / totalRev;
-        valB = b.revenueCents / totalRev;
+        valA = totalRev > 0 ? a.revenueCents / totalRev : 0;
+        valB = totalRev > 0 ? b.revenueCents / totalRev : 0;
       }
 
       return productSortAsc ? (valA as number) - (valB as number) : (valB as number) - (valA as number);
@@ -171,7 +190,7 @@ export default function SalesPage() {
     return raw.map((p) => {
       const gainCents = p.estimatedMarginCents;
       const costCents = p.costCents ?? Math.max(0, p.revenueCents - p.estimatedMarginCents);
-      const gainPct = p.revenueCents > 0 ? (gainCents / p.revenueCents) * 100 : 0;
+      const gainPct = p.revenueCents > 0 ? (gainCents / p.revenueCents) * 100 : null;
       return {
         ...p,
         salesCents: p.revenueCents,
@@ -209,7 +228,7 @@ export default function SalesPage() {
               </div>
 
               {preset === 'custom' ? (
-                <div className="grid grid-cols-2 sm:flex sm:flex-row items-center gap-2 rounded-2xl border border-ink-950/15 bg-white p-2.5 shadow-sm w-full sm:w-auto">
+                <div className="grid grid-cols-1 sm:flex sm:flex-row items-center gap-2 rounded-2xl border border-ink-950/15 bg-white p-2.5 shadow-sm w-full sm:w-auto">
                   <div className="w-full sm:w-44">
                     <span className="text-[11px] font-black uppercase tracking-wider text-ink-600 block px-1">Desde</span>
                     <DatePicker
@@ -239,13 +258,23 @@ export default function SalesPage() {
         />
 
         {/* Global Summary Metric Cards (3 KPIs directos con lenguaje de negocio) */}
-        {analyticsQuery.data ? (
+        {!validPeriod ? (
+          <p role="alert" className="mb-6 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-950">
+            {!from || !to ? 'Elegí las fechas Desde y Hasta para consultar las ventas.'
+              : from > to ? 'La fecha Desde debe ser igual o anterior a la fecha Hasta.'
+              : 'Revisá las fechas y elegí un período más corto para consultar las ventas.'}
+          </p>
+        ) : null}
+        {validPeriod && !ordersQuery.isPending && !analyticsQuery.isPending && (ordersQuery.isFetching || analyticsQuery.isFetching) ? (
+          <p role="status" className="mb-4 text-sm font-semibold text-ink-700">Actualizando ventas…</p>
+        ) : null}
+        {validPeriod && analyticsQuery.data ? (
           <>
             <section className="mb-4 grid gap-4 sm:grid-cols-3">
               <MetricCard
                 label="Ventas cobradas"
                 value={formatMoney(analyticsQuery.data.revenueCents)}
-                detail={`${analyticsQuery.data.orders} ${analyticsQuery.data.orders === 1 ? 'venta' : 'ventas'} en el período`}
+                detail={`${analyticsQuery.data.orders} ${analyticsQuery.data.orders === 1 ? 'venta cobrada' : 'ventas cobradas'} en el período`}
                 icon={CircleDollarSign}
                 accent="sapphire"
               />
@@ -472,16 +501,16 @@ export default function SalesPage() {
           </button>
         </nav>
 
-        {ordersQuery.isPending || analyticsQuery.isPending ? <LoadingState label="Calculando analíticas…" /> : null}
-        {ordersQuery.isError ? <ErrorState error={ordersQuery.error} onRetry={() => void ordersQuery.refetch()} /> : null}
-        {analyticsQuery.isError ? <ErrorState error={analyticsQuery.error} onRetry={() => void analyticsQuery.refetch()} /> : null}
+        {validPeriod && (ordersQuery.isPending || analyticsQuery.isPending) ? <LoadingState label="Calculando analíticas…" /> : null}
+        {validPeriod && ordersQuery.isError ? <ErrorState error={ordersQuery.error} onRetry={() => void ordersQuery.refetch()} /> : null}
+        {validPeriod && analyticsQuery.isError ? <ErrorState error={analyticsQuery.error} onRetry={() => void analyticsQuery.refetch()} /> : null}
 
         {/* TAB 1: VENTAS COBRADAS */}
-        {activeTab === 'orders' && ordersQuery.data ? (
+        {validPeriod && activeTab === 'orders' && ordersQuery.data ? (
           <section className="overflow-hidden rounded-2xl border border-ink-950/8 bg-white shadow-sm">
             <div className="border-b border-ink-950/8 p-5 sm:p-6">
               <h2 className="font-display text-2xl font-black text-ink-950">Ventas cobradas</h2>
-              <p className="mt-1 text-[14.5px] font-semibold text-ink-700">Pedidos cobrados dentro del período seleccionado.</p>
+              <p className="mt-1 text-[14.5px] font-semibold text-ink-700">Cobros y regalos del período seleccionado. Los regalos se muestran para explicar su costo y no cuentan como ventas cobradas.</p>
             </div>
             {(ordersQuery.data.items?.length ?? 0) === 0 ? <p className="p-6 text-sm text-ink-700">No hay ventas cobradas en este período. Elegí otro rango de fechas para consultar ventas anteriores.</p> : null}
             <div className="overflow-x-auto">
@@ -490,7 +519,7 @@ export default function SalesPage() {
                   <tr>
                     <th className="px-6 py-4">Pedido</th>
                     <th className="px-6 py-4">Cliente</th>
-                    <th className="px-6 py-4">Fecha de cobro</th>
+                    <th className="px-6 py-4">Fecha de cobro o regalo</th>
                     <th className="px-6 py-4 text-right">Total</th>
                     <th className="px-6 py-4 text-right">Margen comercial</th>
                     <th className="px-4 py-4 text-center"></th>
@@ -524,7 +553,7 @@ export default function SalesPage() {
                           </td>
                           <td className="px-6 py-4 text-[15.5px] font-bold text-ink-950">{order.customerName}</td>
                           <td className="px-6 py-4 text-[14.5px] text-ink-700 font-semibold">
-                            {order.paidAt ? new Intl.DateTimeFormat('es-AR', { dateStyle: 'short' }).format(new Date(order.paidAt)) : '—'}
+                            {new Intl.DateTimeFormat('es-AR', { dateStyle: 'short', timeZone: 'America/Argentina/Buenos_Aires' }).format(new Date(order.paidAt ?? order.createdAt))}
                           </td>
                           <td className="px-6 py-4 text-right text-[16px] font-black text-ink-950">
                             {isGift ? (
@@ -625,7 +654,7 @@ export default function SalesPage() {
         ) : null}
 
         {/* TAB 2: EVOLUCIÓN */}
-        {activeTab === 'evolution' && analyticsQuery.data ? (
+        {validPeriod && activeTab === 'evolution' && analyticsQuery.data ? (
           <section className="space-y-6">
             <div className="rounded-2xl border border-ink-950/8 bg-white p-6 shadow-sm">
               <div className="mb-6">
@@ -658,11 +687,11 @@ export default function SalesPage() {
         ) : null}
 
         {/* TAB 3: VENTAS POR PRODUCTO */}
-        {activeTab === 'products' && analyticsQuery.data ? (
+        {validPeriod && activeTab === 'products' && analyticsQuery.data ? (
           <section className="overflow-hidden rounded-2xl border border-ink-950/8 bg-white shadow-sm">
             <div className="border-b border-ink-950/8 p-5 sm:p-6">
               <h2 className="font-display text-2xl font-black text-ink-950">Ventas por producto</h2>
-              <p className="mt-1 text-[14.5px] font-semibold text-ink-700">Cuánto vendió cada producto en el período seleccionado.</p>
+              <p className="mt-1 text-[14.5px] font-semibold text-ink-700">Hasta 10 productos con más unidades en el período. El total de ventas incluye todos los productos.</p>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full min-w-[44rem] text-left text-sm">
@@ -711,7 +740,7 @@ export default function SalesPage() {
                     const totalRev = analyticsQuery.data?.revenueCents ?? 0;
                     const share = totalRev > 0 ? ((p.revenueCents / totalRev) * 100).toFixed(1) : '—';
                     return (
-                      <tr key={p.productId} className="hover:bg-cream-50/50 min-h-[3.75rem]">
+                      <tr key={JSON.stringify([p.productId, p.name])} className="hover:bg-cream-50/50 min-h-[3.75rem]">
                         <td className="px-6 py-4 text-[16px] font-black text-ink-950">{p.name}</td>
                         <td className="px-6 py-4 text-right text-[15.5px] font-bold text-ink-950">{formatUnits(p.units)}</td>
                         <td className="px-6 py-4 text-right text-[16px] font-black text-ink-950">{formatMoney(p.revenueCents)}</td>
@@ -728,7 +757,7 @@ export default function SalesPage() {
         ) : null}
 
         {/* TAB 4: GANANCIA */}
-        {activeTab === 'profitability' && analyticsQuery.data ? (
+        {validPeriod && activeTab === 'profitability' && analyticsQuery.data ? (
           <section className="space-y-6">
             {/* 3 Tarjetas Superiores */}
             <div className="grid gap-4 sm:grid-cols-3">
@@ -747,9 +776,11 @@ export default function SalesPage() {
                 <p className="mt-2 font-display text-4xl font-black text-ink-950">
                   {analyticsQuery.data.revenueCents > 0
                     ? `${((analyticsQuery.data.estimatedMarginCents / analyticsQuery.data.revenueCents) * 100).toFixed(1)}%`
-                    : '0%'}
+                    : '—'}
                 </p>
-                <p className="mt-1.5 text-[14px] font-medium text-ink-700">Sobre el total de ventas cobradas</p>
+                <p className="mt-1.5 text-[14px] font-medium text-ink-700">
+                  {analyticsQuery.data.revenueCents > 0 ? 'Sobre el total de ventas cobradas' : 'Sin ventas cobradas para calcular el porcentaje'}
+                </p>
               </div>
 
               <div className="rounded-2xl border border-ink-950/8 bg-white p-6 shadow-sm">
@@ -777,7 +808,7 @@ export default function SalesPage() {
                       <span className="text-xs text-purple-700 font-medium">Pedidos de cortesía / regalo</span>
                     </div>
                     <p className="mt-1 text-sm font-semibold text-purple-950">
-                      Se entregaron <strong className="font-black text-purple-900">{analyticsQuery.data.giftOrders} {analyticsQuery.data.giftOrders === 1 ? 'pedido de cortesía' : 'pedidos de cortesía'}</strong> con un costo asumido de <span className="inline-flex items-center rounded-md border border-rose-200 bg-rose-50 px-2 py-0.5 text-xs font-black text-rose-700">-{formatMoney(analyticsQuery.data.giftCostCents ?? 0)}</span>.
+                      Se registraron <strong className="font-black text-purple-900">{analyticsQuery.data.giftOrders} {analyticsQuery.data.giftOrders === 1 ? 'pedido de cortesía' : 'pedidos de cortesía'}</strong> con un costo asumido de <span className="inline-flex items-center rounded-md border border-rose-200 bg-rose-50 px-2 py-0.5 text-xs font-black text-rose-700">-{formatMoney(analyticsQuery.data.giftCostCents ?? 0)}</span>.
                     </p>
                   </div>
                 </div>
@@ -863,7 +894,7 @@ export default function SalesPage() {
               <div className="border-b border-ink-950/8 p-5 sm:p-6">
                 <h3 className="font-display text-xl font-black text-ink-950">Margen comercial por producto</h3>
                 <p className="mt-1 text-[14.5px] font-semibold text-ink-700">
-                  Ventas menos costo de mercadería. Los gastos generales se descuentan únicamente del total del período.
+                  Hasta 10 productos con más unidades. El margen descuenta mercadería e impuestos; los gastos generales se descuentan únicamente del total del período.
                 </p>
               </div>
               <div className="overflow-x-auto">
@@ -879,12 +910,12 @@ export default function SalesPage() {
                   </thead>
                   <tbody className="divide-y divide-ink-950/8">
                     {gainByProduct.map((p) => (
-                      <tr key={p.productId} className="hover:bg-cream-50/50 min-h-[3.75rem]">
+                      <tr key={JSON.stringify([p.productId, p.name])} className="hover:bg-cream-50/50 min-h-[3.75rem]">
                         <td className="px-6 py-4 text-[16px] font-black text-ink-950">{p.name}</td>
                         <td className="px-6 py-4 text-right text-[15.5px] font-bold text-ink-950">{formatMoney(p.salesCents)}</td>
                         <td className="px-6 py-4 text-right text-[14.5px] text-ink-700 font-semibold">{formatMoney(p.costCents)}</td>
                         <td className="px-6 py-4 text-right text-[16px] font-black text-brand-700">{formatMoney(p.gainCents)}</td>
-                        <td className="px-6 py-4 text-right text-[15px] font-bold text-emerald-800">{p.gainPct.toFixed(1)}%</td>
+                        <td className="px-6 py-4 text-right text-[15px] font-bold text-emerald-800">{p.gainPct === null ? '—' : `${p.gainPct.toFixed(1)}%`}</td>
                       </tr>
                     ))}
                   </tbody>

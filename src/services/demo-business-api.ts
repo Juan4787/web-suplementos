@@ -14,6 +14,7 @@ import {
 import { AppError } from '@/domain/errors';
 import { availabilityFromQuantity } from '@/domain/inventory';
 import { calculateBasisPoints } from '@/domain/money';
+import { salesDateAt } from '@/domain/sales-date';
 import {
   countMiscExpenseOccurrences,
   listMiscExpenseOccurrenceDates,
@@ -167,32 +168,20 @@ const sameExpenseValues = (
   expense.startsOn === values.startsOn &&
   expense.endsOn === values.endsOn;
 
-const paidOrdersInRange = (from: string, to: string): Order[] => {
-  const fromTime = new Date(`${from}T00:00:00-03:00`).getTime();
-  const toTime = new Date(`${to}T23:59:59.999-03:00`).getTime();
-  return state.orders.filter((order) => {
-    const paidTime = order.paidAt ? new Date(order.paidAt).getTime() : Number.NaN;
-    return (
-      (order.paymentState === 'paid' || order.paymentState === 'gifted') &&
-      paidTime >= fromTime &&
-      paidTime <= toTime
-    );
-  });
-};
+const salesDate = (order: Order): string => salesDateAt(order.paidAt ?? order.createdAt);
 
-const comparisonCutoffDay = (from: string, to: string): number | null => {
-  const fromDate = new Date(`${from}T12:00:00-03:00`);
-  const toDate = new Date(`${to}T12:00:00-03:00`);
-  const monthChanged = fromDate.getFullYear() !== toDate.getFullYear() || fromDate.getMonth() !== toDate.getMonth();
-  const toIsMonthEnd = toDate.getDate() === new Date(toDate.getFullYear(), toDate.getMonth() + 1, 0).getDate();
-  return monthChanged && fromDate.getDate() === 1 && !toIsMonthEnd ? toDate.getDate() : null;
-};
+const paidOrdersInRange = (from: string, to: string): Order[] => state.orders.filter((order) => {
+  if (order.paymentState !== 'paid' && order.paymentState !== 'gifted') return false;
+  const date = salesDate(order);
+  return date >= from && date <= to;
+});
 
 const buildProductPerformance = (orders: Order[]): ProductPerformance[] => {
   const products = new Map<string, ProductPerformance>();
   for (const order of orders) {
     for (const item of order.items) {
-      const current = products.get(item.productId) ?? {
+      const key = JSON.stringify([item.productId, item.productName]);
+      const current = products.get(key) ?? {
         productId: item.productId,
         name: item.productName,
         units: 0,
@@ -200,16 +189,20 @@ const buildProductPerformance = (orders: Order[]): ProductPerformance[] => {
         costCents: 0,
         estimatedMarginCents: 0
       };
-      const itemCost = (item.unitCostCents ?? 0) * item.quantity;
-      const isAtCost = order.saleType === 'cost' || order.isCostSale;
+      const itemCost = item.costTotalCents ?? (item.unitCostCents ?? 0) * item.quantity;
+      const total = BigInt(order.totalCents);
+      // Same positive half-up cent rounding as PostgreSQL numeric, without
+      // a floating point intermediate changing a half-cent allocation.
+      const taxShare = total > 0n ? Number((2n * BigInt(order.taxAmountCents ?? 0) * BigInt(item.subtotalCents) + total) / (2n * total)) : 0;
       current.units += item.quantity;
       current.revenueCents += item.subtotalCents;
       current.costCents = (current.costCents ?? 0) + itemCost;
-      current.estimatedMarginCents += isAtCost ? 0 : (item.subtotalCents - itemCost);
-      products.set(item.productId, current);
+      current.estimatedMarginCents += item.subtotalCents - itemCost - taxShare;
+      products.set(key, current);
     }
   }
-  return [...products.values()].sort((left, right) => right.units - left.units);
+  return [...products.values()].sort((left, right) => right.units - left.units ||
+    right.revenueCents - left.revenueCents || left.name.localeCompare(right.name)).slice(0, 10);
 };
 
 const createPurchaseRecord = (input: PurchaseCreateInput): Purchase => {
@@ -794,7 +787,7 @@ export const demoBusinessApi: BusinessApi = {
 
   async listPaidOrders(page = 1, pageSize = 20, from, to) {
     const filtered = state.orders.filter(order => {
-      const date = order.paidAt ? new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' }).format(new Date(order.paidAt)) : '';
+      const date = salesDate(order);
       return (order.paymentState === 'paid' || order.paymentState === 'gifted') && (!from || date >= from) && (!to || date <= to);
     }).sort((a, b) => (b.paidAt ?? '').localeCompare(a.paidAt ?? ''));
     return latency(paginate(filtered, page, pageSize));
@@ -1751,10 +1744,7 @@ export const demoBusinessApi: BusinessApi = {
   },
 
   async getAnalytics(from, to) {
-    const cutoffDay = comparisonCutoffDay(from, to);
-    const orders = paidOrdersInRange(from, to).filter(
-      (order) => cutoffDay === null || new Date(order.paidAt ?? order.createdAt).getDate() <= cutoffDay
-    );
+    const orders = paidOrdersInRange(from, to);
     const paidOrders = orders.filter((order) => order.paymentState === 'paid');
     const giftOrdersList = orders.filter((order) => order.paymentState === 'gifted');
     const giftOrders = giftOrdersList.length;
@@ -1769,7 +1759,6 @@ export const demoBusinessApi: BusinessApi = {
       .filter((expense) => expense.deletedAt === null)
       .flatMap((expense) =>
         listMiscExpenseOccurrenceDates(expense, from, to)
-          .filter((date) => cutoffDay === null || Number(date.slice(8, 10)) <= cutoffDay)
           .map(() => expense.amountCents)
       );
     const miscExpensesCents = expenseOccurrences.reduce((sum, amount) => sum + amount, 0);
@@ -1777,7 +1766,7 @@ export const demoBusinessApi: BusinessApi = {
     const units = orders.flatMap((order) => order.items).reduce((sum, item) => sum + item.quantity, 0);
     const byMonth = new Map<string, Order[]>();
     for (const order of orders) {
-      const key = order.paidAt?.slice(0, 7) ?? order.createdAt.slice(0, 7);
+      const key = salesDate(order).slice(0, 7);
       byMonth.set(key, [...(byMonth.get(key) ?? []), order]);
     }
     const series = [...byMonth.entries()]
@@ -1789,7 +1778,7 @@ export const demoBusinessApi: BusinessApi = {
           period,
           revenueCents: periodRevenue,
           adjustedRevenueCents: isCurrentPending ? null : Math.round(periodRevenue * 0.981),
-          orderCount: periodOrders.length,
+          orderCount: periodOrders.filter(order => order.paymentState === 'paid').length,
           units: periodOrders
             .flatMap((order) => order.items)
             .reduce((sum, item) => sum + item.quantity, 0),
@@ -1799,7 +1788,7 @@ export const demoBusinessApi: BusinessApi = {
     const result: AnalyticsSummary = {
       from,
       to,
-      comparisonCutoffDay: cutoffDay,
+      comparisonCutoffDay: null,
       revenueCents,
       costCents,
       taxCents,
