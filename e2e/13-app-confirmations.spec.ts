@@ -117,6 +117,64 @@ test('la navegación interna y Atrás conservan el monto hasta una decisión exp
   expect(errors).toEqual([]);
 });
 
+test('Atrás entre dos búsquedas de Pedidos protege el envío y descarta solo al elegirlo',async({page})=>{
+  const errors=watch(page);await fixture(page);
+  // Seed pristine history entries without importing a second development router instance.
+  const seedSearch=async(value:string)=>page.evaluate(search=>{
+    const key=crypto.randomUUID();
+    history.pushState({...history.state,key,__TSR_key:key,__TSR_index:(history.state.__TSR_index??0)+1},'',
+      '/app/pedidos?'+new URLSearchParams({search}));
+  },value);
+  await seedSearch('Primera');
+  await expect(page).toHaveURL(/search=Primera/);
+  await expect(article(page,'Primera')).toBeVisible();
+  await expect(article(page,'Segunda')).toHaveCount(0);
+  await seedSearch('Segunda');
+  await expect(page).toHaveURL(/search=Segunda/);
+  const second=article(page,'Segunda');
+  await expect(second).toBeVisible();
+  await expect(article(page,'Primera')).toHaveCount(0);
+  const header=second.locator('button[aria-expanded]').first();
+  if(await header.getAttribute('aria-expanded')==='false')await header.click();
+  await second.getByRole('button',{name:'Agregar',exact:true}).click();
+  const amount=second.getByRole('textbox',{name:'Envío en pesos'});
+  await amount.fill('15000');
+  await page.evaluate(()=>history.back());
+  const decision=page.getByRole('dialog',{name:'¿Descartar los cambios?'});
+  await expect(decision).toBeVisible();
+  await expect(decision).toContainText('cambiar de vista');
+  await decision.getByRole('button',{name:'Seguir editando'}).click();
+  await expect(page).toHaveURL(/search=Segunda/);
+  await expect(amount).toHaveValue('15.000');
+  await page.evaluate(()=>history.back());
+  await decision.getByRole('button',{name:'Descartar',exact:true}).click();
+  await expect(page).toHaveURL(/search=Primera/);
+  await expect(article(page,'Primera')).toBeVisible();
+  await page.evaluate(()=>history.forward());
+  await expect(page).toHaveURL(/search=Segunda/);
+  await expect(second).toBeVisible();
+  if(await header.getAttribute('aria-expanded')==='false')await header.click();
+  await second.getByRole('button',{name:'Agregar',exact:true}).click();
+  await expect(amount).toHaveValue('');
+  await second.getByRole('button',{name:'Cancelar',exact:true}).click();
+  await navigate(page,'Pedidos');
+  await expect(page.getByRole('searchbox')).toHaveValue('');
+  await expect(second.getByRole('button',{name:'Agregar',exact:true})).toBeEnabled();
+  await page.clock.install();await page.clock.pauseAt(new Date());
+  await page.getByRole('searchbox').fill('Primera');
+  await expect(second.getByRole('button',{name:'Agregar',exact:true})).toBeDisabled();
+  await expect(second.getByRole('button',{name:'Marcar como cobrado'})).toBeDisabled();
+  expect(await second.evaluate(card=>{
+    const pay=Array.from(card.querySelectorAll('button')).find(button=>button.textContent?.includes('Marcar como cobrado'))!;
+    const disabled=pay.matches(':disabled');pay.click();return disabled;
+  })).toBe(true);
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await page.clock.runFor(1000);
+  await expect(article(page,'Primera')).toBeVisible();
+  await expect(second).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
 test('una confirmación anidada conserva la compra y el foco sin cerrar la ventana inferior',async({page},info)=>{
   const errors=watch(page);await fixture(page);await navigate(page,'Inventario');
   await page.getByRole('button',{name:'Compras',exact:true}).click();

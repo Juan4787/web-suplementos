@@ -7,8 +7,13 @@ import { dirname, resolve } from 'node:path';
 import { PROJECT_ROOT } from './project-targets.mjs';
 
 const digest=bytes=>createHash('sha256').update(bytes).digest('hex');
-const original=JSON.parse(readFileSync(resolve(PROJECT_ROOT,'output/audit/shipping-principal-certified/shipping-served-build.json'),'utf8'));
-assert.equal(original.buildSha256,'759a260cbabfe004c9c45d842bbd1b641586e7a531707a57b05b75373d259639','Only the previously certified build may be retained');
+const certificate=process.argv[3]||'output/audit/shipping-principal-certified/shipping-served-build.json';
+assert.match(certificate,/^output\/audit\/shipping-(principal|dialog-intermediate)-certified\/shipping-served-build\.json$/);
+const original=JSON.parse(readFileSync(resolve(PROJECT_ROOT,certificate),'utf8'));
+assert.ok(['759a260cbabfe004c9c45d842bbd1b641586e7a531707a57b05b75373d259639',
+  '3846b565c6015b2e233758422e5c6ac29dc6e3df757a5af615376c5d99d63515'].includes(original.buildSha256),
+  'Only the certified builds of this release may be retained');
+assert.equal(digest(Buffer.from(original.files.map(file=>file.path+'\t'+file.hash+'\n').join(''))),original.buildSha256);
 const assets=original.files.filter(file=>/^assets\/[^/]+-[A-Za-z0-9_-]+\.(js|css)$/.test(file.path));
 assert.equal(assets.length,original.verifiedResourceCount-1,'Every prior executable resource must be retained');
 const archive=resolve(PROJECT_ROOT,'output/audit/shipping-session-assets');

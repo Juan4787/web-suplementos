@@ -9,12 +9,66 @@ import OrdersPage from './OrdersPage';
 
 const api = vi.hoisted(() => ({ listOrders: vi.fn(), transitionOrder: vi.fn(), saveOrderPacking: vi.fn(), saveOrderShippingFee: vi.fn() }));
 const navigation = vi.hoisted(() => vi.fn<(options: { enableBeforeUnload: boolean;
-  shouldBlockFn: (input: { current: { pathname: string }; next: { pathname: string } }) => boolean | Promise<boolean> }) => void>());
+  shouldBlockFn: (input: { current: { pathname: string; search?: {search?:string} }; next: { pathname: string; search?: {search?:string} } }) => boolean | Promise<boolean> }) => void>());
 vi.mock('@/services/business-api', () => ({ getBusinessApi: async () => api }));
 vi.mock('@/components/layout/AdminShell', () => ({ PageHeader: () => <h1>Pedidos</h1> }));
 vi.mock('@tanstack/react-router', () => ({ useSearch: () => ({}), useBlocker: navigation, Link: ({ children, to }: PropsWithChildren<{ to: string }>) => <a href={to}>{children}</a> }));
 vi.mock('@/features/auth/AuthProvider', () => ({ useAuth: () => ({ user: { active: true, role: 'owner' } }) }));
 afterEach(cleanup);
+
+it('protects same-route search changes and explicitly discards both shipping and packing even if the row stays visible', async () => {
+  const order:Order={...demoOrders[0]!,orderState:'confirmed',paymentState:'pending',fulfillmentState:'pending',
+    shippingFeeCents:0,shippingFeeRevision:0,stockReadiness:'ready',packingRevision:0,
+    items:[{...demoOrders[0]!.items[0]!,quantity:1,packedQuantity:0,physicalReservedQuantity:1,incomingQuantity:0,uncoveredQuantity:0}]};
+  api.listOrders.mockResolvedValue({items:[order],total:1,page:1,pageSize:50,pendingTotal:1,completedTotal:0});
+  const client=new QueryClient({defaultOptions:{queries:{retry:false}}});
+  render(<QueryClientProvider client={client}><AppConfirmationProvider><OrdersPage /></AppConfirmationProvider></QueryClientProvider>);
+  const header=await screen.findByRole('button',{name:/Ver pedido y acciones/});
+  fireEvent.click(header);
+  fireEvent.change(screen.getByRole('textbox',{name:/Unidades en bolsita/}),{target:{value:'1'}});
+  fireEvent.click(screen.getByRole('button',{name:'Agregar'}));
+  fireEvent.change(screen.getByRole('textbox',{name:'Envío en pesos'}),{target:{value:'12500'}});
+  let decision!: boolean | Promise<boolean>;
+  const locations={current:{pathname:'/app/pedidos',search:{search:'actual'}},next:{pathname:'/app/pedidos',search:{search:'otro'}}};
+  act(()=>{decision=navigation.mock.lastCall![0].shouldBlockFn(locations);});
+  expect(screen.getByRole('dialog')).toHaveTextContent('edición de envío y conteos de bolsitas');
+  expect(screen.getByRole('dialog')).toHaveTextContent('cambiar de vista');
+  fireEvent.click(screen.getByRole('button',{name:'Seguir editando'}));
+  expect(await decision).toBe(true);
+  expect(screen.getByRole('textbox',{name:'Envío en pesos'})).toHaveValue('12.500');
+  act(()=>{decision=navigation.mock.lastCall![0].shouldBlockFn(locations);});
+  fireEvent.click(screen.getByRole('button',{name:'Descartar'}));
+  expect(await decision).toBe(false);
+  await waitFor(()=>expect(screen.queryByText(/Tenés armados sin guardar/)).not.toBeInTheDocument());
+  fireEvent.click(header);
+  expect(screen.getByRole('textbox',{name:/Unidades en bolsita/})).toHaveValue('0');
+  fireEvent.click(screen.getByRole('button',{name:'Agregar'}));
+  expect(screen.getByRole('textbox',{name:'Envío en pesos'})).toHaveValue('');
+  client.clear();
+});
+
+it('blocks stale-row actions immediately while a search is debouncing and until its response arrives', async () => {
+  const order:Order={...demoOrders[0]!,orderState:'confirmed',paymentState:'pending',fulfillmentState:'pending',shippingFeeCents:0};
+  const result={items:[order],total:1,page:1,pageSize:50,pendingTotal:1,completedTotal:0};
+  let finish!: (value:typeof result)=>void;
+  const pending=new Promise<typeof result>(resolve=>{finish=resolve;});
+  api.listOrders.mockImplementation((_page,_size,search)=>search==='other'?pending:Promise.resolve(result));
+  const client=new QueryClient({defaultOptions:{queries:{retry:false}}});
+  render(<QueryClientProvider client={client}><AppConfirmationProvider><OrdersPage /></AppConfirmationProvider></QueryClientProvider>);
+  fireEvent.click(await screen.findByRole('button',{name:'Todos (1)'}));
+  await waitFor(()=>expect(client.isFetching()).toBe(0));
+  const header=await screen.findByRole('button',{name:/Ver pedido y acciones/});
+  fireEvent.click(header);
+  const shipping=screen.getByRole('button',{name:'Agregar'}),pay=screen.getByRole('button',{name:'Marcar como cobrado'});
+  fireEvent.change(screen.getByRole('searchbox'),{target:{value:'other'}});
+  expect(header).toBeDisabled();expect(shipping).toBeDisabled();expect(pay).toBeDisabled();
+  expect(screen.getByRole('status')).toHaveTextContent('Buscando pedidos');
+  await waitFor(()=>expect(api.listOrders).toHaveBeenCalledWith(1,50,'other','all'));
+  expect(screen.queryByRole('button',{name:'Agregar'})).not.toBeInTheDocument();
+  await act(async()=>finish(result));
+  await waitFor(()=>expect(screen.getByRole('button',{name:'Agregar'})).toBeEnabled());
+  client.clear();
+});
 
 it('does not discard or switch an order while its shipping save is pending and preserves failed input', async () => {
   const order: Order = {...demoOrders[0]!,orderState:'confirmed',paymentState:'pending',fulfillmentState:'pending',

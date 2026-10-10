@@ -15,7 +15,9 @@ const client=createClient(env.VITE_SUPABASE_URL,env.VITE_SUPABASE_ANON_KEY||env.
   {auth:{persistSession:false,autoRefreshToken:false}});
 const {data,error}=await client.auth.signInWithPassword({email:env.E2E_ADMIN_EMAIL||env.E2E_EMAIL,password:env.E2E_ADMIN_PASSWORD||env.E2E_PASSWORD});
 assert.ok(!error&&data.session,'Owner authentication failed');
-const prior=JSON.parse(readFileSync('output/audit/shipping-principal-certified/shipping-served-build.json','utf8'));
+const priorPath=process.argv[2]||'output/audit/shipping-principal-certified/shipping-served-build.json';
+assert.match(priorPath,/^output\/audit\/shipping-(principal|dialog-intermediate)-certified\/shipping-served-build\.json$/);
+const prior=JSON.parse(readFileSync(priorPath,'utf8'));
 const snapshot=JSON.parse(readFileSync('output/audit/shipping-release-after.json','utf8'));
 assert.deepEqual(snapshot.failures,[]);
 const allowed=new Set(snapshot.functions.filter(f=>f.schema==='public'&&['s','i'].includes(f.provolatile)).map(f=>f.name));
@@ -70,9 +72,9 @@ try {
   await page.getByRole('link',{name:'Pedidos',exact:true}).click();
   await page.getByRole('link',{name:'Cargar pedido manual',exact:true}).click();
   await page.getByRole('radio',{name:'Compra normal',exact:true}).waitFor();
-  const manual=prior.files.find(file=>/^assets\/CreateOrderPage-.*\.js$/.test(file.path));
   const retained=JSON.parse(readFileSync('output/audit/shipping-session-assets/restore.json','utf8'));
-  assert.ok(manual&&retained.files.includes(manual.path)&&lateRequests.includes(manual.path),
+  assert.ok(prior.files.some(file=>/^assets\/(CreateOrderPage|OrdersPage)-.*\.js$/.test(file.path)&&
+    retained.files.includes(file.path)&&lateRequests.includes(file.path)),
     'Also load a changed page whose prior file would be missing without retention');
   assert.deepEqual(blocked,[]);assert.deepEqual(errors,[]);
   writeFileSync('output/audit/shipping-open-tab-readonly.json',JSON.stringify({environment:'production-read-only-open-tab',

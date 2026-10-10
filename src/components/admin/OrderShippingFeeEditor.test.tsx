@@ -113,6 +113,20 @@ describe('envío en Qué sigue', () => {
     fireEvent.change(screen.getByRole('textbox',{name:'Porcentaje del costo'}),{target:{value:'5,'}});
     expect(screen.getByRole('button',{name:'Guardar envío'})).toBeDisabled();
   });
+  it('distingue un costo desconocido de cero y permite continuar con un monto manual', () => {
+    renderEditor({...order,costTotalCents:null});
+    fireEvent.click(screen.getByRole('button',{name:'Agregar'}));
+    fireEvent.click(screen.getByRole('button',{name:'Porcentaje'}));
+    fireEvent.change(screen.getByRole('textbox',{name:'Porcentaje del costo'}),{target:{value:'5'}});
+    expect(screen.getByText(/No está disponible el costo/)).toHaveTextContent('Usá Monto manual');
+    expect(screen.getByText('Envío').nextSibling).toHaveTextContent('Costo no disponible');
+    expect(screen.getByRole('button',{name:'Guardar envío'})).toBeDisabled();
+    fireEvent.click(screen.getByRole('button',{name:'Monto manual'}));
+    fireEvent.change(screen.getByRole('textbox',{name:'Envío en pesos'}),{target:{value:'12500'}});
+    expect(screen.getByRole('button',{name:'Guardar envío'})).toBeEnabled();
+    expect(screen.getByText('Envío').nextSibling).toHaveTextContent('12.500');
+    expect(save).not.toHaveBeenCalled();
+  });
   it('no recalcula silenciosamente si el costo cambia mientras se está editando', () => {
     const {rerender,client,onEditingChange}=renderEditor();
     fireEvent.click(screen.getByRole('button',{name:'Agregar'}));fireEvent.click(screen.getByRole('button',{name:'Porcentaje'}));

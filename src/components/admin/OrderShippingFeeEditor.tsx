@@ -106,11 +106,13 @@ export function OrderShippingFeeEditor({ order, canEdit, disabled, onEditingChan
           if (/^\d{0,3}(?:[,.]\d{0,2})?$/.test(raw)) setPercentage(raw);
         }} />
       </Field>}
-      {method === 'percentage' ? <p className="text-xs text-ink-700">Costo de los productos: <strong>{formatMoney(costBase ?? 0)}</strong>. Se redondea el cargo al peso más cercano.</p> : null}
+      {method === 'percentage' ? <p className="text-xs text-ink-700">{costBase === null
+        ? 'No está disponible el costo de los productos. Usá Monto manual o cancelá y volvé a abrir la edición.'
+        : <>Costo de los productos: <strong>{formatMoney(costBase)}</strong>. Se redondea el cargo al peso más cercano.</>}</p> : null}
       {method === 'percentage' && percentageNotice ? <p role="alert" className="text-xs font-semibold text-rose-800">Ingresá solo el número del porcentaje, sin signos ni letras. Por ejemplo: 5.</p> : null}
       {costChanged ? <p role="alert" className="text-xs font-semibold text-rose-800">Cambió el costo de los productos mientras editabas. Cancelá y abrí la edición otra vez para revisar el nuevo monto.</p> : null}
       <dl aria-live="polite" className="space-y-1 text-sm">
-        <div className="flex justify-between gap-2"><dt>Envío</dt><dd className="font-bold">{calculated === null ? 'Revisá el porcentaje' : formatMoney(calculated)}</dd></div>
+        <div className="flex justify-between gap-2"><dt>Envío</dt><dd className="font-bold">{calculated === null ? (costBase === null ? 'Costo no disponible' : 'Revisá el porcentaje') : formatMoney(calculated)}</dd></div>
         <div className="flex justify-between gap-2"><dt>Total a cobrar</dt><dd className="font-bold">{calculated === null ? '—' : formatMoney(order.subtotalCents + calculated)}</dd></div>
       </dl>
       {changedElsewhere && !save.isPending ? <p role="alert" className="text-xs font-semibold text-rose-800">El envío fue modificado en otra pantalla. Cancelá la edición y abrila otra vez para revisar el importe actualizado.</p> : null}

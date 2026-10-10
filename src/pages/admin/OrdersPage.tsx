@@ -74,18 +74,30 @@ export default function OrdersPage() {
   const unsaved = [...draftStore.values()].filter(draft => draft.saving || packingDraftDirty(draft));
   useBlocker({
     shouldBlockFn: async ({ current, next }) => {
-      if (current.pathname === next.pathname || (!unsaved.length && !hasShippingChanges && !hasShippingSaves)) return false;
+      const samePage = current.pathname === next.pathname;
+      const sameSearch = normalizeOrderSearch((current.search as {search?: unknown} | undefined)?.search) ===
+        normalizeOrderSearch((next.search as {search?: unknown} | undefined)?.search);
+      if ((samePage && sameSearch) || (!unsaved.length && !hasShippingChanges && !hasShippingSaves)) return false;
       const saving = hasShippingSaves || unsaved.some(draft => draft.saving);
-      return !await askConfirmation({
+      const destination = samePage ? 'cambiar de vista en Pedidos' : 'salir de Pedidos';
+      const accepted = await askConfirmation({
         title: saving ? 'El guardado ya comenzó' : '¿Descartar los cambios?',
         description: saving
           ? 'Salir no cancela el guardado. Revisá el pedido al volver antes de guardar o cobrar otra vez. Los demás cambios sin guardar se descartarán.'
           : hasShippingChanges ? (unsaved.length
-            ? 'Hay una edición de envío y conteos de bolsitas sin guardar. Podés seguir editando o descartar estos cambios para salir de Pedidos.'
-            : 'Hay una edición de envío sin guardar. Podés seguir editando o descartar los cambios para salir de Pedidos.')
-            : 'Hay conteos de bolsitas sin guardar. Podés seguir editando o descartarlos para salir de Pedidos.',
+            ? `Hay una edición de envío y conteos de bolsitas sin guardar. Podés seguir editando o descartar estos cambios para ${destination}.`
+            : `Hay una edición de envío sin guardar. Podés seguir editando o descartar los cambios para ${destination}.`)
+            : `Hay conteos de bolsitas sin guardar. Podés seguir editando o descartarlos para ${destination}.`,
         ...(saving ? { confirmLabel: 'Salir', cancelLabel: 'Seguir esperando' } : {})
       });
+      if (accepted && samePage) {
+        setExpanded(null);
+        for (const draft of unsaved) if (!draft.saving) {
+          draftStore.set(draft.baseline.id, { baseline: draft.baseline, values: packingValues(draft.baseline) });
+        }
+        if (unsaved.some(draft => !draft.saving)) notifyDraft();
+      }
+      return !accepted;
     },
     enableBeforeUnload: unsaved.length > 0 || hasShippingChanges || hasShippingSaves
   });
@@ -107,14 +119,14 @@ export default function OrdersPage() {
     return initialSearch ? 'all' : 'pending';
   });
 
+  const previousRouteSearch = useRef(routeSearchParams?.search);
   useEffect(() => {
-    if (routeSearchParams?.search !== undefined && routeSearchParams?.search !== null) {
-      const cleaned = normalizeOrderSearch(routeSearchParams.search);
+    if (routeSearchParams?.search != null || previousRouteSearch.current != null) {
+      const cleaned = normalizeOrderSearch(routeSearchParams?.search);
       setSearch(cleaned);
-      if (cleaned) {
-        setFilter('all');
-      }
+      setFilter(cleaned ? 'all' : 'pending');
     }
+    previousRouteSearch.current = routeSearchParams?.search;
   }, [routeSearchParams?.search]);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [mutationError, setMutationError] = useState<Error | null>(null);
@@ -140,6 +152,8 @@ export default function OrdersPage() {
     refetchOnWindowFocus: 'always',
     queryFn: (api) => api.listOrders(page, 50, debouncedSearch, filter)
   });
+  const searchUnsettled = normalizeOrderSearch(search) !== debouncedSearch;
+  const orderLookupPending = searchUnsettled || ordersQuery.isPending;
 
   const transition = useMutation({
     mutationFn: async (variables: { orderId: string; action: OrderAction; expected?: OrderPaymentExpectation }) =>
@@ -305,8 +319,12 @@ export default function OrdersPage() {
               setSearch(val);
               if (val.trim()) setFilter('all');
             }}
-            className="h-11 w-full rounded-full border border-ink-950/15 bg-white pl-10 pr-4 text-[14.5px] font-semibold text-ink-950 placeholder:text-ink-600/70 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+            className="h-11 w-full rounded-full border border-ink-950/15 bg-white pl-10 pr-10 text-[14.5px] font-semibold text-ink-950 placeholder:text-ink-600/70 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
           />
+          {searchUnsettled ? <span role="status" className="absolute right-3.5 top-1/2 -translate-y-1/2">
+            <span className="block size-4 animate-spin rounded-full border-2 border-ink-950/15 border-t-ink-700" aria-hidden="true" />
+            <span className="sr-only">Buscando pedidos…</span>
+          </span> : null}
         </div>
       </div>
 
@@ -380,10 +398,12 @@ export default function OrdersPage() {
                         : 'border border-ink-950/8 bg-white shadow-xs hover:border-ink-950/15 hover:shadow-2xs'
                   )}
                 >
+                  {/* Prevent actions on the previous results while the next search resolves. */}
+                  <fieldset disabled={orderLookupPending} className="contents">
                   <button
                     type="button"
                     className={cn(
-                      'grid w-full min-h-[4.25rem] gap-3 p-4 text-left sm:grid-cols-[5.5rem_1.2fr_1.2fr_auto] sm:items-center sm:px-6 sm:py-4 transition-colors',
+                      'grid w-full min-h-[4.25rem] gap-3 p-4 text-left sm:grid-cols-[5.5rem_1.2fr_1.2fr_auto] sm:items-center sm:px-6 sm:py-4 transition-colors disabled:cursor-wait disabled:opacity-60',
                       isSelected
                         ? 'bg-white border-b border-ink-950/6'
                         : 'hover:bg-cream-50/60'
@@ -819,6 +839,7 @@ export default function OrdersPage() {
                       </div>
                     </div>
                   ) : null}
+                  </fieldset>
                 </article>
               );
             })
