@@ -1,4 +1,4 @@
-import { formatISO, startOfMonth } from 'date-fns';
+import { formatISO } from 'date-fns';
 import {
   demoCustomers,
   demoInflation,
@@ -13,6 +13,7 @@ import {
 } from '@/data/demo-data';
 import { AppError } from '@/domain/errors';
 import { availabilityFromQuantity } from '@/domain/inventory';
+import { orderLineRevenue, percentageShippingCents, shippingFeeNeedsReview, validateShippingCents } from '@/domain/order-shipping';
 import { calculateBasisPoints } from '@/domain/money';
 import { salesDateAt } from '@/domain/sales-date';
 import {
@@ -32,6 +33,8 @@ import type {
   MiscExpenseSnapshot,
   Order,
   OrderItem,
+  OrderShippingFeeEvent,
+  PurchaseReceipt,
   ProductPerformance,
   Purchase,
   PurchaseImpactItem,
@@ -65,8 +68,13 @@ const state: {
   purchaseReceipts: Map<string, {
     purchaseId: string;
     canonicalPayload: string;
+    shippingCostCents: number;
     result: { purchase: Purchase; unblockedOrders: Array<{ id: string; number: number }> };
   }>;
+  shippingFeeOperations: Map<string, { input: string; orderId: string }>;
+  shippingFeeHistory: OrderShippingFeeEvent[];
+  receiptHistory: PurchaseReceipt[];
+  incomingAllocations: Map<string, Array<{ purchaseItemId: string; quantity: number; unitCostCents: number }>>;
   shortageOperations: Map<string, { request: string; result: unknown }>;
   revision: number;
 } = {
@@ -94,6 +102,10 @@ const state: {
   expenseHistory: [],
   importedProtocols: new Map(),
   purchaseReceipts: new Map(),
+  shippingFeeOperations: new Map(),
+  shippingFeeHistory: [],
+  receiptHistory: [],
+  incomingAllocations: new Map(),
   shortageOperations: new Map(),
   revision: 1
 };
@@ -136,6 +148,7 @@ const importFingerprint = (input: ImportOrderInput): string => {
     address: input.deliveryMethod === 'shipping'
       ? [input.address?.trim(), input.addressNumber?.trim()].filter(Boolean).join(' ') || null
       : null,
+    stockSource: input.stockSource ?? 'normal',
     shippingFeeCents: isGift ? 0 : input.shippingFeeCents,
     saleType: isGift ? 'gift' : isCost ? 'cost' : 'retail',
     checksum: input.protocolChecksum?.trim().toUpperCase(),
@@ -157,6 +170,23 @@ const expenseSnapshot = (expense: MiscExpense): MiscExpenseSnapshot => ({
   endsOn: expense.endsOn,
   deletedAt: expense.deletedAt
 });
+
+// Record synchronously so a receipt retry sees both stock and expense together.
+const recordDemoExpense = (
+  values: Pick<MiscExpense, 'title' | 'amountCents' | 'frequency' | 'startsOn' | 'endsOn'>,
+  operationId: string,
+  receipt?: Pick<MiscExpense, 'purchaseReceiptOperationId' | 'purchaseId' | 'purchaseNumber'>
+): MiscExpense => {
+  const now = new Date().toISOString();
+  const created: MiscExpense = {id: nextUuid(), operationId, ...values, ...receipt,
+    createdAt: now, updatedAt: now, deletedAt: null,
+    createdByName: demoOwner.displayName, updatedByName: demoOwner.displayName};
+  state.expenses.push(created);
+  state.expenseHistory.push({id: String(state.expenseHistory.length + 1), expenseId: created.id,
+    action: 'created', previous: null, current: expenseSnapshot(created), changedAt: now, changedByName: demoOwner.displayName});
+  state.revision += 1;
+  return created;
+};
 
 const sameExpenseValues = (
   expense: MiscExpense,
@@ -193,11 +223,11 @@ const buildProductPerformance = (orders: Order[]): ProductPerformance[] => {
       const total = BigInt(order.totalCents);
       // Same positive half-up cent rounding as PostgreSQL numeric, without
       // a floating point intermediate changing a half-cent allocation.
-      const taxShare = total > 0n ? Number((2n * BigInt(order.taxAmountCents ?? 0) * BigInt(item.subtotalCents) + total) / (2n * total)) : 0;
+      const taxShare = total > 0n ? Number((2n * BigInt(order.taxAmountCents ?? 0) * BigInt(orderLineRevenue(order, item)) + total) / (2n * total)) : 0;
       current.units += item.quantity;
-      current.revenueCents += item.subtotalCents;
+      current.revenueCents += orderLineRevenue(order, item);
       current.costCents = (current.costCents ?? 0) + itemCost;
-      current.estimatedMarginCents += item.subtotalCents - itemCost - taxShare;
+      current.estimatedMarginCents += orderLineRevenue(order, item) - itemCost - taxShare;
       products.set(key, current);
     }
   }
@@ -273,7 +303,10 @@ const recordShortage = (purchase: Purchase, item: Purchase['items'][number], qua
     if (order.orderState !== 'confirmed' || order.fulfillmentState !== 'pending') continue;
     for (const line of order.items) {
       if (line.productId !== product.id) continue;
-      const take = Math.min(toUncover, line.incomingQuantity ?? 0);
+      const allocations = state.incomingAllocations.get(line.id);
+      const linked = allocations?.find(a => a.purchaseItemId === item.id && a.quantity > 0);
+      if (allocations && !linked) continue;
+      const take = Math.min(toUncover, linked?.quantity ?? line.incomingQuantity ?? 0);
       line.incomingQuantity = (line.incomingQuantity ?? 0) - take;
       line.uncoveredQuantity = (line.uncoveredQuantity ?? 0) + take;
       product.incomingReserved = Math.max(0, (product.incomingReserved ?? 0) - take);
@@ -322,6 +355,11 @@ export const demoBusinessApi: BusinessApi = {
   },
 
   async saveMiscExpense(input) {
+    const linkedExpense = input.id ? state.expenses.find(e => e.id === input.id && e.purchaseReceiptOperationId) : null;
+    if (linkedExpense) {
+      validateShippingCents(input.amountCents);
+      if (input.frequency !== 'once' || input.endsOn !== null) throw new AppError('validation', 'El envío de proveedor se registra una sola vez.');
+    }
     const title = input.title.trim();
     const values = {
       title,
@@ -352,29 +390,7 @@ export const demoBusinessApi: BusinessApi = {
           nextAction: 'Cerrá el formulario, volvé a abrirlo y revisá el gasto antes de guardar.'
         });
       }
-      const now = new Date().toISOString();
-      const created: MiscExpense = {
-        id: nextUuid(),
-        operationId: input.operationId,
-        ...values,
-        createdAt: now,
-        updatedAt: now,
-        deletedAt: null,
-        createdByName: demoOwner.displayName,
-        updatedByName: demoOwner.displayName
-      };
-      state.expenses.push(created);
-      state.expenseHistory.push({
-        id: String(state.expenseHistory.length + 1),
-        expenseId: created.id,
-        action: 'created',
-        previous: null,
-        current: expenseSnapshot(created),
-        changedAt: now,
-        changedByName: demoOwner.displayName
-      });
-      state.revision += 1;
-      return latency(created);
+      return latency(recordDemoExpense(values, input.operationId));
     }
 
     const existing = state.expenses.find((expense) => expense.id === input.id && expense.deletedAt === null);
@@ -554,18 +570,17 @@ export const demoBusinessApi: BusinessApi = {
 
   async getDashboard() {
     const inventory = toDemoInventory(state.products);
-    const currentMonth = startOfMonth(new Date('2026-08-28T15:30:00-03:00'));
+    const expenseTo = salesDateAt(new Date().toISOString());
+    const expenseFrom = `${expenseTo.slice(0, 7)}-01`;
     const activeThisMonth = state.orders.filter(
       (order) =>
         order.paidAt &&
-        new Date(order.paidAt) >= currentMonth &&
+        salesDateAt(order.paidAt) >= expenseFrom && salesDateAt(order.paidAt) <= expenseTo &&
         (order.paymentState === 'paid' || order.paymentState === 'gifted')
     );
     const revenue = activeThisMonth.reduce((sum, order) => sum + order.totalCents, 0);
     const costs = activeThisMonth.reduce((sum, order) => sum + (order.costTotalCents ?? 0), 0);
     const taxes = activeThisMonth.reduce((sum, order) => sum + (order.taxAmountCents ?? 0), 0);
-    const expenseFrom = '2026-08-01';
-    const expenseTo = '2026-08-28';
     const miscExpenses = state.expenses
       .filter((expense) => expense.deletedAt === null)
       .reduce(
@@ -809,6 +824,8 @@ export const demoBusinessApi: BusinessApi = {
       const existing = state.orders.find(order => order.id === previous.orderId);
       if (existing) return latency({ ...existing, alreadyImported: true });
     }
+    const stockSource = input.stockSource ?? 'normal';
+    if (!['normal', 'incoming_only'].includes(stockSource)) throw new AppError('validation', 'Elegí de dónde reservar los productos.');
     const isCost = input.saleType === 'cost';
     const isGift = input.paymentMethod === 'gift' || input.saleType === 'gift';
     // El catálogo público excluye productos despublicados; una importación
@@ -818,7 +835,7 @@ export const demoBusinessApi: BusinessApi = {
       if (!product?.active) return true;
       const physical = Math.max(0, product.onHand - product.reserved);
       const incoming = Math.max(0, product.incomingAvailable ?? (product.incoming - (product.incomingReserved ?? 0)));
-      return line.quantity > physical + incoming;
+      return line.quantity > (stockSource === 'incoming_only' ? 0 : physical) + incoming;
     });
     if (lacksStock) {
       throw new AppError('business', 'El stock cambió y el pedido necesita una revisión.', {
@@ -855,7 +872,7 @@ export const demoBusinessApi: BusinessApi = {
     }
     const now = new Date().toISOString();
     const number = Math.max(...state.orders.map((order) => order.number), 1000) + 1;
-    const costTotalCents = items.reduce(
+    let costTotalCents = items.reduce(
       (sum, item) => sum + (item.unitCostCents ?? 0) * item.quantity,
       0
     );
@@ -890,10 +907,10 @@ export const demoBusinessApi: BusinessApi = {
       const product = state.products.find((candidate) => candidate.id === item.productId)!;
       const physAvail = Math.max(0, product.onHand - product.reserved);
       item.packedQuantity = null;
-      item.physicalReservedQuantity = Math.min(item.quantity, physAvail);
+      item.physicalReservedQuantity = stockSource === 'incoming_only' ? 0 : Math.min(item.quantity, physAvail);
       item.incomingQuantity = item.quantity - item.physicalReservedQuantity;
       item.uncoveredQuantity = 0;
-      if (item.quantity > physAvail) {
+      if (item.incomingQuantity > 0) {
         requiresIncoming = true;
         const pu = state.purchases.find(
           (p) => p.state === 'ordered' && p.items.some((i) => i.productId === item.productId)
@@ -903,6 +920,28 @@ export const demoBusinessApi: BusinessApi = {
         }
       }
     }
+
+    const newAllocations = new Map<string, Array<{ purchaseItemId: string; quantity: number; unitCostCents: number }>>();
+    for (const item of items) {
+      const product = state.products.find(p => p.id === item.productId)!;
+      let remaining = item.incomingQuantity ?? 0;
+      let itemCost = (item.physicalReservedQuantity ?? 0) * (product.currentCostCents ?? 0);
+      const allocations: Array<{ purchaseItemId: string; quantity: number; unitCostCents: number }> = [];
+      const purchases = state.purchases.filter(p => p.state === 'ordered').sort((a,b) =>
+        (a.expectedAt ?? '9999').localeCompare(b.expectedAt ?? '9999') || (a.orderedAt ?? '').localeCompare(b.orderedAt ?? '') || a.id.localeCompare(b.id));
+      for (const purchase of purchases) {
+        for (const pi of purchase.items.filter(pi => pi.productId === item.productId)) {
+          const reserved = [...state.incomingAllocations.values()].flat().filter(a => a.purchaseItemId === pi.id).reduce((sum,a) => sum+a.quantity, 0);
+          const take = Math.min(remaining, Math.max(0, pi.quantity - pi.receivedQuantity - pi.shortageQuantity - reserved));
+          if (take > 0) { allocations.push({purchaseItemId: pi.id, quantity: take, unitCostCents: pi.unitCostCents}); itemCost += take*pi.unitCostCents; remaining -= take; }
+        }
+      }
+      if (remaining > 0) throw new AppError('business', 'No alcanzan las unidades libres de compras en camino.', {nextAction: 'Actualizá los productos y ajustá las cantidades.'});
+      newAllocations.set(item.id, allocations);
+      item.costTotalCents = itemCost;
+      if (isCost && !isGift) { item.unitPriceCents = Math.round(itemCost / item.quantity); item.subtotalCents = itemCost; }
+    }
+    costTotalCents = items.reduce((sum,item) => sum + (item.costTotalCents ?? 0), 0);
 
     const order: Order = {
       id: nextUuid(),
@@ -927,6 +966,11 @@ export const demoBusinessApi: BusinessApi = {
       fulfillmentState: 'pending',
       packingRevision: 0,
       packingTracked: false,
+      stockSource,
+      shippingFeeRevision: 0,
+      shippingFeeMethod: 'catalog',
+      shippingFeeBasisPoints: null,
+      shippingFeeCostBaseCents: null,
       stockReadiness: requiresIncoming ? 'waiting_incoming' : 'ready',
       expectedArrivalAt,
       subtotalCents: isGift ? 0 : isCost ? costTotalCents : subtotalCents,
@@ -944,6 +988,7 @@ export const demoBusinessApi: BusinessApi = {
       fulfilledAt: null,
       items
     };
+    for (const [id, allocations] of newAllocations) state.incomingAllocations.set(id, allocations);
     for (const item of items) {
       const product = state.products.find((candidate) => candidate.id === item.productId)!;
       const physical = item.physicalReservedQuantity ?? 0;
@@ -993,7 +1038,40 @@ export const demoBusinessApi: BusinessApi = {
     return latency(order);
   },
 
-  async transitionOrder(orderId, action) {
+  async saveOrderShippingFee(input) {
+    const payload = JSON.stringify(input);
+    const previous = state.shippingFeeOperations.get(input.operationId);
+    if (previous) {
+      if (previous.input !== payload) throw new AppError('business', 'Este intento ya se usó con otros datos.');
+      return latency(state.orders.find(o => o.id === previous.orderId)!);
+    }
+    const order = state.orders.find(o => o.id === input.orderId);
+    if (!order) throw new AppError('business', 'No encontramos ese pedido.');
+    if (order.paymentState !== 'pending' || order.orderState === 'cancelled' || order.saleType === 'gift') throw new AppError('business', 'El envío solo puede cambiarse antes del cobro.');
+    if ((order.shippingFeeRevision ?? 0) !== input.expectedRevision) throw new AppError('business', 'El envío cambió mientras lo estabas editando.');
+    let amount: number;
+    if (input.method === 'percentage') {
+      if (input.expectedCostCents !== order.costTotalCents) throw new AppError('business', 'El costo de los productos cambió. Revisá el porcentaje antes de cobrar.');
+      amount = percentageShippingCents(order.costTotalCents ?? 0, input.basisPoints!);
+    } else if (input.method === 'manual') { amount = input.amountCents!; validateShippingCents(amount); }
+    else throw new AppError('validation', 'Elegí cómo calcular el envío.');
+    const snapshot = () => ({amountCents: order.shippingFeeCents, method: order.shippingFeeMethod ?? 'catalog',
+      basisPoints: order.shippingFeeBasisPoints ?? null, costBaseCents: order.shippingFeeCostBaseCents ?? null, revision: order.shippingFeeRevision ?? 0});
+    const before = snapshot();
+    order.shippingFeeCents = amount;
+    order.shippingFeeMethod = input.method;
+    order.shippingFeeBasisPoints = input.method === 'percentage' ? input.basisPoints! : null;
+    order.shippingFeeCostBaseCents = input.method === 'percentage' ? input.expectedCostCents! : null;
+    order.shippingFeeRevision = (order.shippingFeeRevision ?? 0) + 1;
+    order.totalCents = order.subtotalCents + amount;
+    order.taxAmountCents = order.saleType === 'cost' ? 0 : calculateBasisPoints(order.totalCents, order.taxRateBasisPoints ?? 0);
+    state.shippingFeeHistory.push({id: nextUuid(), operationId: input.operationId, orderId: order.id, input: {...input}, previous: before, current: snapshot(), createdAt: new Date().toISOString(), createdByName: 'Dueña demo'});
+    state.shippingFeeOperations.set(input.operationId, { input: payload, orderId: order.id });
+    state.revision += 1;
+    return latency(order);
+  },
+
+  async transitionOrder(orderId, action, expected) {
     const order = state.orders.find((candidate) => candidate.id === orderId);
     if (!order) throw new AppError('business', 'No encontramos el pedido.');
     if (action === 'mark_gifted' && order.paymentState === 'gifted') return latency(order);
@@ -1049,7 +1127,9 @@ export const demoBusinessApi: BusinessApi = {
       });
     }
 
+    if (expected && ['mark_paid','mark_at_cost','mark_gifted'].includes(action) && ((order.shippingFeeRevision ?? 0) !== expected.shippingFeeRevision || (order.paymentState === 'pending' && order.totalCents !== expected.totalCents) || (['mark_at_cost','mark_gifted'].includes(action) && order.costTotalCents !== expected.costTotalCents))) throw new AppError('business', 'El importe del pedido cambió desde que abriste la confirmación.', {nextAction:'Cerrá la confirmación y revisá el total actualizado antes de cobrar o regalar.'});
     const now = new Date().toISOString();
+    if (['mark_paid', 'mark_at_cost'].includes(action) && shippingFeeNeedsReview(order)) throw new AppError('business', 'El costo de los productos cambió. Revisá el porcentaje antes de cobrar.');
     if (action === 'mark_paid') {
       order.paymentState = 'paid';
       order.paidAt = now;
@@ -1065,7 +1145,7 @@ export const demoBusinessApi: BusinessApi = {
       for (const item of order.items) {
         const cost = item.unitCostCents ?? 0;
         item.unitPriceCents = cost;
-        item.subtotalCents = cost * item.quantity;
+        item.subtotalCents = item.costTotalCents ?? cost * item.quantity;
       }
       order.saleType = 'cost';
       order.isCostSale = true;
@@ -1106,7 +1186,13 @@ export const demoBusinessApi: BusinessApi = {
       order.totalCents = 0;
       order.subtotalCents = 0;
       order.taxAmountCents = 0;
+      const giftFeeBefore = {amountCents: order.shippingFeeCents, method: order.shippingFeeMethod ?? 'catalog', basisPoints: order.shippingFeeBasisPoints ?? null, costBaseCents: order.shippingFeeCostBaseCents ?? null, revision: order.shippingFeeRevision ?? 0};
       order.shippingFeeCents = 0;
+      order.shippingFeeMethod = 'manual';
+      order.shippingFeeBasisPoints = null;
+      order.shippingFeeCostBaseCents = null;
+      order.shippingFeeRevision = (order.shippingFeeRevision ?? 0) + 1;
+      if (giftFeeBefore.amountCents > 0 || giftFeeBefore.method !== 'catalog') state.shippingFeeHistory.push({id: nextUuid(), operationId: nextUuid(), orderId: order.id, input:{action:'mark_gifted'}, previous: giftFeeBefore, current: {amountCents:0,method:'manual',basisPoints:null,costBaseCents:null,revision:order.shippingFeeRevision}, createdAt:now, createdByName:'Dueña demo'});
       order.paidAt = now;
       order.fulfilledAt = now;
 
@@ -1182,7 +1268,9 @@ export const demoBusinessApi: BusinessApi = {
       if (action === 'mark_delivered') order.fulfilledAt = now;
     }
     if (action === 'cancel') {
+      for (const item of order.items) for (const allocation of state.incomingAllocations.get(item.id) ?? []) allocation.quantity = 0;
       order.orderState = 'cancelled';
+      if (order.paymentState === 'paid' || order.paymentState === 'gifted') order.paymentState = 'refunded';
       order.fulfillmentState = 'cancelled';
       for (const item of order.items) {
         const product = state.products.find((candidate) => candidate.id === item.productId)!;
@@ -1357,7 +1445,9 @@ export const demoBusinessApi: BusinessApi = {
     throw new AppError('business', 'Esta reserva ya no está pendiente.', { nextAction: 'Actualizá Inventario para ver las reservas actuales.' });
   },
 
-  async receivePurchase(purchaseId, itemsInput, operationId) {
+  async receivePurchase(purchaseId, itemsInput, operationId, shippingCostCents = 0) {
+    validateShippingCents(shippingCostCents);
+    operationId ??= nextUuid();
     const canonicalPayload = JSON.stringify(
       (itemsInput ?? [])
         .map((i) => ({ purchaseItemId: i.purchaseItemId, receivedQuantity: i.receivedQuantity }))
@@ -1367,7 +1457,7 @@ export const demoBusinessApi: BusinessApi = {
     if (operationId) {
       const existing = state.purchaseReceipts.get(operationId);
       if (existing) {
-        if (existing.purchaseId !== purchaseId || existing.canonicalPayload !== canonicalPayload) {
+        if (existing.purchaseId !== purchaseId || existing.canonicalPayload !== canonicalPayload || existing.shippingCostCents !== shippingCostCents) {
           throw new AppError('business', 'Esta recepción ya se intentó con cantidades diferentes.', {
             nextAction: 'Actualizá la compra y verificá lo que quedó registrado antes de reintentar.'
           });
@@ -1390,16 +1480,17 @@ export const demoBusinessApi: BusinessApi = {
     }
     for (const item of purchase.items) {
       const pending = Math.max(0, item.quantity - (item.receivedQuantity ?? 0) - (item.shortageQuantity ?? 0));
-      const requested = itemsInput && itemsInput.length > 0 ? (receivedByItem.get(item.id) ?? 0) : pending;
+      const requested = itemsInput !== undefined ? (receivedByItem.get(item.id) ?? 0) : pending;
       if (!Number.isInteger(requested) || requested < 0 || requested > pending) {
         throw new AppError('validation', `Revisá la cantidad recibida de ${item.productName}.`);
       }
     }
+    if (itemsInput?.length === 0 && shippingCostCents === 0) throw new AppError('validation', 'Registrá unidades recibidas o un gasto de envío.');
     const now = new Date().toISOString();
     const unblockedOrders: Array<{ id: string; number: number }> = [];
 
     for (const item of purchase.items) {
-      const qtyToReceive = itemsInput && itemsInput.length > 0
+      const qtyToReceive = itemsInput !== undefined
         ? (receivedByItem.get(item.id) ?? 0)
         : Math.max(0, item.quantity - (item.receivedQuantity ?? 0) - (item.shortageQuantity ?? 0));
 
@@ -1417,7 +1508,11 @@ export const demoBusinessApi: BusinessApi = {
           if (order.orderState !== 'confirmed' || order.fulfillmentState !== 'pending') continue;
           for (const line of order.items) {
             if (line.productId !== product.id || (line.incomingQuantity ?? 0) <= 0) continue;
-            const assigned = Math.min(remainingToAssign, line.incomingQuantity ?? 0);
+            const allocations = state.incomingAllocations.get(line.id);
+            const linked = allocations?.find(a => a.purchaseItemId === item.id && a.quantity > 0);
+            if (allocations && !linked) continue;
+            const assigned = Math.min(remainingToAssign, linked?.quantity ?? line.incomingQuantity ?? 0);
+            if (linked) linked.quantity -= assigned;
             line.incomingQuantity = (line.incomingQuantity ?? 0) - assigned;
             line.physicalReservedQuantity = (line.physicalReservedQuantity ?? 0) + assigned;
             product.incomingReserved = Math.max(0, (product.incomingReserved ?? 0) - assigned);
@@ -1460,11 +1555,17 @@ export const demoBusinessApi: BusinessApi = {
       purchase.receivedAt = now;
     }
 
-    const result = { purchase, unblockedOrders };
+    let shippingExpense: MiscExpense | null = null;
+    if (shippingCostCents > 0) shippingExpense = recordDemoExpense({title: `Envío de proveedor · Compra #${purchase.number}`,
+      amountCents: shippingCostCents, frequency: 'once', startsOn: salesDateAt(now), endsOn: null}, nextUuid(),
+      {purchaseReceiptOperationId: operationId, purchaseId, purchaseNumber: purchase.number});
+    const result = { purchase, unblockedOrders, shippingExpense };
+    state.receiptHistory.push({operationId, purchaseId, items: itemsInput ?? purchase.items.map(item => ({purchaseItemId: item.id, receivedQuantity: item.receivedQuantity})), shippingCostCents, shippingExpenseId: shippingExpense?.id ?? null, createdAt: now});
     if (operationId) {
       state.purchaseReceipts.set(operationId, {
         purchaseId,
         canonicalPayload,
+        shippingCostCents,
         result: structuredClone(result)
       });
     }
@@ -1527,12 +1628,15 @@ export const demoBusinessApi: BusinessApi = {
         .flatMap((o) => {
           const matchLine = o.items.find((line) => line.productId === pi.productId);
           if (!matchLine || (matchLine.incomingQuantity ?? 0) + (matchLine.uncoveredQuantity ?? 0) === 0) return [];
+          const allocations = state.incomingAllocations.get(matchLine.id);
+          const linkedQuantity = allocations?.filter(a => a.purchaseItemId === pi.id).reduce((sum,a) => sum+a.quantity,0);
+          if (linkedQuantity === 0) return [];
           return [{
             orderId: o.id,
             orderNumber: o.number,
             customerName: o.customerName,
             customerPhone: o.customerPhone,
-            reservedQuantity: (matchLine.incomingQuantity ?? 0) + (matchLine.uncoveredQuantity ?? 0),
+            reservedQuantity: linkedQuantity ?? (matchLine.incomingQuantity ?? 0) + (matchLine.uncoveredQuantity ?? 0),
             paymentState: o.paymentState,
             fulfillmentState: o.fulfillmentState,
             totalCents: o.totalCents
@@ -1568,7 +1672,8 @@ export const demoBusinessApi: BusinessApi = {
         throw new AppError('business', 'Las unidades pendientes cambiaron.', { nextAction: 'Cerrá y volvé a abrir la recepción.' });
       }
       if (state.orders.some(order => order.orderState === 'confirmed' && order.fulfillmentState === 'pending' &&
-        order.items.some(line => line.productId === item.productId && (line.incomingQuantity ?? 0) + (line.uncoveredQuantity ?? 0) > 0))) {
+        order.items.some(line => line.productId === item.productId && (line.incomingQuantity ?? 0) + (line.uncoveredQuantity ?? 0) > 0 &&
+          (!state.incomingAllocations.has(line.id) || state.incomingAllocations.get(line.id)!.some(a => a.purchaseItemId === item.id && a.quantity > 0))))) {
         throw new AppError('business', 'Todavía hay reservas esperando este producto.', { nextAction: 'Pedí una reposición o resolvé los pedidos vinculados antes de cerrar el faltante.' });
       }
     }
@@ -1602,10 +1707,14 @@ export const demoBusinessApi: BusinessApi = {
       if (order.orderState !== 'confirmed' || order.fulfillmentState !== 'pending') continue;
       const line = order.items.find(i => i.productId === item.productId);
       if (!line || !(line.uncoveredQuantity ?? 0)) continue;
-      const take = Math.min(capacity, line.uncoveredQuantity ?? 0);
+      const allocations = state.incomingAllocations.get(line.id);
+      const linked = allocations?.find(a => a.purchaseItemId === item.id && a.quantity > 0);
+      if (allocations && !linked) continue;
+      const take = Math.min(capacity, linked?.quantity ?? line.uncoveredQuantity ?? 0);
       if (!take) continue;
       line.uncoveredQuantity = (line.uncoveredQuantity ?? 0) - take;
       line.incomingQuantity = (line.incomingQuantity ?? 0) + take;
+      if (linked) linked.purchaseItemId = replacement.items[0]!.id;
       product.incomingReserved = (product.incomingReserved ?? 0) + take;
       order.stockReadiness = order.items.some(i => (i.uncoveredQuantity ?? 0)>0) ? 'uncovered' : 'waiting_incoming';
       order.expectedArrivalAt = replacement.expectedAt;
@@ -1790,6 +1899,9 @@ export const demoBusinessApi: BusinessApi = {
       to,
       comparisonCutoffDay: null,
       revenueCents,
+      shippingRevenueCents: paidOrders.reduce((sum,order) => sum + order.shippingFeeCents, 0),
+      supplierShippingExpensesCents: state.expenses.filter(e => e.deletedAt === null && e.purchaseReceiptOperationId).reduce((sum,e) => sum + countMiscExpenseOccurrences(e, from, to)*e.amountCents, 0),
+      otherExpensesCents: miscExpensesCents - state.expenses.filter(e => e.deletedAt === null && e.purchaseReceiptOperationId).reduce((sum,e) => sum + countMiscExpenseOccurrences(e, from, to)*e.amountCents, 0),
       costCents,
       taxCents,
       commercialMarginCents,
@@ -1839,6 +1951,8 @@ export const demoBusinessApi: BusinessApi = {
       inflation: state.inflation,
       expenses: state.expenses,
       expenseHistory: state.expenseHistory,
+      orderShippingFeeHistory: state.shippingFeeHistory,
+      purchaseReceipts: state.receiptHistory,
       reservations: state.orders.flatMap((order) => order.items.map((item) => ({
         id: item.id.replace(/^21/u, '60'),
         orderId: order.id,

@@ -17,6 +17,8 @@ import type {
   OpeningReservation,
   Order,
   OrderAction,
+  OrderShippingFeeInput,
+  OrderPaymentExpectation,
   ProductReservation,
   Purchase,
   PurchaseImpactItem,
@@ -144,14 +146,15 @@ export interface BusinessApi {
   listOrders(page?: number, pageSize?: number, search?: string, state?: OrderListFilter): Promise<OrdersPage>;
   listPaidOrders(page?: number, pageSize?: number, from?: string, to?: string): Promise<Page<Order>>;
   confirmImportedOrder(input: ImportOrderInput): Promise<Order>;
-  transitionOrder(orderId: string, action: OrderAction): Promise<Order>;
+  transitionOrder(orderId: string, action: OrderAction, expected?: OrderPaymentExpectation): Promise<Order>;
+  saveOrderShippingFee(input: OrderShippingFeeInput): Promise<Order>;
   saveOrderPacking(orderId: string, items: Array<{ orderItemId: string; packedQuantity: number }>, expectedRevision: number): Promise<Order>;
   listPurchases(page?: number, pageSize?: number, state?: 'ordered' | 'received' | 'all'): Promise<PurchasesPage>;
   listOpeningReservations(): Promise<OpeningReservation[]>;
   resolveOpeningReservation(purchaseItemId: string, quantity: number, action: 'deliver' | 'release', operationId: string): Promise<{ quantity: number; action: 'deliver' | 'release' }>;
   createPurchase(input: PurchaseCreateInput): Promise<Purchase>;
   updatePurchase(input: PurchaseUpdateInput): Promise<Purchase>;
-  receivePurchase(purchaseId: string, items?: ReceivePurchaseItemInput[], operationId?: string): Promise<ReceivePurchaseResult>;
+  receivePurchase(purchaseId: string, items?: ReceivePurchaseItemInput[], operationId?: string, shippingCostCents?: number): Promise<ReceivePurchaseResult>;
   closePurchaseWithShortage(purchaseId: string, notes?: string): Promise<ReceivePurchaseResult>;
   getPurchaseImpact(purchaseId: string): Promise<PurchaseImpactItem[]>;
   declareItemShortage(purchaseItemId: string, quantity: number, notes?: string): Promise<Purchase>;

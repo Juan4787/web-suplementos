@@ -2,9 +2,11 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { PropsWithChildren } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { demoOrders } from '@/data/demo-data';
+import { demoOrders, demoOwner } from '@/data/demo-data';
 import type { AdminProduct, Order, StoreSettings } from '@/domain/types';
 import CreateOrderPage from './CreateOrderPage';
+
+vi.mock('@/features/auth/AuthProvider', () => ({ useAuth: () => ({ user: demoOwner }) }));
 
 vi.mock('@tanstack/react-router', () => ({
   useBlocker: vi.fn(),

@@ -32,6 +32,12 @@ const configurationError = (): AppError =>
 export const translateDatabaseError = (error: { message?: string; code?: string }): AppError => {
   const diagnostic = `${error.code ?? ''} ${error.message ?? ''}`;
   const businessMessages: Record<string, [string, string]> = {
+    SHIPPING_FEE_LOCKED: ['El envío solo puede cambiarse antes del cobro.', 'Actualizá el pedido para ver el importe que quedó registrado.'],
+    SHIPPING_FEE_CHANGED: ['El envío cambió mientras lo estabas editando.', 'Cancelá la edición y revisá el importe actualizado antes de guardar.'],
+    ORDER_PAYMENT_AMOUNT_CHANGED: ['El importe del pedido cambió desde que abriste la confirmación.', 'Cerrá la confirmación y revisá el total actualizado antes de cobrar o regalar.'],
+    SHIPPING_FEE_COST_CHANGED: ['El costo de los productos cambió.', 'La dueña debe revisar y guardar el porcentaje actualizado antes de cobrar.'],
+    INVALID_SHIPPING_FEE: ['El importe o porcentaje del envío no es válido.', 'Usá pesos enteros sin signos ni centavos, o un porcentaje entre 0 y 100.'],
+    INSUFFICIENT_INCOMING_STOCK: ['No alcanzan las unidades libres en camino.', 'Actualizá los productos y ajustá las cantidades; esta modalidad no usa stock físico.'],
     PURCHASE_RECEIPT_REQUIRED: ['Primero falta registrar la llegada real de esta compra.', 'Volvé a abrir la recepción y anotá cuántas unidades llegaron antes de pedir una reposición.'],
     PURCHASE_SHORTAGE_UNRESOLVED: ['Todavía hay clientes o reservas previas esperando estas unidades.', 'Revisá los pedidos afectados o asigná una reposición antes de cerrar el faltante.'],
     PURCHASE_SHORTAGE_CHANGED: ['Las unidades pendientes de esta compra cambiaron.', 'Cerrá la recepción y volvé a abrirla para revisar lo que ya quedó registrado.'],
@@ -342,8 +348,12 @@ export const supabaseBusinessApi: BusinessApi = {
     const order = await rpc<Order>('confirm_imported_order', { p_order: input });
     return { ...order, items: order?.items ?? [] };
   },
-  transitionOrder: async (orderId, action) => {
-    const order = await rpc<Order>('transition_order', { p_order_id: orderId, p_action: action });
+  saveOrderShippingFee: (input) => rpc<Order>('save_order_shipping_fee', { p_fee: input }),
+  transitionOrder: async (orderId, action, expected) => {
+    const order = expected
+      ? await rpc<Order>('transition_order_checked', { p_order_id: orderId, p_action: action,
+        p_expected_fee_revision: expected.shippingFeeRevision, p_expected_total_cents: expected.totalCents, p_expected_cost_cents: expected.costTotalCents })
+      : await rpc<Order>('transition_order', { p_order_id: orderId, p_action: action });
     return { ...order, items: order?.items ?? [] };
   },
   saveOrderPacking: async (orderId, items, expectedRevision) => {
@@ -385,9 +395,9 @@ export const supabaseBusinessApi: BusinessApi = {
   resolveOpeningReservation: (purchaseItemId, quantity, action, operationId) => rpc('resolve_opening_reservation', {
     p_purchase_item_id: purchaseItemId, p_quantity: quantity, p_action: action, p_operation_id: operationId
   }),
-  receivePurchase: async (purchaseId, items, operationId) => {
+  receivePurchase: async (purchaseId, items, operationId, shippingCostCents = 0) => {
     let itemsPayload = items;
-    if (!itemsPayload || itemsPayload.length === 0) {
+    if (!itemsPayload) {
       const purchasePage = await rpc<PurchasesPage>('list_purchases', { p_page: 1, p_page_size: 100 });
       const current = purchasePage?.items?.find((p) => p.id === purchaseId);
       if (current) {
@@ -404,7 +414,8 @@ export const supabaseBusinessApi: BusinessApi = {
     return rpc<ReceivePurchaseResult>('receive_purchase', {
       p_purchase_id: purchaseId,
       p_items: itemsPayload,
-      p_operation_id: operationId ?? crypto.randomUUID()
+      p_operation_id: operationId ?? crypto.randomUUID(),
+      p_shipping_cost_cents: shippingCostCents
     });
   },
   closePurchaseWithShortage: (purchaseId, notes) =>

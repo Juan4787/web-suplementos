@@ -9,12 +9,14 @@ import {
   type InputHTMLAttributes
 } from 'react';
 import { cn } from '@/lib/cn';
+import { isWholePesoText, MAX_SHIPPING_PESOS } from '@/domain/order-shipping';
 import { useField } from './field-context';
 
 export interface CurrencyInputProps
   extends Omit<InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange' | 'defaultValue'> {
   value?: number | null | undefined;
   onChange?: (value: number | undefined) => void;
+  wholePesosOnly?: boolean;
 }
 
 const controlClass =
@@ -57,7 +59,7 @@ function getFormattedAndCursor(rawValue: string, rawCursor: number) {
 
 export const CurrencyInput = forwardRef<HTMLInputElement, CurrencyInputProps>(
   function CurrencyInput(
-    { value, onChange, onKeyDown, onFocus, className, placeholder = '25.000', ...props },
+    { value, onChange, onKeyDown, onFocus, onPaste, onBeforeInput, wholePesosOnly = false, className, placeholder = '25.000', ...props },
     forwardedRef
   ) {
     const field = useField();
@@ -73,6 +75,7 @@ export const CurrencyInput = forwardRef<HTMLInputElement, CurrencyInputProps>(
     }, []);
 
     const [displayValue, setDisplayValue] = useState<string>(() => formatInitial(value));
+    const [inputNotice, setInputNotice] = useState(false);
 
     // Synchronize when value changes externally (e.g. form reset or editing another product)
     useEffect(() => {
@@ -98,6 +101,11 @@ export const CurrencyInput = forwardRef<HTMLInputElement, CurrencyInputProps>(
     const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
       onKeyDown?.(e);
       if (e.defaultPrevented) return;
+      if (wholePesosOnly && !e.ctrlKey && !e.metaKey && !e.altKey && e.key.length === 1 && !/^\d$/.test(e.key)) {
+        e.preventDefault();
+        setInputNotice(true);
+        return;
+      }
 
       const input = inputRef.current;
       if (!input) return;
@@ -211,6 +219,13 @@ export const CurrencyInput = forwardRef<HTMLInputElement, CurrencyInputProps>(
       const rawValue = e.target.value;
       const rawCursor = e.target.selectionStart ?? rawValue.length;
 
+      if (wholePesosOnly && (!/^[\d.]*$/.test(rawValue) || Number(rawValue.replaceAll('.', '')) > MAX_SHIPPING_PESOS)) {
+        e.target.value = displayValue;
+        setInputNotice(true);
+        return;
+      }
+      setInputNotice(false);
+
       const { formatted, cursor, numeric } = getFormattedAndCursor(rawValue, rawCursor);
 
       e.target.value = formatted;
@@ -220,7 +235,7 @@ export const CurrencyInput = forwardRef<HTMLInputElement, CurrencyInputProps>(
     };
 
     return (
-      <input
+      <><input
         ref={inputRef}
         id={field?.id}
         aria-label={field?.label}
@@ -232,12 +247,45 @@ export const CurrencyInput = forwardRef<HTMLInputElement, CurrencyInputProps>(
         placeholder={placeholder}
         onChange={handleChange}
         onKeyDown={handleKeyDown}
+        onBeforeInput={(event) => {
+          onBeforeInput?.(event);
+          const data = (event.nativeEvent as InputEvent).data;
+          if (wholePesosOnly && data && !/^\d+$/.test(data)) {
+            event.preventDefault();
+            setInputNotice(true);
+          }
+        }}
+        onPaste={(event) => {
+          onPaste?.(event);
+          if (!wholePesosOnly || event.defaultPrevented) return;
+          const pasted = event.clipboardData.getData('text').trim();
+          if (!isWholePesoText(pasted) || Number(pasted.replaceAll('.', '')) > MAX_SHIPPING_PESOS) {
+            event.preventDefault();
+            setInputNotice(true);
+            return;
+          }
+          // Insert validated digits ourselves: browsers also send beforeinput
+          // for paste, where a thousands dot must not be mistaken for decimals.
+          event.preventDefault();
+          const input = event.currentTarget;
+          const start = input.selectionStart ?? displayValue.length;
+          const end = input.selectionEnd ?? start;
+          const digits = pasted.replaceAll('.', '');
+          const raw = displayValue.slice(0, start) + digits + displayValue.slice(end);
+          const {formatted, cursor, numeric} = getFormattedAndCursor(raw, start + digits.length);
+          if ((numeric ?? 0) > MAX_SHIPPING_PESOS) { setInputNotice(true); return; }
+          setInputNotice(false);
+          input.value = formatted;
+          pendingCursorRef.current = cursor;
+          setDisplayValue(formatted);
+          onChange?.(numeric);
+        }}
         onFocus={(e) => {
           onFocus?.(e);
         }}
         className={cn(controlClass, className)}
         {...props}
-      />
+      />{inputNotice ? <p role="status" className="mt-1 text-xs font-semibold text-rose-800">Usá pesos enteros, sin letras, signos ni centavos. Por ejemplo: 15.000.</p> : null}</>
     );
   }
 );

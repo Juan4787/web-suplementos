@@ -30,6 +30,9 @@ import { ErrorState, LoadingState } from '@/components/ui/DataState';
 import { Field, Input } from '@/components/ui/Field';
 import { parseShippingAddress } from '@/domain/checkout';
 import { AppError } from '@/domain/errors';
+import { can } from '@/domain/permissions';
+import { useAuth } from '@/features/auth/AuthProvider';
+import { orderableQuantity } from '@/domain/order-shipping';
 import { formatMoney } from '@/domain/money';
 import type {
   AdminProduct,
@@ -40,7 +43,8 @@ import type {
   Order,
   PaymentMethod,
   SaleType,
-  ShippingType
+  ShippingType,
+  StockSource
 } from '@/domain/types';
 import { buildWhatsAppProtocol, createOrderFingerprint } from '@/domain/whatsapp';
 import { cn } from '@/lib/cn';
@@ -54,6 +58,7 @@ type SelectedItem = CartLine & {
 };
 
 export default function CreateOrderPage() {
+  const { user } = useAuth();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
 
@@ -87,6 +92,7 @@ export default function CreateOrderPage() {
   const [addressNumber, setAddressNumber] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
   const [saleType, setSaleType] = useState<SaleType>('retail');
+  const [stockSource, setStockSource] = useState<StockSource>('normal');
 
   // Estado de finalización y errores
   const protocolDraft = useRef<{ orderId: string; fingerprint: string } | null>(null);
@@ -110,6 +116,7 @@ export default function CreateOrderPage() {
     const term = searchProduct.trim().toLowerCase();
     return products.filter((p) => {
       if (!p.active) return false;
+      if (stockSource === 'incoming_only' && (p.incomingAvailable ?? 0) <= 0) return false;
       if (selectedCategory !== 'all' && p.category !== selectedCategory) return false;
       if (!term) return true;
       return (
@@ -119,7 +126,7 @@ export default function CreateOrderPage() {
         p.category.toLowerCase().includes(term)
       );
     });
-  }, [products, searchProduct, selectedCategory]);
+  }, [products, searchProduct, selectedCategory, stockSource]);
 
   // Cálculos de totales y stock
   const totals = useMemo(() => {
@@ -139,13 +146,15 @@ export default function CreateOrderPage() {
   const stockReadiness = useMemo(() => {
     let requiresIncoming = false;
     for (const item of items) {
-      if (item.quantity > item.physAvail) {
+      const product = products.find(p => p.id === item.productId);
+      const physicalAvailable = product ? Math.max(0, product.onHand - product.reserved) : 0;
+      if (stockSource === 'incoming_only' || item.quantity > physicalAvailable) {
         requiresIncoming = true;
         break;
       }
     }
     return requiresIncoming ? 'waiting_incoming' : 'ready';
-  }, [items]);
+  }, [items, stockSource, products]);
 
   const handleSaleTypeChange = (nextType: SaleType) => {
     setSaleType(nextType);
@@ -167,12 +176,27 @@ export default function CreateOrderPage() {
     );
   };
 
+  const handleStockSourceChange = (source: StockSource) => {
+    setStockSource(source);
+    setValidationError(null);
+    setItems(current => current.map(item => {
+      const product = products.find(p => p.id === item.productId);
+      return { ...item, maxOrderable: product ? orderableQuantity(product, source) : 0,
+        physAvail: product ? Math.max(0, product.onHand - product.reserved) : 0,
+        incomingAvail: product?.incomingAvailable ?? 0 };
+    }));
+  };
+  const invalidItems = items.filter(item => {
+    const product = products.find(p => p.id === item.productId);
+    return !product?.active || item.quantity > orderableQuantity(product, stockSource);
+  });
+
   // Agregar producto al pedido
   const handleAddProduct = (product: AdminProduct) => {
     setValidationError(null);
     const physAvail = Math.max(0, product.onHand - product.reserved);
     const incomingAvail = product.incomingAvailable ?? 0;
-    const maxOrderable = Math.max(0, physAvail + incomingAvail);
+    const maxOrderable = orderableQuantity(product, stockSource);
 
     if (maxOrderable <= 0) return;
 
@@ -214,7 +238,10 @@ export default function CreateOrderPage() {
           if (item.productId !== productId) return item;
           const nextQty = item.quantity + delta;
           if (nextQty <= 0) return null;
-          if (nextQty > item.maxOrderable) return item;
+          const product = products.find(p => p.id === item.productId);
+          const capacity = product?.active ? orderableQuantity(product, stockSource) : 0;
+          // Always allow reducing an over-capacity draft, one unit at a time.
+          if (delta > 0 && nextQty > capacity) return item;
           return { ...item, quantity: nextQty };
         })
         .filter((item): item is SelectedItem => item !== null)
@@ -232,6 +259,11 @@ export default function CreateOrderPage() {
     mutationFn: async (input: ImportOrderInput) => {
       const api = await getBusinessApi();
       return api.confirmImportedOrder(input);
+    },
+    onError: async (error) => {
+      if (error instanceof AppError && error.kind === 'business') {
+        await queryClient.invalidateQueries({ queryKey: queryKeys.products });
+      }
     },
     onSuccess: async (order) => {
       setCreatedOrder(order);
@@ -255,6 +287,10 @@ export default function CreateOrderPage() {
     if (confirmMutation.isPending) return;
     setValidationError(null);
 
+    if (invalidItems.length) {
+      setValidationError('Revisá las cantidades marcadas: superan la disponibilidad de esta modalidad.');
+      return;
+    }
     if (items.length === 0) {
       setValidationError('Seleccioná al menos un producto para el pedido.');
       return;
@@ -355,7 +391,7 @@ export default function CreateOrderPage() {
     };
 
     // Generar protocolo determinista válido para la API
-    const fingerprint = `${createOrderFingerprint(checkoutData, lines, totals.shipping)}__${trimmedPhone}`;
+    const fingerprint = `${createOrderFingerprint(checkoutData, lines, totals.shipping)}__${trimmedPhone}__${stockSource}__${saleType}`;
     const previousId = protocolDraft.current?.fingerprint === fingerprint ? protocolDraft.current.orderId : undefined;
     const protocol = buildWhatsAppProtocol(checkoutData, lines, settings, previousId);
     protocolDraft.current = { fingerprint, orderId: protocol.orderId };
@@ -365,6 +401,7 @@ export default function CreateOrderPage() {
       lines,
       saleType: isGift ? 'gift' : saleType,
       isCostSale: isCost,
+      stockSource,
       shippingFeeCents: totals.shipping,
       quotedSubtotalCents: totals.subtotal,
       quotedTotalCents: totals.total,
@@ -391,6 +428,7 @@ export default function CreateOrderPage() {
     setShippingType('standard');
     setPaymentMethod('cash');
     setSaleType('retail');
+    setStockSource('normal');
     setValidationError(null);
   };
 
@@ -539,6 +577,21 @@ export default function CreateOrderPage() {
         </div>
       ) : (
         /* Formulario de Carga Manual */
+        <div className="space-y-6">
+          <fieldset disabled={confirmMutation.isPending} className="rounded-2xl border border-ink-950/10 bg-white p-4 sm:p-6">
+            <legend className="sr-only">Origen de los productos</legend>
+            <p className="mb-3 text-base font-extrabold text-ink-950">¿Qué mercadería querés reservar?</p>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {(['normal', 'incoming_only'] as const).map(source => (
+                <label key={source} className={cn('flex min-h-12 cursor-pointer items-center gap-3 rounded-xl border p-3 text-sm font-bold', stockSource === source ? 'border-brand-600 bg-brand-50 text-brand-950' : 'border-ink-950/15 text-ink-700')}>
+                  <input type="radio" name="stock-source" value={source} checked={stockSource === source} onChange={() => handleStockSourceChange(source)} className="size-4 accent-brand-600" />
+                  {source === 'normal' ? 'Compra normal' : 'Comprar productos en camino'}
+                </label>
+              ))}
+            </div>
+            <p className="mt-3 text-sm text-ink-700">{stockSource === 'normal' ? 'Reserva primero lo disponible en stock y después lo que viene en camino.' : 'Reserva solo unidades libres de compras pendientes de llegar. El stock físico queda disponible para otros pedidos.'}</p>
+            {invalidItems.length ? <p role="alert" className="mt-3 text-sm font-bold text-rose-800">Revisá las cantidades de {invalidItems.map(item => item.name).join(', ')}. Los productos se conservaron; ajustalos o volvé a compra normal.</p> : null}
+          </fieldset>
         <div className="grid min-w-0 gap-6 lg:gap-8 lg:grid-cols-[1.1fr_0.9fr] xl:grid-cols-[1.2fr_0.8fr] items-start">
           {/* Columna Izquierda: Selección de Productos y Carrito */}
           <div className="min-w-0 space-y-6">
@@ -550,7 +603,7 @@ export default function CreateOrderPage() {
                     1. Elegir productos del catálogo
                   </h2>
                   <p className="text-xs font-semibold text-ink-600 mt-0.5">
-                    Buscá suplementos por nombre, código o categoría. Solo aparecen productos activos y publicados; podés revisar su visibilidad en Productos.
+                    Buscá suplementos por nombre, código o categoría. Aparecen productos activos, incluso los ocultos en la tienda; podés revisar su visibilidad en Productos.
                   </p>
                 </div>
                 {categories.length > 0 ? (
@@ -584,13 +637,13 @@ export default function CreateOrderPage() {
               <div className="mt-4 max-h-80 overflow-y-auto divide-y divide-ink-950/6 rounded-2xl border border-ink-950/8 bg-cream-50/50 p-2">
                 {filteredProducts.length === 0 ? (
                   <div className="p-8 text-center text-sm font-semibold text-ink-600">
-                    No se encontraron productos disponibles con esa búsqueda.
+                    {stockSource === 'incoming_only' ? 'No hay unidades libres en camino para esta búsqueda. Revisá las compras al proveedor o elegí compra normal.' : 'No se encontraron productos disponibles con esa búsqueda.'}
                   </div>
                 ) : (
                   filteredProducts.map((p) => {
                     const physAvail = Math.max(0, p.onHand - p.reserved);
                     const incomingAvail = p.incomingAvailable ?? 0;
-                    const maxOrderable = Math.max(0, physAvail + incomingAvail);
+                    const maxOrderable = orderableQuantity(p, stockSource);
                     const inCart = items.find((i) => i.productId === p.id);
                     const canAdd = maxOrderable > (inCart?.quantity ?? 0);
 
@@ -617,7 +670,7 @@ export default function CreateOrderPage() {
                               {p.presentation} • <span className="font-mono text-ink-500">{p.sku}</span>
                             </p>
                             <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px]">
-                              {physAvail > 0 ? (
+                              {stockSource === 'incoming_only' ? (<span className="text-xs font-semibold text-brand-800">{incomingAvail} libres en camino</span>) : physAvail > 0 ? (
                                 <span className="rounded-md bg-emerald-50 px-1.5 py-0.5 font-bold text-emerald-700 border border-emerald-200">
                                   {physAvail} en stock
                                 </span>
@@ -704,7 +757,11 @@ export default function CreateOrderPage() {
               ) : (
                 <div className="space-y-3">
                   {items.map((item) => {
-                    const willUseIncoming = item.quantity > item.physAvail;
+                    const product = products.find(p => p.id === item.productId);
+                    const physicalAvailable = product ? Math.max(0, product.onHand - product.reserved) : 0;
+                    const capacity = product?.active ? orderableQuantity(product, stockSource) : 0;
+                    const willUseIncoming = stockSource === 'incoming_only' || item.quantity > physicalAvailable;
+                    const quantityUnavailable = invalidItems.some(candidate => candidate.productId === item.productId);
                     return (
                       <div
                         key={item.productId}
@@ -725,11 +782,12 @@ export default function CreateOrderPage() {
                           <div className="min-w-0 flex-1">
                             <h4 className="font-bold text-sm text-ink-950 truncate">{item.name}</h4>
                             <p className="text-xs text-ink-600 truncate">
+                              {quantityUnavailable ? <span role="alert" className="block text-rose-800">Supera las unidades disponibles en esta modalidad.</span> : null}
                               {item.presentation} • {saleType === 'gift' ? 'Obsequio' : `${formatMoney(item.unitPriceCents)} c/u`}
                             </p>
                             {willUseIncoming ? (
                               <p className="mt-1 text-[11px] font-bold text-amber-700">
-                                ⚠️ Requiere {item.quantity - item.physAvail} unidad(es) de compra en camino
+                                Reserva {stockSource === 'incoming_only' ? item.quantity : item.quantity - physicalAvailable} unidad(es) de compra en camino
                               </p>
                             ) : null}
                           </div>
@@ -752,7 +810,7 @@ export default function CreateOrderPage() {
                             <button
                               type="button"
                               onClick={() => handleUpdateQuantity(item.productId, 1)}
-                              disabled={item.quantity >= item.maxOrderable}
+                              disabled={item.quantity >= capacity}
                               className="grid size-8 place-items-center text-ink-700 transition hover:bg-cream-100 rounded-r-xl disabled:opacity-40"
                               aria-label="Aumentar cantidad"
                             >
@@ -1000,7 +1058,7 @@ export default function CreateOrderPage() {
             </section>
 
             {/* Modalidad de Venta */}
-            <section className="rounded-2xl sm:rounded-3xl border border-ink-950/8 bg-white p-4 sm:p-6 shadow-sm min-w-0">
+            <section className="rounded-2xl sm:rounded-3xl border border-ink-950/8 bg-white p-4 sm:p-6 shadow-sm min-w-0" hidden={!can(user, 'manage_pricing')}>
               <h2 className="font-display text-lg font-black text-ink-950 mb-1">
                 5. Modalidad de venta
               </h2>
@@ -1038,7 +1096,7 @@ export default function CreateOrderPage() {
                   <Tag className="size-5 text-amber-600 shrink-0" />
                   <div className="min-w-0">
                     <span className="block text-sm font-black">Venta al costo</span>
-                    <span className="text-[11px] text-amber-800">A precio de reposición</span>
+                    <span className="text-[11px] text-amber-800">Según el costo de los lotes reservados</span>
                   </div>
                 </button>
 
@@ -1172,7 +1230,7 @@ export default function CreateOrderPage() {
                 <div className="mb-4 rounded-xl bg-amber-50 p-3.5 border border-amber-200/80 text-xs font-semibold text-amber-950 flex items-start gap-2.5">
                   <Tag className="size-4 shrink-0 text-amber-700 mt-0.5" />
                   <span>
-                    Venta al costo: el pedido se cobra al valor de reposición de la mercadería ({formatMoney(totals.subtotal)}), sin recargo comercial adicional.
+                    Costo estimado: {formatMoney(totals.subtotal)}. Al reservar se confirma el costo exacto de las unidades asignadas, que puede variar entre stock y compras en camino. El pedido queda pendiente de cobro; podés agregar el envío antes de cobrar.
                   </span>
                 </div>
               ) : null}
@@ -1181,7 +1239,7 @@ export default function CreateOrderPage() {
                 <div className="mb-4 rounded-xl bg-purple-50 p-3.5 border border-purple-200/80 text-xs font-semibold text-purple-950 flex items-start gap-2.5">
                   <Gift className="size-4 shrink-0 text-purple-700 mt-0.5" />
                   <span>
-                    Pedido de regalo / cortesía: se entrega sin cargo ($ 0) al destinatario. Descontará el stock real del inventario.
+                    Pedido de regalo / cortesía: se reserva sin cargo ($ 0). La mercadería se descuenta del stock físico al entregarla.
                   </span>
                 </div>
               ) : null}
@@ -1228,7 +1286,7 @@ export default function CreateOrderPage() {
                       : ''
                 )}
                 loading={confirmMutation.isPending}
-                disabled={items.length === 0 || customerFirstName.trim().length < 2 || customerLastName.trim().length < 2 || confirmMutation.isPending}
+                disabled={items.length === 0 || invalidItems.length > 0 || customerFirstName.trim().length < 2 || customerLastName.trim().length < 2 || confirmMutation.isPending}
                 onClick={handleSubmit}
               >
                 {saleType === 'gift'
@@ -1242,6 +1300,7 @@ export default function CreateOrderPage() {
               </p>
             </section>
           </div>
+        </div>
         </div>
       )}
     </fieldset>

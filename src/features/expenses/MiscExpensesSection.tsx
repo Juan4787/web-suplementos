@@ -21,7 +21,7 @@ import { queryKeys } from '@/app/query-keys';
 import { useBusinessQuery } from '@/app/use-business-query';
 import { Button } from '@/components/ui/Button';
 import { EmptyState, ErrorState, LoadingState } from '@/components/ui/DataState';
-import { Field, Input } from '@/components/ui/Field';
+import { CurrencyInput, Field, Input } from '@/components/ui/Field';
 import { Modal } from '@/components/ui/Modal';
 import {
   MAX_MISC_EXPENSE_CENTS,
@@ -377,22 +377,22 @@ function ExpenseFormModal({
         <Field
           label="Monto (ARS)"
           error={attempted ? amountError : undefined}
-          hint="Podés usar coma para centavos. Ejemplo: 25.000 o 25.000,50."
+          hint={draft.source?.purchaseReceiptOperationId ? "Envío de proveedor: pesos enteros, sin centavos. Conserva el vínculo con la recepción." : "Podés usar coma para centavos. Ejemplo: 25.000 o 25.000,50."}
         >
           <div className="relative">
-            <span className="pointer-events-none absolute inset-y-0 left-4 flex items-center font-black text-ink-500">$</span>
-            <Input
+            <span className="pointer-events-none absolute top-0 left-4 flex h-12 items-center font-black text-ink-500">$</span>
+            {draft.source?.purchaseReceiptOperationId ? <CurrencyInput wholePesosOnly className="pl-9 tabular-nums" value={amountCents !== null ? amountCents / 100 : undefined} onChange={value => setDraft(current => ({...current,amountPesos: value === undefined ? '' : formatAmountForInput(value * 100)}))} /> : <Input
               className="pl-9 tabular-nums"
               inputMode="decimal"
               placeholder="0"
               value={draft.amountPesos}
               onKeyDown={handleAmountKeyDown}
               onChange={handleAmountChange}
-            />
+            />}
           </div>
         </Field>
 
-        <fieldset>
+        <fieldset disabled={Boolean(draft.source?.purchaseReceiptOperationId)}>
           <legend className="mb-2 block text-[15px] font-extrabold text-ink-950">¿Cada cuánto se repite?</legend>
           <div className="grid grid-cols-3 gap-2" role="group" aria-label="Frecuencia del gasto">
             {frequencyOptions.map((option) => {
@@ -577,7 +577,7 @@ function ExpenseRow({
             {isPuntual ? 'Puntual' : expense.frequency === 'weekly' ? 'Semanal' : 'Mensual'}
           </span>
         </div>
-        <p className="mt-1 text-sm font-medium leading-5 text-ink-600">{recurrenceDescription(expense)}</p>
+        <p className="mt-1 text-sm font-medium leading-5 text-ink-600">{expense.purchaseReceiptOperationId ? `Registrado con la recepción de compra #${expense.purchaseNumber}. Se descuenta una sola vez.` : recurrenceDescription(expense)}</p>
       </div>
 
       <div className="sm:min-w-44 sm:text-right">

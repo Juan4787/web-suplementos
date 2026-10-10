@@ -1,3 +1,4 @@
+import type { ReceivePurchaseResult } from '@/domain/types';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { OpeningReservations } from '@/features/inventory/OpeningReservations';
 import { Link, useSearch, useBlocker } from '@tanstack/react-router';
@@ -43,6 +44,8 @@ import { StatusChip } from '@/components/ui/StatusChip';
 import { acceptsWholeUnitDraft, wholeUnitInputProps } from '@/components/ui/whole-unit-input';
 import { AppError } from '@/domain/errors';
 import { inventoryStatus, sanitizeDecimalInput, sanitizeIntegerInput, isWholeUnitInput } from '@/domain/inventory';
+import { CurrencyInput } from '@/components/ui/CurrencyInput';
+import { validateShippingCents } from '@/domain/order-shipping';
 import { formatMoney, pesosToCents } from '@/domain/money';
 import { can } from '@/domain/permissions';
 import { formatProducts, formatUnits } from '@/domain/quantity';
@@ -186,6 +189,8 @@ export function PurchaseFormModal({
         queryClient.invalidateQueries({ queryKey: queryKeys.purchasesRoot }),
         queryClient.invalidateQueries({ queryKey: queryKeys.dashboard }),
         queryClient.invalidateQueries({ queryKey: queryKeys.products }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.miscExpensesRoot }),
+        queryClient.invalidateQueries({ queryKey: ['analytics'] }),
         queryClient.invalidateQueries({ queryKey: queryKeys.storefrontProducts })
       ]);
       onClose();
@@ -445,6 +450,8 @@ export function ReceivePurchaseModal({
   const [step, setStep] = useState<WizardStep>('choice');
   const [error, setError] = useState<unknown>(null);
   const [operationId] = useState(() => crypto.randomUUID());
+  const [shippingPesos, setShippingPesos] = useState<number | undefined>();
+  const [recordedShippingCents, setRecordedShippingCents] = useState(0);
 
   // Consulta de impacto de reservas comprometidas con este pedido
   const impactQuery = useBusinessQuery({
@@ -582,10 +589,12 @@ export function ReceivePurchaseModal({
   // Mutación principal para registrar recepción
   const receiveMutation = useMutation({
     onMutate: () => setError(null),
-    mutationFn: async () => {
+    mutationFn: async (): Promise<ReceivePurchaseResult> => {
       if (step === 'missing_checklist' && hasInvalidMissingQuantity) {
         throw new AppError('validation', 'Falta revisar cuántas unidades llegaron de cada producto marcado con faltante.');
       }
+      const shippingCents = (shippingPesos ?? 0) * 100;
+      validateShippingCents(shippingCents);
       const api = await getBusinessApi();
 
       if (step === 'complete_confirm') {
@@ -593,10 +602,10 @@ export function ReceivePurchaseModal({
           purchaseItemId: item.id,
           receivedQuantity: Math.max(0, item.quantity - (item.receivedQuantity ?? 0) - (item.shortageQuantity ?? 0))
         })).filter((i) => i.receivedQuantity > 0);
-        if (itemsPayload.length === 0) {
+        if (itemsPayload.length === 0 && shippingCents === 0) {
           return { purchase, unblockedOrders: [] };
         }
-        return api.receivePurchase(purchase.id, itemsPayload, operationId);
+        return api.receivePurchase(purchase.id, itemsPayload, operationId, shippingCents);
       }
 
       if (step === 'missing_checklist') {
@@ -605,7 +614,7 @@ export function ReceivePurchaseModal({
           receivedQuantity: missingConfig[item.id]?.isMissing ? (missingConfig[item.id]?.receivedQty ?? 0)
             : Math.max(0, item.quantity - (item.receivedQuantity ?? 0) - (item.shortageQuantity ?? 0))
         })).filter(item => item.receivedQuantity > 0);
-        return itemsPayload.length ? api.receivePurchase(purchase.id, itemsPayload, operationId) : { purchase, unblockedOrders: [] };
+        return itemsPayload.length || shippingCents > 0 ? api.receivePurchase(purchase.id, itemsPayload, operationId, shippingCents) : { purchase, unblockedOrders: [] };
       }
       const shortages = purchase.items.flatMap(item => {
         const cfg = missingConfig[item.id];
@@ -622,6 +631,7 @@ export function ReceivePurchaseModal({
       if (partialArrival) {
         setPurchase(data.purchase);
         setArrivalRecorded(true);
+        setRecordedShippingCents(data.shippingExpense?.amountCents ?? 0);
         setArrivalUnits(totalReceivedUnits);
         setUnblockedFromArrival(data.unblockedOrders ?? []);
         setMissingConfig(current => Object.fromEntries(Object.entries(current).map(([id,cfg]) => [id, { ...cfg, receivedQty: 0, receivedQtyDraft: '0' }])));
@@ -637,7 +647,9 @@ export function ReceivePurchaseModal({
         queryClient.invalidateQueries({ queryKey: queryKeys.ordersRoot }),
         queryClient.invalidateQueries({ queryKey: ['movements'] }),
         queryClient.invalidateQueries({ queryKey: queryKeys.dashboard }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.products })
+        queryClient.invalidateQueries({ queryKey: queryKeys.products }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.miscExpensesRoot }),
+        queryClient.invalidateQueries({ queryKey: ['analytics'] })
       ]);
       if (partialArrival) return;
       onClose();
@@ -1188,11 +1200,20 @@ export function ReceivePurchaseModal({
             </div>
           </div>
         )}
+        {step === 'complete_confirm' || step === 'missing_checklist' ? (
+          <fieldset disabled={receiveMutation.isPending} className="rounded-2xl border border-ink-950/10 bg-white p-4">
+            <Field label="Costo de envío (opcional)" hint="Gasto pagado al proveedor. En blanco o 0 no descuenta nada. Si el envío de este paquete ya está registrado en esta compra o en otra, dejalo en blanco; aunque llegue en partes se anota una sola vez.">
+              <CurrencyInput wholePesosOnly value={shippingPesos} onChange={setShippingPesos} placeholder="15.000" />
+            </Field>
+            {(shippingPesos ?? 0) > 0 ? <p aria-live="polite" className="mt-3 text-sm font-semibold text-ink-800">Se registrará {formatMoney((shippingPesos ?? 0) * 100)} como gasto de esta recepción, una sola vez. No cambia el costo unitario de los productos.</p> : null}
+            {step === 'missing_checklist' && totalReceivedUnits === 0 && (shippingPesos ?? 0) > 0 ? <p role="status" className="mt-2 text-sm text-amber-900">No llegaron unidades: se registrará solo el gasto de envío y el control de faltantes.</p> : null}
+          </fieldset>
+        ) : step === 'missing_resolution' && recordedShippingCents > 0 ? <p className="text-sm text-ink-700">Envío ya registrado: <strong>{formatMoney(recordedShippingCents)}</strong>. Resolver los faltantes no vuelve a descontarlo.</p> : null}
       </div>
 
       {/* Footer de navegación entre pasos */}
       <div className="border-t border-ink-950/6 bg-white px-6 py-4 sm:px-8 shrink-0">
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           {step === 'choice' && (
             <>
               <span className="text-xs font-semibold text-ink-500">

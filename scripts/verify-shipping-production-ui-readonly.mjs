@@ -1,0 +1,81 @@
+// Inspect published owner UI. Every business mutation is blocked at transport.
+import { chromium } from '@playwright/test';
+import { createClient } from '@supabase/supabase-js';
+import { loadEnv } from 'vite';
+import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import assert from 'node:assert/strict';
+import { PROJECT_ROOT, SUPABASE_PROJECT_REF, WORKER_ORIGIN } from './project-targets.mjs';
+import { assertSupabaseTarget } from './validate-supabase-target.mjs';
+
+assertSupabaseTarget();
+const env=loadEnv('production',PROJECT_ROOT,'');
+const email=env.E2E_ADMIN_EMAIL||env.E2E_EMAIL;
+const password=env.E2E_ADMIN_PASSWORD||env.E2E_PASSWORD;
+assert.ok(email&&password,'Owner read-only inspection credentials unavailable');
+const client=createClient(env.VITE_SUPABASE_URL,env.VITE_SUPABASE_ANON_KEY||env.VITE_SUPABASE_PUBLISHABLE_KEY,{auth:{persistSession:false,autoRefreshToken:false}});
+const {data,error}=await client.auth.signInWithPassword({email,password});
+assert.ok(!error&&data.session,'Owner authentication failed');
+const snapshot=JSON.parse(readFileSync('output/audit/shipping-release-after.json','utf8'));
+assert.deepEqual(snapshot.failures,[],'Database verification must pass before UI verification');
+const allowed=new Set(snapshot.functions.filter(f=>f.schema==='public'&&['s','i'].includes(f.provolatile)).map(f=>f.name));
+const blocked=[];const failures=[];const checks=[];
+const browser=await chromium.launch({headless:true});
+try {
+  const context=await browser.newContext({viewport:{width:1280,height:900}});
+  await context.addInitScript(({key,session})=>localStorage.setItem(key,JSON.stringify(session)),{key:`sb-${SUPABASE_PROJECT_REF}-auth-token`,session:data.session});
+  await context.route('**/rest/v1/**',route=>{
+    const request=route.request(), url=new URL(request.url());
+    const name=url.pathname.split('/rpc/')[1];
+    if(['GET','OPTIONS'].includes(request.method())||(request.method()==='POST'&&name&&allowed.has(name)))return route.continue();
+    blocked.push(name||'non-read-table-request');return route.abort();
+  });
+  await context.route(WORKER_ORIGIN+'/api/**',route=>{blocked.push('worker-api');return route.abort();});
+  const page=await context.newPage();
+  page.on('pageerror',()=>failures.push('page-error'));
+  page.on('console',m=>{if(m.type()==='error')failures.push('console-error');});
+  page.on('response',r=>{if(r.url().includes('/rest/v1/')&&r.status()>=400)failures.push('business-http-'+r.status());});
+  await page.goto(WORKER_ORIGIN+'/app/pedidos/nuevo');
+  await page.getByRole('radio',{name:'Compra normal',exact:true}).waitFor();
+  assert.equal(await page.getByRole('radio',{name:'Compra normal',exact:true}).isChecked(),true);
+  await page.getByRole('radio',{name:'Comprar productos en camino',exact:true}).check();
+  assert.equal(await page.getByRole('radio',{name:'Comprar productos en camino',exact:true}).isChecked(),true);
+  checks.push('published source selector and owner form');
+  mkdirSync('output/audit/production-shipping',{recursive:true});
+  await page.screenshot({path:'output/audit/production-shipping/manual.png',fullPage:true});
+  await page.goto(WORKER_ORIGIN+'/app/ventas');
+  await page.getByText('Cómo se calcula la ganancia neta',{exact:true}).waitFor();
+  await page.getByText('Cómo se calcula la ganancia neta',{exact:true}).click();
+  await page.getByText('Envíos pagados al proveedor',{exact:true}).waitFor();
+  checks.push('published sales breakdown loaded from real read-only RPCs');
+  await page.screenshot({path:'output/audit/production-shipping/sales.png',fullPage:true});
+  await page.goto(WORKER_ORIGIN+'/app/inventario');
+  await page.getByRole('button',{name:'Compras',exact:true}).click();
+  const receive=page.getByRole('button',{name:'Recibir mercadería'}).first();
+  await receive.waitFor();await receive.click();
+  await page.getByText('Llegó TODO completo',{exact:true}).click();
+  const freight=page.getByRole('textbox',{name:'Costo de envío (opcional)'});
+  await freight.waitFor();assert.equal(await freight.inputValue(),'');
+  checks.push('published supplier receipt offers optional empty freight field');
+  await page.screenshot({path:'output/audit/production-shipping/receipt.png',fullPage:true});
+  await page.keyboard.press('Escape');
+  const orders=await client.rpc('search_orders',{p_page:1,p_page_size:100,p_search:'',p_state:'all'});
+  assert.ok(!orders.error);
+  const pending=orders.data.items.find(o=>o.paymentState==='pending'&&o.orderState!=='cancelled'&&o.saleType!=='gift');
+  if(pending) {
+    await page.goto(WORKER_ORIGIN+'/app/pedidos?search='+pending.number);
+    const toggle=page.getByRole('button',{name:pending.shippingFeeCents>0?'Editar':'Agregar',exact:true}).first();
+    await toggle.waitFor();await toggle.click();
+    await page.getByRole('button',{name:'Porcentaje',exact:true}).waitFor();
+    assert.equal(await page.getByRole('button',{name:'Porcentaje',exact:true}).isEnabled(),true);
+    await page.getByRole('button',{name:'Cancelar',exact:true}).click();
+    checks.push('published pending-order shipping editor opens and cancels without saving');
+    await page.screenshot({path:'output/audit/production-shipping/orders.png',fullPage:true});
+  } else checks.push('no pending real order available; editor behavior covered by isolated UI/HTTP tests');
+  assert.deepEqual(blocked,[],'No business mutation may be attempted');
+  assert.deepEqual(failures,[],'Published pages must not log errors or fail read requests');
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+  writeFileSync('output/audit/shipping-production-ui-readonly.json',JSON.stringify({environment:'production-read-only-ui',checks,blockedMutations:blocked.length,errors:failures.length},null,2));
+  console.log(JSON.stringify({environment:'production-read-only-ui',checks,blockedMutations:0,errors:0}));
+} finally {
+  await browser.close();await client.auth.signOut({scope:'local'});
+}

@@ -22,7 +22,7 @@ describe('business XLSX contract', () => {
     const dataset = await demoBusinessApi.getExportDataset();
     const workbook = buildBusinessWorkbook(dataset);
     expect(workbook.sheets.map((sheet) => sheet.name)).toEqual([
-      'Resumen', 'Productos', 'Stock', 'Pedidos', 'Detalle pedidos', 'Ventas', 'Compras', 'Detalle compras', 'Movimientos', 'Reservas', 'Clientes', 'Gastos varios', 'Historial gastos', 'IPC', 'Usuarios'
+      'Resumen', 'Productos', 'Stock', 'Pedidos', 'Detalle pedidos', 'Ventas', 'Compras', 'Detalle compras', 'Movimientos', 'Reservas', 'Clientes', 'Gastos varios', 'Historial gastos', 'Recepciones', 'Historial envíos clientes', 'IPC', 'Usuarios'
     ]);
     expect(workbook.filename).toMatch(/^respaldo-impulso-\d{8}-\d{4}\.xlsx$/);
   });
@@ -50,7 +50,7 @@ describe('business XLSX contract', () => {
     expect(files['xl/styles.xml']).toBeDefined();
 
     const workbookXml = strFromU8(files['xl/workbook.xml']!);
-    expect(workbookXml.match(/<sheet\b/gu)).toHaveLength(15);
+    expect(workbookXml.match(/<sheet\b/gu)).toHaveLength(17);
 
     const xmlEntries = Object.entries(files)
       .filter(([path]) => path.endsWith('.xml'))
@@ -75,6 +75,18 @@ describe('business XLSX contract', () => {
     expect(expenses.headers).toEqual(expect.arrayContaining(['ID', 'Operación ID', 'Monto por vez ARS', 'Frecuencia', 'Estado']));
     const expenseHistory = workbook.sheets.find((sheet) => sheet.name === 'Historial gastos')!;
     expect(expenseHistory.headers).toEqual(expect.arrayContaining(['Gasto ID', 'Acción', 'Monto anterior ARS', 'Monto nuevo ARS', 'Realizado por']));
+  });
+
+  it('preserves receipt links, exact pesos and the intent of each shipping change', async () => {
+    const dataset=await demoBusinessApi.getExportDataset();
+    dataset.purchaseReceipts=[{operationId:'receipt-1',purchaseId:'purchase-1',items:[],shippingCostCents:1500000,shippingExpenseId:'expense-1',createdAt:'2026-10-10T03:00:00Z'}];
+    dataset.orderShippingFeeHistory=[{id:'fee-1',operationId:'operation-1',orderId:'order-1',input:{action:'mark_gifted'},previous:{amountCents:1250000},current:{amountCents:0},createdAt:'2026-10-10T03:00:00Z',createdByName:'Dueña'}];
+    const workbook=buildBusinessWorkbook(dataset);
+    const receipts=workbook.sheets.find(s=>s.name==='Recepciones')!;
+    expect(receipts.rows[0]!.map(cell=>cell?.value ?? null)).toEqual(['receipt-1','purchase-1','[]',15000,'expense-1','2026-10-10T03:00:00Z']);
+    const history=workbook.sheets.find(s=>s.name==='Historial envíos clientes')!;
+    expect(history.rows[0]![7]?.value).toBe('{"action":"mark_gifted"}');
+    expect(history.rows[0]).toHaveLength(history.headers.length);
   });
 
   libreOfficeIt('can be reopened and saved again by LibreOffice', async () => {
@@ -106,7 +118,7 @@ describe('business XLSX contract', () => {
       expect((await stat(reopenedPath)).size).toBeGreaterThan(0);
       const reopenedFiles = unzipSync(await readFile(reopenedPath));
       const reopenedWorkbookXml = strFromU8(reopenedFiles['xl/workbook.xml']!);
-      expect(reopenedWorkbookXml.match(/<sheet\b/gu)).toHaveLength(15);
+      expect(reopenedWorkbookXml.match(/<sheet\b/gu)).toHaveLength(17);
     } finally {
       await rm(temporaryRoot, { recursive: true, force: true });
     }

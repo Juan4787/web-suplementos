@@ -1,5 +1,9 @@
 \set ON_ERROR_STOP on
 
+do $$ begin
+  if current_database() !~ '^rigorous_ux_' then raise exception 'DISPOSABLE_LOCAL_DATABASE_REQUIRED'; end if;
+end $$;
+
 create extension if not exists pgtap with schema extensions;
 create extension if not exists dblink with schema extensions;
 set search_path = public, extensions, pg_temp;
@@ -63,11 +67,11 @@ $setup_race_product$;
 
 select dblink_connect(
   'race_blocker',
-  'host=host.docker.internal port=55322 dbname=postgres user=postgres password=postgres'
+  format('dbname=%I user=supabase_admin', current_database())
 );
 select dblink_connect(
   'race_contender',
-  'host=host.docker.internal port=55322 dbname=postgres user=postgres password=postgres'
+  format('dbname=%I user=supabase_admin', current_database())
 );
 
 select * from dblink('race_blocker', $$select set_config('request.jwt.claim.sub', '00000000-0000-4000-8000-000000000099', false)$$) as c1(v text);
@@ -192,11 +196,11 @@ select dblink_disconnect('race_contender');
 
 select dblink_connect(
   'race_blocker',
-  'host=host.docker.internal port=55322 dbname=postgres user=postgres password=postgres'
+  format('dbname=%I user=supabase_admin', current_database())
 );
 select dblink_connect(
   'race_contender',
-  'host=host.docker.internal port=55322 dbname=postgres user=postgres password=postgres'
+  format('dbname=%I user=supabase_admin', current_database())
 );
 
 select * from dblink('race_blocker', $$select set_config('request.jwt.claim.sub', '00000000-0000-4000-8000-000000000099', false)$$) as c3(v text);

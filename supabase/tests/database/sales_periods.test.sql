@@ -91,6 +91,12 @@ insert into ranges values
   ('month_end','2032-09-30','2032-04-01'),('first_day','2032-10-01','2032-05-01'),
   ('empty','2030-12-31','2030-12-01'),('max_range','2040-01-09','2030-01-01');
 
+-- Fixtures are inserted into an otherwise empty disposable database. Refresh
+-- planner statistics so cached plans reflect the test volume, as autovacuum
+-- would for committed business data; this does not alter business rows.
+analyze public.orders;
+analyze public.order_items;
+analyze public.misc_expenses;
 create temp table failures(kind text,period text,detail jsonb);
 create temp table read_fingerprint as
 select md5(string_agg(md5(row_to_json(o)::text),'' order by id)) as orders_hash from public.orders o;

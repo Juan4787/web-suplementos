@@ -54,7 +54,7 @@ test.describe('Gastos varios y ganancia neta', () => {
     await openVisibleNavigation(page);
     await page.getByRole('link', { name: 'Ventas', exact: true }).filter({ visible: true }).click();
     const netProfitCard = page.locator('article').filter({ hasText: 'Ganancia neta' }).first();
-    await expect(netProfitCard).toContainText('gastos varios');
+    await expect(netProfitCard).toContainText('gastos del período');
 
     const hasHorizontalOverflow = await page.evaluate(
       () => document.documentElement.scrollWidth > window.innerWidth + 1

@@ -68,6 +68,8 @@ export type InventoryItem = Pick<
 
 export type PaymentMethod = 'cash' | 'transfer' | 'gift';
 export type SaleType = 'retail' | 'cost' | 'gift';
+export type StockSource = 'normal' | 'incoming_only';
+export type ShippingFeeMethod = 'catalog' | 'manual' | 'percentage';
 export type DeliveryMethod = 'pickup' | 'shipping';
 export type ShippingType = 'standard' | 'express';
 export type OrderState = 'confirmed' | 'cancelled';
@@ -142,6 +144,12 @@ export type Order = {
   expectedArrivalAt?: string | null;
   subtotalCents: number;
   shippingFeeCents: number;
+  stockSource?: StockSource;
+  shippingFeeMethod?: ShippingFeeMethod | null;
+  shippingFeeNeedsReview?: boolean;
+  shippingFeeBasisPoints?: number | null;
+  shippingFeeCostBaseCents?: number | null;
+  shippingFeeRevision?: number;
   totalCents: number;
   taxRateBasisPoints: number | null;
   taxAmountCents: number | null;
@@ -220,6 +228,7 @@ export type ReceivePurchaseItemInput = {
 export type ReceivePurchaseResult = {
   purchase: Purchase;
   unblockedOrders: Array<{ id: string; number: number }>;
+  shippingExpense?: MiscExpense | null;
 };
 
 export type ReservedCustomerOrder = {
@@ -314,6 +323,9 @@ export type MiscExpense = {
   deletedAt: string | null;
   createdByName: string;
   updatedByName: string;
+  purchaseReceiptOperationId?: string | null;
+  purchaseId?: string | null;
+  purchaseNumber?: number | null;
 };
 
 export type MiscExpensePeriodItem = MiscExpense & {
@@ -382,6 +394,9 @@ export type AnalyticsSummary = {
   /** Legacy contract field. Complete date ranges have no monthly cutoff. */
   comparisonCutoffDay: number | null;
   revenueCents: number;
+  shippingRevenueCents?: number;
+  supplierShippingExpensesCents?: number;
+  otherExpensesCents?: number;
   costCents: number;
   taxCents: number;
   commercialMarginCents: number;
@@ -417,6 +432,44 @@ export type ImportOrderInput = CheckoutData & {
   protocolChecksum: string;
   saleType?: SaleType;
   isCostSale?: boolean;
+  stockSource?: StockSource;
+};
+
+export type OrderShippingFeeInput = {
+  orderId: string;
+  operationId: string;
+  expectedRevision: number;
+  method: 'manual' | 'percentage';
+  amountCents?: number;
+  basisPoints?: number;
+  expectedCostCents?: number;
+};
+
+export type OrderShippingFeeEvent = {
+  /** All saved and gift-cleared charges remain traceable. */
+  id: string;
+  operationId: string;
+  orderId: string;
+  input?: Record<string, unknown>;
+  previous: Record<string, unknown>;
+  current: Record<string, unknown>;
+  createdAt: string;
+  createdByName: string;
+};
+
+export type OrderPaymentExpectation = {
+  shippingFeeRevision: number;
+  totalCents: number;
+  costTotalCents: number | null;
+};
+
+export type PurchaseReceipt = {
+  operationId: string;
+  purchaseId: string;
+  items: ReceivePurchaseItemInput[];
+  shippingCostCents: number;
+  shippingExpenseId: string | null;
+  createdAt: string;
 };
 
 export type AvailabilityCheck = {
@@ -449,6 +502,8 @@ export type ExportDataset = {
   inflation: InflationIndex[];
   expenses: MiscExpense[];
   expenseHistory: MiscExpenseAuditEntry[];
+  orderShippingFeeHistory?: OrderShippingFeeEvent[];
+  purchaseReceipts?: PurchaseReceipt[];
   reservations: Array<{
     id: string;
     orderId: string | null;

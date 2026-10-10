@@ -53,6 +53,7 @@ test.describe('Operación diaria de pedidos', () => {
   test('cobrar y entregar completa el pedido, libera la reserva y descuenta una unidad física', async ({ page }) => {
     const order = await createDailyOrder(page, 'Cliente entrega auditoría');
     await order.getByRole('button', { name: 'Marcar como cobrado' }).click();
+    await page.getByRole('dialog').getByRole('button', { name: 'Sí, registrar cobro' }).click();
     await expect(order.getByRole('button', { name: 'Marcar como cobrado' })).toHaveCount(0);
     await order.getByRole('textbox', { name: 'Unidades en bolsita de Creatina Monohidratada' }).fill('1');
     await order.getByRole('button', { name: 'Guardar armado' }).click();

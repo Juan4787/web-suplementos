@@ -1,3 +1,4 @@
+import { orderCommercialMargin, orderLineRevenue } from '@/domain/order-shipping';
 import {
   ArrowUpDown,
   CalendarRange,
@@ -157,7 +158,7 @@ export default function SalesPage() {
 
   const sortedProducts = useMemo(() => {
     const raw = analyticsQuery.data?.topProducts ?? [];
-    const totalRev = analyticsQuery.data?.revenueCents ?? 1;
+    const totalRev = (analyticsQuery.data?.revenueCents ?? 0) - (analyticsQuery.data?.shippingRevenueCents ?? 0);
 
     return [...raw].sort((a, b) => {
       let valA: number | string = 0;
@@ -180,7 +181,7 @@ export default function SalesPage() {
 
       return productSortAsc ? (valA as number) - (valB as number) : (valB as number) - (valA as number);
     });
-  }, [analyticsQuery.data?.topProducts, analyticsQuery.data?.revenueCents, productSortField, productSortAsc]);
+  }, [analyticsQuery.data?.topProducts, analyticsQuery.data?.revenueCents, analyticsQuery.data?.shippingRevenueCents, productSortField, productSortAsc]);
 
   // Margen comercial por producto. Los gastos generales no se distribuyen arbitrariamente entre productos.
   const gainByProduct = useMemo(() => {
@@ -281,7 +282,7 @@ export default function SalesPage() {
               <MetricCard
                 label="Costo de mercadería"
                 value={formatMoney(analyticsQuery.data.costCents)}
-                detail="Costo registrado en cada venta"
+                detail="Costo registrado en ventas y regalos"
                 icon={PackageCheck}
                 accent="coral"
               />
@@ -290,13 +291,27 @@ export default function SalesPage() {
                 value={formatMoney(analyticsQuery.data.estimatedMarginCents)}
                 detail={
                   analyticsQuery.data.miscExpensesCents > 0
-                    ? `${formatMoney(analyticsQuery.data.commercialMarginCents)} de margen comercial · ${formatMoney(analyticsQuery.data.miscExpensesCents)} en gastos varios`
-                    : 'Ventas menos mercadería e impuestos'
+                    ? `${formatMoney(analyticsQuery.data.commercialMarginCents)} de margen comercial · ${formatMoney(analyticsQuery.data.miscExpensesCents)} en gastos del período`
+                    : 'Cobros menos mercadería, impuestos y gastos'
                 }
                 icon={TrendingUp}
                 accent="blue"
               />
             </section>
+
+            <details className="mb-6 rounded-2xl border border-ink-950/8 bg-white p-4 text-sm text-ink-700">
+              <summary className="min-h-8 cursor-pointer font-bold text-ink-950">Cómo se calcula la ganancia neta</summary>
+              <dl className="mt-3 space-y-2">
+                <div className="flex justify-between gap-3"><dt>Ventas cobradas (incluye envíos)</dt><dd className="font-semibold">{formatMoney(analyticsQuery.data.revenueCents)}</dd></div>
+                <div className="flex justify-between gap-3"><dt>Envíos incluidos en esos cobros</dt><dd>{formatMoney(analyticsQuery.data.shippingRevenueCents ?? 0)}</dd></div>
+                <div className="flex justify-between gap-3"><dt>Costo de mercadería, incluidos regalos</dt><dd>− {formatMoney(analyticsQuery.data.costCents)}</dd></div>
+                <div className="flex justify-between gap-3"><dt>Impuestos registrados</dt><dd>− {formatMoney(analyticsQuery.data.taxCents)}</dd></div>
+                <div className="flex justify-between gap-3"><dt>Envíos pagados al proveedor</dt><dd>− {formatMoney(analyticsQuery.data.supplierShippingExpensesCents ?? 0)}</dd></div>
+                <div className="flex justify-between gap-3"><dt>Otros gastos del período</dt><dd>− {formatMoney(analyticsQuery.data.otherExpensesCents ?? analyticsQuery.data.miscExpensesCents)}</dd></div>
+                <div className="flex justify-between gap-3 border-t border-ink-950/8 pt-2 font-bold text-ink-950"><dt>Ganancia neta</dt><dd>{formatMoney(analyticsQuery.data.estimatedMarginCents)}</dd></div>
+              </dl>
+              <p className="mt-3 text-xs">Los envíos cobrados ya están incluidos en ventas: no se suman otra vez. Los gastos del proveedor se registran en la fecha de recepción; el costo de mercadería corresponde a cada venta o regalo.</p>
+            </details>
 
             {analyticsQuery.data.giftOrders && analyticsQuery.data.giftOrders > 0 ? (
               <div className="mb-6 overflow-hidden rounded-2xl border border-purple-200/90 bg-gradient-to-br from-purple-50/90 via-purple-50/40 to-white p-4 sm:p-5 shadow-xs transition-all">
@@ -330,7 +345,7 @@ export default function SalesPage() {
                               {analyticsQuery.data.costSaleOrders}{' '}
                               {analyticsQuery.data.costSaleOrders === 1 ? 'venta al costo' : 'ventas al costo'}
                             </strong>{' '}
-                            (margen neutral $0)
+                            (productos a su costo registrado)
                           </>
                         ) : null}
                         .
@@ -421,7 +436,7 @@ export default function SalesPage() {
                     <div className="flex items-start gap-2.5 rounded-xl bg-purple-100/40 border border-purple-200/50 p-3 text-xs text-purple-950 leading-relaxed shadow-2xs">
                       <span className="text-base leading-none shrink-0 select-none">💡</span>
                       <span>
-                        La mercadería entregada como cortesía o regalo no suma facturación ($0 cobrado) y se descuenta su costo de reposición para reflejar la ganancia neta real del negocio con exactitud matemática.
+                        La mercadería registrada como regalo tiene cobro cero y su costo entra en el balance del período.
                       </span>
                     </div>
                   </div>
@@ -439,7 +454,7 @@ export default function SalesPage() {
                         <span className="inline-flex items-center gap-1 rounded-md border border-amber-200/80 bg-amber-100/80 px-2 py-0.5 text-[11px] font-black uppercase tracking-wider text-amber-800">
                           Aclaración Comercial
                         </span>
-                        <span className="text-xs text-amber-700 font-medium">Margen neutral $0</span>
+                        <span className="text-xs text-amber-700 font-medium">Productos al costo</span>
                       </div>
                       <p className="text-sm font-semibold text-amber-950 leading-snug">
                         Este período incluye{' '}
@@ -447,7 +462,7 @@ export default function SalesPage() {
                           {analyticsQuery.data.costSaleOrders}{' '}
                           {analyticsQuery.data.costSaleOrders === 1 ? 'venta al costo' : 'ventas al costo'}
                         </strong>{' '}
-                        ({formatMoney(analyticsQuery.data.costSaleRevenueCents ?? 0)} facturados al costo de reposición). No genera ganancia ni pérdida comercial.
+                        ({formatMoney(analyticsQuery.data.costSaleRevenueCents ?? 0)} cobrados, incluidos los cargos de envío). Los productos recuperan su costo; el envío forma parte del margen comercial.
                       </p>
                     </div>
                   </div>
@@ -529,7 +544,7 @@ export default function SalesPage() {
                   {(ordersQuery.data.items ?? []).map((order) => {
                     const isGift = order.paymentState === 'gifted' || order.paymentMethod === 'gift';
                     const isCost = order.isCostSale || order.saleType === 'cost';
-                    const margin = isCost ? 0 : order.totalCents - (order.costTotalCents ?? 0) - (order.taxAmountCents ?? 0);
+                    const margin = orderCommercialMargin(order);
                     const isExpanded = expandedOrderId === order.id;
 
                     return (
@@ -568,7 +583,7 @@ export default function SalesPage() {
                               margin < 0 ? 'text-rose-600 font-black' : isCost ? 'text-ink-600 font-bold' : 'text-brand-700'
                             )}
                           >
-                            {isCost ? '$ 0' : formatMoney(margin)}
+                            {formatMoney(margin)}
                           </td>
                           <td className="px-4 py-4 text-center text-ink-600">
                             <ChevronDown className={cn('size-5 transition-transform inline-block', isExpanded && 'rotate-180')} />
@@ -589,7 +604,7 @@ export default function SalesPage() {
                                     </span>
                                   ) : isCost ? (
                                     <span className="text-xs font-bold text-amber-800 bg-amber-50 border border-amber-200 rounded-full px-2.5 py-0.5">
-                                      🏷️ Venta al costo · Margen comercial neutral ($ 0)
+                                      Venta al costo · Productos a su costo registrado
                                     </span>
                                   ) : null}
                                 </div>
@@ -600,7 +615,7 @@ export default function SalesPage() {
                                       <div className="flex gap-4">
                                         <span className="text-ink-700">Costo: {formatMoney(item.costTotalCents ?? ((item.unitCostCents ?? 0) * item.quantity))}</span>
                                         <span className="text-ink-950 font-black">
-                                          {isGift ? '$ 0 (Regalo)' : isCost ? `Costo: ${formatMoney(item.subtotalCents)}` : `Venta: ${formatMoney(item.subtotalCents)}`}
+                                          {isGift ? '$ 0 (Regalo)' : isCost ? `Costo: ${formatMoney(orderLineRevenue(order, item))}` : `Venta: ${formatMoney(orderLineRevenue(order, item))}`}
                                         </span>
                                       </div>
                                     </div>
@@ -610,6 +625,7 @@ export default function SalesPage() {
                                   <span className="font-bold text-ink-800">
                                     Medio: {isGift ? '🎁 Regalo / Cortesía ($ 0 cobrado)' : isCost ? `🏷️ Venta al costo (${order.paymentMethod === 'cash' ? 'Efectivo' : 'Transferencia'})` : order.paymentMethod === 'cash' ? 'Efectivo' : 'Transferencia'}
                                   </span>
+                                  <span className="font-bold text-ink-800">Envío cobrado: {formatMoney(order.shippingFeeCents)}</span>
                                   <span className="font-bold text-ink-800">Costo mercadería: {formatMoney(order.costTotalCents ?? 0)}</span>
                                   {!isGift && !isCost ? (
                                     <span className="font-bold text-ink-800">Impuestos: {formatMoney(order.taxAmountCents ?? 0)}</span>
@@ -623,7 +639,7 @@ export default function SalesPage() {
                                     {isGift
                                       ? `Pérdida comercial por regalo / cortesía: ${formatMoney(margin)}`
                                       : isCost
-                                        ? `Margen comercial: $ 0 (Venta al costo · Ganancia neutral)`
+                                        ? `Margen comercial: ${formatMoney(margin)} (incluye el envío cobrado)`
                                         : `Margen después de mercadería e impuestos: ${formatMoney(margin)}`}
                                   </span>
                                 </div>
@@ -691,7 +707,7 @@ export default function SalesPage() {
           <section className="overflow-hidden rounded-2xl border border-ink-950/8 bg-white shadow-sm">
             <div className="border-b border-ink-950/8 p-5 sm:p-6">
               <h2 className="font-display text-2xl font-black text-ink-950">Ventas por producto</h2>
-              <p className="mt-1 text-[14.5px] font-semibold text-ink-700">Hasta 10 productos con más unidades en el período. El total de ventas incluye todos los productos.</p>
+              <p className="mt-1 text-[14.5px] font-semibold text-ink-700">Hasta 10 productos con más unidades en ventas cobradas y regalos del período. Los ingresos corresponden solo a productos; los envíos se muestran por separado en el balance general.</p>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full min-w-[44rem] text-left text-sm">
@@ -713,7 +729,7 @@ export default function SalesPage() {
                         else { setProductSortField('units'); setProductSortAsc(false); }
                       }}
                     >
-                      <span className="inline-flex items-center gap-1.5 justify-end">Unidades vendidas <ArrowUpDown className="size-4" /></span>
+                      <span className="inline-flex items-center gap-1.5 justify-end">Unidades <ArrowUpDown className="size-4" /></span>
                     </th>
                     <th
                       className="px-6 py-4 text-right cursor-pointer hover:text-ink-950 select-none"
@@ -722,7 +738,7 @@ export default function SalesPage() {
                         else { setProductSortField('revenue'); setProductSortAsc(false); }
                       }}
                     >
-                      <span className="inline-flex items-center gap-1.5 justify-end">Total vendido <ArrowUpDown className="size-4" /></span>
+                      <span className="inline-flex items-center gap-1.5 justify-end">Ingreso de productos <ArrowUpDown className="size-4" /></span>
                     </th>
                     <th
                       className="px-6 py-4 text-right cursor-pointer hover:text-ink-950 select-none"
@@ -731,13 +747,13 @@ export default function SalesPage() {
                         else { setProductSortField('share'); setProductSortAsc(false); }
                       }}
                     >
-                      <span className="inline-flex items-center gap-1.5 justify-end">% del total <ArrowUpDown className="size-4" /></span>
+                      <span className="inline-flex items-center gap-1.5 justify-end">% de productos <ArrowUpDown className="size-4" /></span>
                     </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-ink-950/8">
                   {sortedProducts.map((p) => {
-                    const totalRev = analyticsQuery.data?.revenueCents ?? 0;
+                    const totalRev = (analyticsQuery.data?.revenueCents ?? 0) - (analyticsQuery.data?.shippingRevenueCents ?? 0);
                     const share = totalRev > 0 ? ((p.revenueCents / totalRev) * 100).toFixed(1) : '—';
                     return (
                       <tr key={JSON.stringify([p.productId, p.name])} className="hover:bg-cream-50/50 min-h-[3.75rem]">
@@ -793,6 +809,7 @@ export default function SalesPage() {
                 </p>
               </div>
             </div>
+
 
             {analyticsQuery.data.giftOrders && analyticsQuery.data.giftOrders > 0 ? (
               <div className="overflow-hidden rounded-2xl border border-purple-200/90 bg-gradient-to-br from-purple-50/90 via-purple-50/40 to-white p-5 text-purple-950 shadow-xs">
@@ -879,12 +896,12 @@ export default function SalesPage() {
                     <span className="inline-flex items-center gap-1 rounded-md border border-amber-200/80 bg-amber-100/80 px-2 py-0.5 text-[11px] font-black uppercase tracking-wider text-amber-800">
                       Aclaración Comercial
                     </span>
-                    <span className="text-xs text-amber-700 font-medium">Margen neutral $0</span>
+                    <span className="text-xs text-amber-700 font-medium">Productos al costo</span>
                   </div>
                   <p className="text-sm font-semibold text-amber-950 leading-snug">
-                    Se registraron <strong className="font-black text-amber-900">{analyticsQuery.data.costSaleOrders} {analyticsQuery.data.costSaleOrders === 1 ? 'venta al costo' : 'ventas al costo'}</strong> ({formatMoney(analyticsQuery.data.costSaleRevenueCents ?? 0)} facturados al costo de reposición).
+                    Se registraron <strong className="font-black text-amber-900">{analyticsQuery.data.costSaleOrders} {analyticsQuery.data.costSaleOrders === 1 ? 'venta al costo' : 'ventas al costo'}</strong> ({formatMoney(analyticsQuery.data.costSaleRevenueCents ?? 0)} cobrados, incluidos los cargos de envío).
                   </p>
-                  <span className="block text-xs text-amber-800/90">Su aporte a la ganancia es neutral ($ 0), ya que el cobro iguala exactamente el costo de compra sin generar ganancia ni pérdida.</span>
+                  <span className="block text-xs text-amber-800/90">Los productos se cobran a su costo registrado. El envío cobrado es ingreso adicional y los gastos del período se descuentan en la ganancia neta.</span>
                 </div>
               </div>
             ) : null}

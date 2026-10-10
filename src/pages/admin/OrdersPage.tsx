@@ -25,6 +25,8 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from '@/app/query-keys';
 import { useBusinessQuery } from '@/app/use-business-query';
 import { OrderStatus } from '@/components/admin/OrderStatus';
+import { OrderShippingFeeEditor } from '@/components/admin/OrderShippingFeeEditor';
+import { shippingFeeNeedsReview } from '@/domain/order-shipping';
 import { OrderPackingEditor } from '@/components/admin/OrderPackingEditor';
 import { PageHeader } from '@/components/layout/AdminShell';
 import { Button, buttonStyles } from '@/components/ui/Button';
@@ -36,7 +38,7 @@ import {
   availableOrderActions,
   ORDER_ACTION_LABELS
 } from '@/domain/order-actions';
-import type { Order, OrderAction } from '@/domain/types';
+import type { Order, OrderAction, OrderPaymentExpectation } from '@/domain/types';
 import type { OrderListFilter } from '@/services/business-api';
 import { cn } from '@/lib/cn';
 import { buildWhatsAppUrl } from '@/lib/whatsapp-url';
@@ -58,16 +60,19 @@ const needsUnverifiedBagConfirmation = (order: Order, action: OrderAction): bool
 export default function OrdersPage() {
   const queryClient = useQueryClient();
   const { user } = useAuth();
+  const [shippingEditing, setShippingEditing] = useState<Record<string, boolean>>({});
+  const notifyShippingEditing = useCallback((id: string, editing: boolean) => setShippingEditing(current => current[id] === editing ? current : { ...current, [id]: editing }), []);
+  const hasShippingEdits = Object.values(shippingEditing).some(Boolean);
   const [draftStore] = useState<PackingDraftStore>(() => new Map());
   const [draftEpoch, setDraftEpoch] = useState(0);
   const notifyDraft = useCallback(() => setDraftEpoch(epoch => epoch + 1), []);
   const unsaved = [...draftStore.values()].filter(draft => draft.saving || packingDraftDirty(draft));
   useBlocker({
-    shouldBlockFn: ({ current, next }) => current.pathname !== next.pathname && unsaved.length > 0 &&
-      !window.confirm(unsaved.some(draft => draft.saving)
+    shouldBlockFn: ({ current, next }) => current.pathname !== next.pathname && (unsaved.length > 0 || hasShippingEdits) &&
+      !window.confirm(hasShippingEdits ? 'Hay una edición de envío sin cerrar. Si salís, revisá el pedido antes de volver a guardar o cobrar. ¿Salir ahora?' : unsaved.some(draft => draft.saving)
         ? `El armado se está guardando y puede completarse aunque salgas.${unsaved.some(draft => !draft.saving) ? ' Los otros conteos sin guardar se perderán al salir.' : ''} Revisá después los pedidos antes de volver a guardar. ¿Salir ahora?`
         : 'Hay armados sin guardar. ¿Salir y descartar esos cambios?'),
-    enableBeforeUnload: unsaved.length > 0
+    enableBeforeUnload: unsaved.length > 0 || hasShippingEdits
   });
   const [page, setPage] = useState(1);
   const routeSearchParams = useSearch({ strict: false }) as { search?: string | number } | undefined;
@@ -122,11 +127,15 @@ export default function OrdersPage() {
   });
 
   const transition = useMutation({
-    mutationFn: async (variables: { orderId: string; action: OrderAction }) =>
+    mutationFn: async (variables: { orderId: string; action: OrderAction; expected?: OrderPaymentExpectation }) =>
       {
+        if (shippingEditing[variables.orderId]) throw new AppError('business', 'Hay una edición de envío sin guardar.', { nextAction: 'Guardá o cancelá la edición antes de cambiar el estado del pedido.' });
         const draft = draftStore.get(variables.orderId);
         if (draft && (draft.saving || packingDraftDirty(draft))) throw new AppError('business', 'Hay un conteo de bolsita sin guardar.', { nextAction: 'Guardá o descartá ese conteo antes de cambiar el estado del pedido.' });
-        return (await getBusinessApi()).transitionOrder(variables.orderId, variables.action);
+        const api = await getBusinessApi();
+        return variables.expected
+          ? api.transitionOrder(variables.orderId, variables.action, variables.expected)
+          : api.transitionOrder(variables.orderId, variables.action);
       },
     onSuccess: async (order, variables) => {
       setMutationError(null);
@@ -213,6 +222,7 @@ export default function OrdersPage() {
                 ? 'bg-brand-600 text-white shadow-sm font-black'
                 : 'border border-ink-950/15 bg-white text-ink-800 hover:border-ink-950/25'
             )}
+            disabled={hasShippingEdits}
             onClick={() => { setPage(1); setSearch(''); setFilter('pending'); }}
           >
             Pendientes de acción <span className="ml-1 opacity-85">• {pendingCount}</span>
@@ -223,6 +233,7 @@ export default function OrdersPage() {
               'min-h-11 rounded-full px-4 text-[14.5px] font-bold transition',
               filter === 'preparing' ? 'bg-brand-600 text-white shadow-sm font-black' : 'border border-ink-950/15 bg-white text-ink-800 hover:border-ink-950/25'
             )}
+            disabled={hasShippingEdits}
             onClick={() => { setPage(1); setSearch(''); setFilter('preparing'); }}
           >
             En preparación • {preparingCount}
@@ -233,6 +244,7 @@ export default function OrdersPage() {
               'min-h-11 rounded-full px-4 text-[14.5px] font-bold transition',
               filter === 'ready_pickup' ? 'bg-brand-600 text-white shadow-sm font-black' : 'border border-ink-950/15 bg-white text-ink-800 hover:border-ink-950/25'
             )}
+            disabled={hasShippingEdits}
             onClick={() => { setPage(1); setSearch(''); setFilter('ready_pickup'); }}
           >
             Listos para retirar • {readyPickupCount}
@@ -245,6 +257,7 @@ export default function OrdersPage() {
                 ? 'bg-brand-600 text-white shadow-sm font-black'
                 : 'border border-ink-950/15 bg-white text-ink-800 hover:border-ink-950/25'
             )}
+            disabled={hasShippingEdits}
             onClick={() => { setPage(1); setSearch(''); setFilter('completed'); }}
           >
             Completados <span className="ml-1 opacity-85">• {completedCount}</span>
@@ -257,6 +270,7 @@ export default function OrdersPage() {
                 ? 'bg-brand-600 text-white shadow-sm font-black'
                 : 'border border-ink-950/15 bg-white text-ink-800 hover:border-ink-950/25'
             )}
+            disabled={hasShippingEdits}
             onClick={() => { setPage(1); setSearch(''); setFilter('all'); }}
           >
             Todos ({pendingCount + completedCount})
@@ -269,8 +283,10 @@ export default function OrdersPage() {
             type="search"
             placeholder="Buscar #pedido, cliente o teléfono…"
             value={search}
+            disabled={hasShippingEdits}
             onChange={(e) => {
               const val = e.target.value.replace(/^["'“”`\\]+|["'“”`\\]+$/g, '');
+              if (hasShippingEdits) return;
               setSearch(val);
               if (val.trim()) setFilter('all');
             }}
@@ -357,7 +373,10 @@ export default function OrdersPage() {
                         ? 'bg-white border-b border-ink-950/6'
                         : 'hover:bg-cream-50/60'
                     )}
-                    onClick={() => setExpanded(open ? null : order.id)}
+                    onClick={() => {
+                      if (hasShippingEdits && !window.confirm('Hay una edición de envío sin cerrar. ¿Descartarla y cambiar de pedido?')) return;
+                      setExpanded(open ? null : order.id);
+                    }}
                     aria-expanded={open}
                   >
                     <span className="font-display text-xl font-black text-ink-950">
@@ -634,6 +653,8 @@ export default function OrdersPage() {
                             </p>
                           ) : null}
 
+                          <OrderShippingFeeEditor order={order} canEdit={can(user, 'manage_pricing')} disabled={transition.isPending} onEditingChange={notifyShippingEditing} />
+                          {order.stockSource === 'incoming_only' && order.stockReadiness === 'waiting_incoming' ? <p className="text-xs text-ink-700">Este pedido reserva exclusivamente mercadería en camino.</p> : null}
                           {/* El cobro es independiente de la preparación. */}
                           {actions.includes('mark_paid') ? (
                             <div className="space-y-2">
@@ -645,9 +666,8 @@ export default function OrdersPage() {
                                   transition.isPending &&
                                   transition.variables?.action === 'mark_paid'
                                 }
-                                onClick={() =>
-                                  transition.mutate({ orderId: order.id, action: 'mark_paid' })
-                                }
+                                disabled={shippingEditing[order.id] || shippingFeeNeedsReview(order)}
+                                onClick={() => setConfirmAction({ order, action: 'mark_paid' })}
                               >
                                 Marcar como cobrado
                               </Button>
@@ -665,7 +685,8 @@ export default function OrdersPage() {
                                       type="button"
                                       variant="secondary"
                                       size="sm"
-                                      title="Cobrar a precio de costo (ganancia $0, recupero de mercadería)"
+                                      title="Cobrar el costo de mercadería más el envío guardado"
+                                      disabled={shippingEditing[order.id] || shippingFeeNeedsReview(order)}
                                       className="w-full justify-center text-amber-900 border-amber-200 bg-amber-50/70 hover:bg-amber-100 hover:text-amber-950 hover:border-amber-300 font-bold text-xs py-2 h-auto"
                                       onClick={() => setConfirmAction({ order, action: 'mark_at_cost' })}
                                     >
@@ -678,7 +699,8 @@ export default function OrdersPage() {
                                       type="button"
                                       variant="secondary"
                                       size="sm"
-                                      title="Marcar como cortesía / regalo (descuenta stock sin sumar facturación)"
+                                      title="Regalar el pedido completo: elimina el cargo de envío y registra cobro cero"
+                                      disabled={shippingEditing[order.id]}
                                       className="w-full justify-center text-purple-900 border-purple-200 bg-purple-50/70 hover:bg-purple-100 hover:text-purple-950 hover:border-purple-300 font-bold text-xs py-2 h-auto"
                                       onClick={() => setConfirmAction({ order, action: 'mark_gifted' })}
                                     >
@@ -817,6 +839,8 @@ export default function OrdersPage() {
                       ? `¿Registrar pedido #${confirmAction.order.number} como regalo / cortesía?`
                       : confirmAction.action === 'mark_at_cost'
                         ? `¿Cobrar pedido #${confirmAction.order.number} a precio de costo?`
+                        : confirmAction.action === 'mark_paid'
+                          ? `¿Registrar el cobro del pedido #${confirmAction.order.number}?`
                         : confirmAction.action === 'cancel'
                           ? `¿Cancelar pedido #${confirmAction.order.number}?`
                           : confirmAction.action === 'mark_delivered'
@@ -850,6 +874,7 @@ export default function OrdersPage() {
                     <ul className="list-disc list-inside space-y-1.5 text-ink-800 text-xs">
                       <li><strong>Descontará el stock físico real</strong> del inventario automáticamente.</li>
                       <li><strong>No sumará facturación</strong> (se registrará cobro $ 0).</li>
+                      {confirmAction.order.shippingFeeCents > 0 ? <li><strong>Se quitará el envío de {formatMoney(confirmAction.order.shippingFeeCents)}.</strong> El pedido completo será un regalo.</li> : null}
                       <li>En la sección de <strong>Ventas</strong> figurará el costo asumido como <strong>pérdida en rojo</strong> y se deducirá del margen neto.</li>
                       <li>El pedido quedará completado sin generar cobros pendientes.</li>
                     </ul>
@@ -863,15 +888,17 @@ export default function OrdersPage() {
                       Este pedido se registrará como <strong>venta al costo</strong>:
                     </p>
                     <ul className="list-disc list-inside space-y-1.5 text-ink-800 text-xs">
-                      <li><strong>Ajustará los precios unitarios al costo</strong> de reposición real de cada producto.</li>
+                      <li><strong>Cobrará los productos a su costo registrado</strong>, según los lotes asignados al pedido.</li>
                       <li><strong>Total a cobrar al cliente</strong>: <span className="font-bold text-ink-950">{formatMoney((confirmAction.order.costTotalCents ?? 0) + (confirmAction.order.shippingFeeCents ?? 0))}</span> (recupero exacto del costo + envío).</li>
-                      <li>En la sección de <strong>Ventas</strong> figurará con margen estrictamente <strong>neutral ($ 0)</strong>, sin pérdida ni ganancia contable.</li>
+                      <li>Los productos se cobran a su costo registrado. El envío de <strong>{formatMoney(confirmAction.order.shippingFeeCents)}</strong> es ingreso adicional; los gastos del proveedor se descuentan por separado en el balance.</li>
                       <li>El pedido quedará marcado como pagado, y el stock se descontará normalmente al confirmar la entrega.</li>
                     </ul>
                     <p className="text-xs font-semibold text-amber-900 pt-1">
                       🏷️ Ideal para ventas directas a costo de reposición para familiares, socios o personal.
                     </p>
                   </>
+                ) : confirmAction.action === 'mark_paid' ? (
+                  <p>Confirmá que recibiste <strong>{formatMoney(confirmAction.order.totalCents)}</strong>: productos {formatMoney(confirmAction.order.subtotalCents)} y envío {formatMoney(confirmAction.order.shippingFeeCents)}. Después del cobro no se podrá editar el envío.</p>
                 ) : confirmAction.action === 'cancel' ? (
                   <>
                     <p>
@@ -929,7 +956,8 @@ export default function OrdersPage() {
                   onClick={async () => {
                     transition.mutate({
                       orderId: confirmAction.order.id,
-                      action: confirmAction.action
+                      action: confirmAction.action,
+                      ...(['mark_paid','mark_at_cost','mark_gifted'].includes(confirmAction.action) ? {expected: {shippingFeeRevision:confirmAction.order.shippingFeeRevision ?? 0,totalCents:confirmAction.order.totalCents,costTotalCents:confirmAction.order.costTotalCents}} : {})
                     }, { onSuccess: () => setConfirmAction(null) });
                   }}
                 >
@@ -937,6 +965,8 @@ export default function OrdersPage() {
                     ? 'Sí, registrar como regalo'
                     : confirmAction.action === 'mark_at_cost'
                       ? 'Sí, cobrar al costo'
+                      : confirmAction.action === 'mark_paid'
+                        ? 'Sí, registrar cobro'
                       : confirmAction.action === 'cancel'
                         ? 'Sí, cancelar pedido'
                         : confirmAction.action === 'mark_delivered'
@@ -957,7 +987,7 @@ export default function OrdersPage() {
               <Button
                 variant="ghost"
                 size="sm"
-                disabled={page === 1}
+                disabled={page === 1 || hasShippingEdits}
                 onClick={() => {
                   setExpanded(null);
                   setPage((current) => Math.max(1, current - 1));
@@ -971,7 +1001,7 @@ export default function OrdersPage() {
               <Button
                 variant="ghost"
                 size="sm"
-                disabled={page * ordersQuery.data.pageSize >= ordersQuery.data.total}
+                disabled={page * ordersQuery.data.pageSize >= ordersQuery.data.total || hasShippingEdits}
                 onClick={() => {
                   setExpanded(null);
                   setPage((current) => current + 1);

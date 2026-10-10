@@ -472,7 +472,7 @@ describe('Recepción asistida de compras (ReceivePurchaseModal)', () => {
     await waitFor(() => expect(api.receivePurchase).toHaveBeenCalledWith('purch-2042', [
       { purchaseItemId: 'pi-1', receivedQuantity: 10 },
       { purchaseItemId: 'pi-2', receivedQuantity: 4 }
-    ], expect.any(String)));
+    ], expect.any(String), 0));
     await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
     expect(onUnblocked).toHaveBeenCalledWith([{ id: 'ord-2504', number: 2504 }]);
   });
@@ -529,7 +529,7 @@ describe('Recepción asistida de compras (ReceivePurchaseModal)', () => {
     await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
     expect(api.receivePurchase).toHaveBeenCalledWith(repeatedPurchase.id, [
       { purchaseItemId: remainingItem.id, receivedQuantity: 3 }
-    ], expect.any(String));
+    ], expect.any(String), 0);
     expect(repeatedPurchase.items.map(item => [item.receivedQuantity, item.shortageQuantity])).toEqual([[10, 0], [0, 4], [2, 1]]);
   });
 
@@ -570,7 +570,7 @@ describe('Recepción asistida de compras (ReceivePurchaseModal)', () => {
     await waitFor(() => expect(api.receivePurchase).toHaveBeenCalledWith('purch-2042', [
       { purchaseItemId: 'pi-1', receivedQuantity: 10 },
       { purchaseItemId: 'pi-2', receivedQuantity: 4 }
-    ], expect.any(String)));
+    ], expect.any(String), 0));
   });
 
   it('diagnóstico con "SÍ, viene después": permite finalizar sin bloqueos', async () => {
@@ -591,7 +591,7 @@ describe('Recepción asistida de compras (ReceivePurchaseModal)', () => {
     fireEvent.click(finalizeBtn);
     await waitFor(() => expect(api.receivePurchase).toHaveBeenCalledWith('purch-2042', [
       { purchaseItemId: 'pi-1', receivedQuantity: 10 }
-    ], expect.any(String)));
+    ], expect.any(String), 0));
     await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
   });
 
