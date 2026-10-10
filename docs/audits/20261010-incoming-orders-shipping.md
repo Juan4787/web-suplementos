@@ -193,4 +193,38 @@ La captura previa era de las 06:34 de Argentina. Mientras se trabajaba, a las 08
 
 La conciliación no permite diferencias generales: valida las relaciones del pedido, el origen, pago pendiente, fecha anterior al comando de migración, cantidades y movimiento, y guarda fingerprints de las tablas. La auditoría posterior solo acepta esa actividad si esos fingerprints coinciden exactamente; toda diferencia adicional sigue fallando. Evidencia: `output/audit/shipping-external-activity.json`, `/tmp/supplements-shipping-external-activity-certified-20261010.log`. La hipótesis inicial de que nadie usaría la aplicación durante el trabajo no se trató como garantía.
 
-Se completará aquí la identificación de la versión publicada y la verificación de los archivos servidos y las pantallas reales. Las comprobaciones locales anteriores se distinguen de esta evidencia de producción.
+La publicación final se completó a las 10:35:51 de Argentina en `https://tienda.desuplementos.workers.dev`, perfil `impulso`, Worker `tienda`. La versión `a646989b-c7da-4d15-87c0-a59b4c1f44d1` está activa al 100 %. La compilación final corresponde al código de aplicación de `1eab010`, que añade la corrección visual al cambio principal `90a03d6`. El certificado posterior modifica documentación, sin cambiar la aplicación compilada.
+
+| Comprobación real | Resultado | Evidencia |
+| --- | --- | --- |
+| Migraciones | Únicamente las dos previstas aplicadas; sin seeds ni roles nuevos | `/tmp/supplements-shipping-migrations-published-20261010.log` |
+| Datos de negocio | 22 tablas inspeccionadas; las 21 tablas anteriores comparadas contra el respaldo y la actividad real conciliada; cero diferencias sin explicación | `output/audit/shipping-release-after.json`, `/tmp/supplements-shipping-live-final-certified-20261010.log` |
+| Funciones y disparadores | Las 13 definiciones nuevas/modificadas coinciden con las migraciones; funciones/disparadores ajenos al cambio permanecen intactos | Artefacto anterior |
+| Contabilidad real | 1.370 períodos diarios, mensuales, anuales y entre fechas de actividad, contra sumas independientes de cobros, costos, regalos, impuestos y gastos; cero discrepancias | Artefacto anterior |
+| Contratos HTTP de lectura | 14 aprobados, cero fallidos: catálogo, pedidos, compras, inventario, clientes, gastos, dashboard, ventas, exportación y usuarios | `/tmp/supplements-shipping-production-contract-final-20261010.log` |
+| Versión activa | 100 % `a646989b-c7da-4d15-87c0-a59b4c1f44d1` | `/tmp/supplements-shipping-deployment-status-final-20261010.log` |
+| Archivos servidos | HTML y todos los JavaScript/CSS: 81 recursos con bytes idénticos a `dist`; manifiesto local de 199 archivos | `output/audit/shipping-served-build.json`, `/tmp/supplements-shipping-served-final-certified-20261010.log` |
+| Interfaz real de la dueña | Selector, balance, recepción y editor de pedido cargados con datos reales; abrir/cancelar sin guardar; cero errores y cero intentos de escritura de negocio | `output/audit/shipping-production-ui-readonly.json`, `/tmp/supplements-shipping-production-ui-final-certified-20261010.log` |
+| Recepción grande real | Compra de 90 unidades: envío visible al abrir la revisión completa y parcial, en escritorio y vista móvil de 390 px | Capturas `output/audit/production-shipping/receipt.png` y `receipt-mobile.png` |
+
+SHA-256 del manifiesto final de compilación: `759a260cbabfe004c9c45d842bbd1b641586e7a531707a57b05b75373d259639`. Se calcula sobre rutas ordenadas y SHA-256 de los bytes de cada archivo, no sobre fecha/nombre de despliegue. El HTML devuelve `public, max-age=0, must-revalidate`; exige revalidación antes de reutilizarse. Los archivos con hash se sirven con caché inmutable.
+
+La primera comprobación inmediata tras publicar encontró una respuesta que aún no coincidía durante la propagación. Se comprobó el contenido realmente servido y luego se repitió la comparación estricta completa: los 81 recursos coinciden. No se aceptó un HTTP 200 ni el mensaje de Wrangler como prueba suficiente de la versión servida. El verificador también admite explícitamente la revalidación `max-age=0, must-revalidate`, equivalente para este control a `no-cache`, en lugar de exigir una cadena de cabecera particular.
+
+Se inspeccionaron visualmente las capturas finales reales de carga manual, recepción móvil, editor y balance. Después de los contratos y la navegación de solo lectura, se repitió la comparación completa de producción; volvió a aprobar con la misma actividad externa conciliada. Los saldos históricos y las cantidades físicas permanecieron intactos. La diferencia previa de una reserva física de B COMPLEX ACTIVE permanece identificada; ninguna prueba la ocultó ni la corrigió con un conteo supuesto.
+
+La versión anterior a este trabajo era `9973b334-3d8a-4e0f-85fb-30e9f873bbb3`; queda identificada para recuperación compatible conforme a las condiciones anteriores. No se ejecutó un rollback real. Tampoco se hicieron cobros, entregas, recepción de mercadería ni correcciones de gastos artificiales en producción. Esas operaciones están probadas en PostgreSQL/HTTP local y navegador demo, con separación expresa de la inspección real.
+
+Comprobaciones de publicación, todas sobre el destino fijado del proyecto:
+
+```sh
+SUPABASE_DB_TRANSPORT=pooler node scripts/run-supabase-linked.mjs dry-run
+SUPABASE_DB_TRANSPORT=pooler node scripts/run-supabase-linked.mjs push
+node scripts/audit-shipping-release-readonly.mjs after
+pnpm worker:deploy
+node scripts/verify-shipping-served-build.mjs
+node scripts/verify-shipping-production-ui-readonly.mjs
+pnpm test:contract
+```
+
+Los comandos de migración/publicación son mutaciones autorizadas de código y esquema. No deben confundirse con los scripts de lectura ni ejecutarse de nuevo para consultar resultados. La conciliación documentada utiliza el respaldo concreto de este trabajo y exige coincidencia exacta; no es una excepción general para ignorar cambios de producción.
