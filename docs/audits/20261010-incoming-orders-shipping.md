@@ -285,3 +285,42 @@ La compilación intermedia de la primera corrección de diálogos quedó publica
 La suite completa del código final aprobó **69 archivos y 599 pruebas**, con una omitida por la cobertura física preexistente; no se debilitó su condición. `pnpm check` aprobó. Las cuatro situaciones de confirmación y navegación aprobaron **12 casos** en escritorio, móvil y Firefox antes de repetir el navegador completo. Evidencia: `/tmp/supplements-app-confirmation-final-typecheck-20261010.log`, `/tmp/supplements-app-confirmation-final-vitest-20261010.log`, `/tmp/supplements-app-confirmation-route-e2e-all-20261010.log`.
 
 La regresión completa de navegador del código final aprobó **76 casos**, con los mismos dos casos de escritura real omitidos (78 en total), un trabajador y cero reintentos. Incluye todos los recorridos de escritorio y móvil y los de tienda/importación/confirmación en Firefox. Se comprobó que un clic real sobre Cobrar durante la espera de búsqueda no abre una confirmación ni inicia un cobro. Evidencia: `/tmp/supplements-app-confirmation-final-e2e-20261010.log`.
+
+## Cierre de la publicación final y auditoría real
+
+La aplicación compilada corresponde a `3bd4965`, sobre las correcciones de interfaz de `5ac6702` y los cambios principales `90a03d6`/`1eab010`. Se publicó el 10 de octubre a las **12:13:48 de Argentina**. La versión **`b8c585f2-4ee7-4f66-aba8-e70deb435086`** quedó activa al **100 %** en el mismo Worker `tienda`, perfil `impulso`. La corrección de los verificadores y este cierre documental posteriores no modifican la aplicación compilada ni requieren otra migración.
+
+La compilación de producción aprobó validación del destino, TypeScript y Vite. La restauración de compatibilidad comprobó los 115 recursos de la versión intermedia y añadió **50** que la compilación nueva no contenía. Ningún HTML anterior, Worker ni dato se restauró en el servidor.
+
+El manifiesto final contiene **265 archivos**. Se verificaron los **139 recursos HTML/JavaScript/CSS** servidos, todos con bytes idénticos a la compilación local. SHA-256 del manifiesto: **`918193569effdeb247e3a0077de42c06bcf0b08739635306ee38ea6e2019e385`**. HTML: `public, max-age=0, must-revalidate`. Evidencia: `output/audit/shipping-served-build.json`, `/tmp/supplements-app-confirmation-final-build-20261010.log`, `/tmp/supplements-app-confirmation-final-deployment-20261010.log`, `/tmp/supplements-app-confirmation-final-deployment-status-20261010.log`, `/tmp/supplements-app-confirmation-final-served-20261010.log`.
+
+### Alcance exacto de la comprobación de pestaña anterior
+
+El ensayo real iniciado antes de publicar la versión final comprobó el HTML intermedio servido y mantuvo escrito `12.345` en la recepción, únicamente en memoria. Después de publicar y comprobar los archivos nuevos, pasó las aserciones de conservación del campo y presencia de todos los recursos anteriores y llegó a Ventas. Sin embargo, terminó con un fallo del verificador: buscaba el primer `SalesPage` del manifiesto, que también contenía la versión principal retenida. No se presenta ese ensayo como una certificación completa aprobada. Su log diagnóstico es `/tmp/supplements-app-confirmation-final-open-tab-20261010.log`.
+
+Se corrigió la identificación para exigir que la página solicitada realmente por el navegador coincida con un recurso del certificado anterior. Para repetir después de la publicación sin volver a desplegar una versión vieja, se reconstruyó el HTML intermedio y se exigió igualdad exacta con su hash certificado: `044d88b4a2a229c55fe0f370efa54cfdfa9b91d115e37ce68f077fbc2bf28a01`. Ese HTML se suministra exclusivamente a una navegación del navegador de prueba. El servidor continúa entregando el HTML final; todos los JavaScript/CSS y las lecturas de negocio se obtienen de producción.
+
+La reproducción controlada aprobó la conservación del importe, la primera carga de `SalesPage-fDhkxo7y.js` sin recarga y la apertura de un archivo anterior de Pedidos/carga manual que necesitaba la retención. Cero errores y cero intentos de escritura de negocio. Su evidencia está identificada explícitamente como **`production-read-only-prior-html-replay`**, no como un segundo ensayo completo atravesando un despliegue real. Artefacto: `output/audit/shipping-prior-html-replay-readonly.json`; log: `/tmp/supplements-app-confirmation-final-prior-html-replay-20261010.log`. El archivo `shipping-open-tab-readonly.json` no se fabrica ni se marca aprobado a partir del ensayo fallido.
+
+```sh
+node scripts/verify-shipping-open-tab-readonly.mjs output/audit/shipping-dialog-intermediate-certified/shipping-served-build.json --replay-prior-html
+```
+
+### Resultado de las comprobaciones reales finales
+
+| Frente | Resultado final |
+| --- | --- |
+| Interfaz publicada de la dueña | Seis comprobaciones aprobadas: selector, balance, recepción completa/parcial visible, editor y decisiones de conservar/descartar; escritorio y vista móvil. Cero errores y cero intentos de escritura. |
+| Confirmación propia de la app | Capturas reales de escritorio/móvil inspeccionadas: texto de consecuencia, **Descartar / Seguir editando**, sin **Aceptar**, foco de conservación, controles de al menos 44 px, sin desborde. Escape/conservar mantienen el importe; descarte/cambio de sección no guardan un cargo real. |
+| Contratos HTTP | **14 aprobados, cero fallidos**, sobre las lecturas de la aplicación publicada. |
+| Base de datos | **22 tablas** inspeccionadas; las tablas históricas conservan los hashes previstos tras la única actividad externa conciliada, pedido #2610. |
+| Funciones de negocio | **13 definiciones** coinciden con las migraciones; funciones y disparadores ajenos al cambio intactos. |
+| Estadísticas financieras | **1.370 períodos** diarios/mensuales/anuales y por actividad comparados con sumas independientes, cero discrepancias. |
+
+Evidencia: `output/audit/shipping-production-ui-readonly.json`, `output/audit/shipping-release-after.json`, `/tmp/supplements-app-confirmation-final-production-ui-20261010.log`, `/tmp/supplements-app-confirmation-final-contract-20261010.log`, `/tmp/supplements-app-confirmation-final-database-20261010.log`. Se repitió la auditoría completa después de la navegación y los contratos: volvió a aprobar las 22 tablas, 13 definiciones y 1.370 períodos sin cambios de negocio sin explicar. Resultado: `/tmp/supplements-app-confirmation-final-database-after-ui-20261010.log`.
+
+Las pruebas originales de PostgreSQL (467 aserciones), calendario independiente (5.120 rangos), HTTP aislado (12 casos), concurrencia real (9 escenarios), exportación con LibreOffice y restauración del respaldo conservan el alcance descrito arriba. La corrección final de interfaz no modificó SQL, importes persistidos ni esas reglas. Los nuevos resultados completos de Vitest/navegador sí corresponden al código de aplicación final.
+
+La única inconsistencia de datos identificada que permanece requiere evidencia física: B COMPLEX ACTIVE sigue con 8 unidades físicas y 9 reservadas físicamente; no hay déficit de cobertura total al incluir las entradas. No se corrige con una unidad inventada ni se reasignan clientes sin conocer su procedencia. La emulación móvil no demuestra una prueba en teléfono físico; no se ejecutó un rollback real ni operaciones comerciales ficticias en producción.
+
+Los logs certificados de esta corrección se conservan junto con los originales en `output/audit/shipping-certification-logs/`, directorio privado y archivos con permisos 600. El fallo del primer ensayo de pestaña está archivado como `diagnostic-open-tab-first-20261010.log`, separado de las certificaciones aprobadas. Las capturas reales están en `output/audit/production-shipping/`, también con acceso privado. Estos artefactos permanecen fuera de Git. El servidor demo que se abrió para este trabajo se detiene al cerrar; la base local original no se detiene ni se modifica.
