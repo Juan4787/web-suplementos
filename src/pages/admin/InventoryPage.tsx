@@ -53,6 +53,7 @@ import type { InventoryItem, Purchase, PurchaseItem, PurchaseImpactItem, Reserve
 import { useAuth } from '@/features/auth/AuthProvider';
 import { cn } from '@/lib/cn';
 import { getBusinessApi } from '@/services/business-api';
+import { useAppConfirmation } from '@/components/ui/AppConfirmation';
 
 const statusLabels = {
   ok: 'OK',
@@ -121,6 +122,7 @@ export function PurchaseFormModal({
   onClose: () => void;
 }) {
   const queryClient = useQueryClient();
+  const askConfirmation = useAppConfirmation();
   const isEdit = Boolean(purchase);
   const [supplier, setSupplier] = useState(() => (
     purchase ? (purchase.supplierName === 'Sin proveedor' || purchase.supplierName === 'Proveedor no informado' ? '' : purchase.supplierName) : ''
@@ -207,15 +209,17 @@ export function PurchaseFormModal({
     : lines.some(line => !Number.isFinite(Number(line.unitCostPesos.replace(',', '.'))) || Number(line.unitCostPesos.replace(',', '.')) < 0) ? 'Revisá el costo por unidad: debe ser cero o un importe positivo.'
     : null;
   const valid = purchaseIssue === null;
-  const discardQuestion = 'Hay datos de la compra sin guardar. ¿Cerrar y descartar esos cambios?';
-  const closeForm = () => {
-    if (saveMutation.isPending || (isDirty && !window.confirm(discardQuestion))) return;
+  const discardOptions = { title: '¿Descartar la compra sin guardar?', description: 'Los datos que editaste en esta compra se descartarán al cerrar. Podés seguir editando para conservarlos.' };
+  const closeForm = async () => {
+    if (saveMutation.isPending || (isDirty && !await askConfirmation(discardOptions))) return;
     onClose();
   };
   useBlocker({
-    shouldBlockFn: ({ current, next }) => current.pathname !== next.pathname && (saveMutation.isPending
-      ? !window.confirm('La compra se está guardando y puede completarse aunque salgas. Revisá Compras antes de volver a cargarla. ¿Salir ahora?')
-      : isDirty && !window.confirm(discardQuestion)),
+    shouldBlockFn: async ({ current, next }) => current.pathname !== next.pathname && (saveMutation.isPending
+      ? !await askConfirmation({ title: 'El guardado ya comenzó',
+        description: 'Salir no cancela el guardado de la compra. Revisá Compras al volver antes de cargarla otra vez.',
+        confirmLabel: 'Salir', cancelLabel: 'Seguir esperando' })
+      : isDirty && !await askConfirmation(discardOptions)),
     enableBeforeUnload: isDirty || saveMutation.isPending
   });
   return (
@@ -1431,6 +1435,7 @@ function StockDetailDrawer({
   const { user } = useAuth();
   const canConfigureThresholds = can(user, 'adjust_stock');
   const queryClient = useQueryClient();
+  const askConfirmation = useAppConfirmation();
   const [reorderPointStr, setReorderPointStr] = useState(
     item.reorderPoint > 0 ? String(item.reorderPoint) : ''
   );
@@ -1505,12 +1510,12 @@ function StockDetailDrawer({
   useEffect(() => {
     if (thresholdConflict && !isDirty && !updateThresholds.isPending) loadThresholds(item);
   }, [item.id, item.reorderPoint, item.safetyStock, item.leadTimeDays, updateThresholds.isPending]);
-  useBlocker({ shouldBlockFn: () => updateThresholds.isPending || (isDirty &&
-    !window.confirm('Hay avisos de inventario sin guardar. ¿Salir y descartar esos cambios?')),
+  const discardThresholds = { title: '¿Descartar los avisos sin guardar?', description: 'Se descartarán los cambios de avisos de inventario que editaste. Podés seguir editando para conservarlos.' };
+  useBlocker({ shouldBlockFn: async () => updateThresholds.isPending || (isDirty &&
+    !await askConfirmation(discardThresholds)),
     enableBeforeUnload: isDirty || updateThresholds.isPending });
-  const allowLeaving = () => !updateThresholds.isPending && (!isDirty ||
-    window.confirm('¿Descartar los cambios de avisos sin guardar?'));
-  const closeDetails = () => { if (allowLeaving()) onClose(); };
+  const allowLeaving = async () => !updateThresholds.isPending && (!isDirty || await askConfirmation(discardThresholds));
+  const closeDetails = async () => { if (await allowLeaving()) onClose(); };
 
 
   const previewStatus = inventoryStatus(item.available, invalidThresholds ? thresholdBaseline.reorderPoint : reorderPoint, invalidThresholds ? thresholdBaseline.safetyStock : safetyStock);
@@ -1809,7 +1814,7 @@ function StockDetailDrawer({
           {thresholdConflict && isDirty ? <div role="alert" className="mt-3 rounded-xl bg-amber-50 p-3 text-sm text-amber-950">
             <p>Los avisos cambiaron mientras editabas. Conservamos tus números sin guardarlos.</p>
             <Button variant="secondary" size="sm" className="mt-2" disabled={updateThresholds.isPending}
-              onClick={() => { if (window.confirm('¿Descartar tus números y cargar los avisos actualizados?')) loadThresholds(item); }}>Cargar avisos actualizados</Button>
+              onClick={async () => { if (await askConfirmation({ title: '¿Cargar los avisos actualizados?', description: 'Se descartarán tus números sin guardar y se cargarán los avisos actualizados del producto.' })) loadThresholds(item); }}>Cargar avisos actualizados</Button>
           </div> : null}
           {/* Vista previa y botón de guardado */}
           {!canConfigureThresholds ? <p className="mt-3 text-sm text-ink-600">Los avisos los configura la dueña.</p> : null}
@@ -1830,8 +1835,8 @@ function StockDetailDrawer({
                     size="sm"
                     className="min-h-10 px-3"
                     disabled={updateThresholds.isPending}
-                    onClick={() => {
-                      if (!window.confirm('¿Descartar los cambios de avisos sin guardar?')) return;
+                    onClick={async () => {
+                      if (!await askConfirmation(discardThresholds)) return;
                       setThresholdBaseline({ reorderPoint: item.reorderPoint, safetyStock: item.safetyStock, leadTimeDays: item.leadTimeDays });
                       setReorderPointStr(item.reorderPoint > 0 ? String(item.reorderPoint) : '');
                       setSafetyStockStr(item.safetyStock > 0 ? String(item.safetyStock) : '');
@@ -1964,7 +1969,7 @@ function StockDetailDrawer({
             {recentMovements.length > 0 ? (
               <button
                 type="button"
-                onClick={() => { if (allowLeaving()) onNavigateToMovements(); }}
+                onClick={async () => { if (await allowLeaving()) onNavigateToMovements(); }}
                 className="flex items-center min-h-11 px-2 -mr-2 text-xs font-bold text-brand-600 hover:text-brand-700 active:opacity-75 transition"
               >
                 Ver todos →
@@ -2013,7 +2018,7 @@ function StockDetailDrawer({
             variant="secondary"
             size="sm"
             className="w-full justify-center text-xs font-bold min-h-11"
-            onClick={() => { if (allowLeaving()) onOpenAdjust(item); }}
+            onClick={async () => { if (await allowLeaving()) onOpenAdjust(item); }}
           >
             <SlidersHorizontal className="size-4" /> Corregir stock
           </Button>
@@ -2030,6 +2035,7 @@ function StockDetailDrawer({
 }
 
 export default function InventoryPage() {
+  const askConfirmation = useAppConfirmation();
   const searchParams = useSearch({ strict: false }) as { tab?: string };
   const { user } = useAuth();
   const initialTab = searchParams.tab === 'compras' && can(user, 'manage_purchases') ? 'compras' : searchParams.tab === 'movimientos' ? 'movimientos' : 'stock';
@@ -2127,16 +2133,17 @@ export default function InventoryPage() {
   });
 
   const adjustmentDirty = Boolean(adjustItem) && (targetStock !== String(adjustItem?.onHand) || reason !== '');
-  const closeAdjustment = () => {
-    if (adjustment.isPending || (adjustmentDirty && !window.confirm('¿Descartar la corrección de stock sin guardar?'))) return;
+  const discardAdjustment = { title: '¿Descartar la corrección de stock?', description: 'Se descartará el conteo y el motivo que escribiste sin guardar. Podés seguir editando para conservarlos.' };
+  const closeAdjustment = async () => {
+    if (adjustment.isPending || (adjustmentDirty && !await askConfirmation(discardAdjustment))) return;
     setAdjustItem(null);
     setTargetStock('');
     setReason('');
     adjustment.reset();
   };
   useBlocker({
-    shouldBlockFn: () => Boolean(adjustItem) && (adjustment.isPending || (adjustmentDirty &&
-      !window.confirm('Hay una corrección de stock sin guardar. ¿Salir y descartar esos cambios?'))),
+    shouldBlockFn: async () => Boolean(adjustItem) && (adjustment.isPending || (adjustmentDirty &&
+      !await askConfirmation(discardAdjustment))),
     enableBeforeUnload: Boolean(adjustItem) && (adjustment.isPending || adjustmentDirty)
   });
 
@@ -2840,9 +2847,9 @@ export default function InventoryPage() {
             {adjustmentStockChanged ? <div role="alert" className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
               <p>El stock registrado cambió de {adjustItem.onHand} a {currentAdjustmentItem?.onHand} mientras contabas. Conservamos tu conteo sin guardarlo. Volvé a contar antes de corregir.</p>
               <Button variant="secondary" size="sm" className="mt-2" disabled={adjustment.isPending}
-                onClick={() => {
+                onClick={async () => {
                   if (!currentAdjustmentItem || adjustment.isPending) return;
-                  if (adjustmentDirty && !window.confirm('¿Descartar el conteo anterior y volver a contar con el stock actualizado?')) return;
+                  if (adjustmentDirty && !await askConfirmation({ title: '¿Volver a contar con el stock actualizado?', description: 'Se descartará el conteo anterior sin guardar para que puedas contar desde el stock actualizado.' })) return;
                   setAdjustItem(currentAdjustmentItem);
                   setTargetStock('');
                   adjustment.reset();

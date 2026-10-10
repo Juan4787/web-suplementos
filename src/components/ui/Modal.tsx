@@ -10,6 +10,7 @@ interface ModalProps {
   maxWidth?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl';
   className?: string;
   ariaLabelledBy?: string;
+  ariaDescribedBy?: string;
 }
 
 const maxWidthMap = {
@@ -27,7 +28,8 @@ export function Modal({
   children,
   maxWidth = '2xl',
   className = '',
-  ariaLabelledBy
+  ariaLabelledBy,
+  ariaDescribedBy
 }: ModalProps) {
   const focus = useDialogFocus(isOpen, onClose);
 
@@ -55,6 +57,7 @@ export function Modal({
         role="dialog"
         aria-modal="true"
         aria-labelledby={ariaLabelledBy}
+        aria-describedby={ariaDescribedBy}
       >
         {children}
       </div>

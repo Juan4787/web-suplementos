@@ -1,3 +1,4 @@
+import { AppConfirmationProvider } from '@/components/ui/AppConfirmation';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { PropsWithChildren } from 'react';
@@ -32,7 +33,7 @@ vi.mock('@tanstack/react-router', () => ({ useSearch: () => ({}), useBlocker: vi
 
 function Wrapper({ children }: PropsWithChildren) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
-  return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+  return <QueryClientProvider client={client}><AppConfirmationProvider>{children}</AppConfirmationProvider></QueryClientProvider>;
 }
 
 describe('Auditoría Adversarial: ReceivePurchaseModal', () => {

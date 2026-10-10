@@ -17,6 +17,58 @@ const renderEditor = (input = order, canEdit = true) => {
 beforeEach(() => save.mockReset().mockResolvedValue({...order,shippingFeeCents:53_500,shippingFeeRevision:1}));
 afterEach(cleanup);
 describe('envío en Qué sigue', () => {
+  it('tracks changed values separately from opening and allows returning to the saved amount', () => {
+    const {onEditingChange}=renderEditor({...order,shippingFeeCents:1_250_000});
+    fireEvent.click(screen.getByRole('button',{name:'Editar'}));
+    const input=screen.getByRole('textbox',{name:'Envío en pesos'});
+    expect(onEditingChange).toHaveBeenLastCalledWith('shipping-test',{editing:true,saving:false,dirty:false});
+    fireEvent.change(input,{target:{value:'16000'}});
+    expect(onEditingChange).toHaveBeenLastCalledWith('shipping-test',{editing:true,saving:false,dirty:true});
+    fireEvent.change(input,{target:{value:'12500'}});
+    expect(onEditingChange).toHaveBeenLastCalledWith('shipping-test',{editing:true,saving:false,dirty:false});
+    expect(screen.getByRole('button',{name:'Guardar envío'})).toBeDisabled();
+    fireEvent.click(screen.getByRole('button',{name:'Porcentaje'}));
+    fireEvent.change(screen.getByRole('textbox',{name:'Porcentaje del costo'}),{target:{value:'5'}});
+    fireEvent.click(screen.getByRole('button',{name:'Monto manual'}));
+    expect(onEditingChange).toHaveBeenLastCalledWith('shipping-test',{editing:true,saving:false,dirty:false});
+    expect(screen.getByRole('button',{name:'Guardar envío'})).toBeDisabled();
+  });
+  it('equivalent percentage formatting and blank zero do not create false changes', () => {
+    const view=renderEditor({...order,shippingFeeCents:53_500,shippingFeeMethod:'percentage',shippingFeeBasisPoints:500,
+      shippingFeeCostBaseCents:1_070_000});
+    fireEvent.click(screen.getByRole('button',{name:'Editar'}));
+    fireEvent.change(screen.getByRole('textbox',{name:'Porcentaje del costo'}),{target:{value:'5,00'}});
+    expect(screen.getByRole('button',{name:'Guardar envío'})).toBeDisabled();
+    expect(view.onEditingChange).toHaveBeenLastCalledWith('shipping-test',{editing:true,saving:false,dirty:false});
+    view.unmount();
+    renderEditor();
+    fireEvent.click(screen.getByRole('button',{name:'Agregar'}));
+    fireEvent.change(screen.getByRole('textbox',{name:'Envío en pesos'}),{target:{value:'0'}});
+    expect(screen.getByRole('button',{name:'Guardar envío'})).toBeDisabled();
+  });
+  it('marks a submitted save as pending until its result, and preserves a failed draft', async () => {
+    let reject!: (error:Error)=>void;
+    save.mockImplementationOnce(()=>new Promise((_resolve,fail)=>{reject=fail;}));
+    const {onEditingChange}=renderEditor();
+    fireEvent.click(screen.getByRole('button',{name:'Agregar'}));
+    const input=screen.getByRole('textbox',{name:'Envío en pesos'});
+    fireEvent.change(input,{target:{value:'12500'}});
+    fireEvent.click(screen.getByRole('button',{name:'Guardar envío'}));
+    await waitFor(()=>expect(onEditingChange).toHaveBeenLastCalledWith('shipping-test',{editing:true,saving:true,dirty:true}));
+    expect(input).toBeDisabled();
+    expect(screen.getByRole('button',{name:'Cancelar'})).toBeDisabled();
+    reject(new Error('Sin conexión'));
+    await waitFor(()=>expect(onEditingChange).toHaveBeenLastCalledWith('shipping-test',{editing:true,saving:false,dirty:true}));
+    expect(input).toHaveValue('12.500');
+    expect(input).toBeEnabled();
+  });
+  it('allows explicitly reviewing a saved percentage even when no input is changed', () => {
+    renderEditor({...order,shippingFeeCents:53_500,shippingFeeMethod:'percentage',shippingFeeBasisPoints:500,
+      shippingFeeCostBaseCents:1_000_000,shippingFeeNeedsReview:true});
+    fireEvent.click(screen.getByRole('button',{name:'Editar'}));
+    expect(screen.getByRole('button',{name:'Guardar envío'})).toBeEnabled();
+    expect(screen.getByText('Envío').nextSibling).toHaveTextContent('535');
+  });
   it('explica la revisión al personal sin revelar costos, incluso con cargo nominal cero', () => {
     renderEditor({...order,costTotalCents:null,shippingFeeMethod:null,shippingFeeBasisPoints:null,shippingFeeCostBaseCents:null,shippingFeeNeedsReview:true},false);
     expect(screen.getByRole('alert')).toHaveTextContent('La dueña debe revisar el envío antes de cobrar este pedido.');
@@ -27,7 +79,8 @@ describe('envío en Qué sigue', () => {
     const {onEditingChange} = renderEditor();
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button',{name:'Agregar'}));
-    expect(onEditingChange).toHaveBeenLastCalledWith('shipping-test',true);
+    expect(onEditingChange).toHaveBeenLastCalledWith('shipping-test',{editing:true,saving:false,dirty:false});
+    expect(screen.getByRole('button',{name:'Guardar envío'})).toBeDisabled();
     fireEvent.click(screen.getByRole('button',{name:'Porcentaje'}));
     fireEvent.change(screen.getByRole('textbox',{name:'Porcentaje del costo'}),{target:{value:'5'}});
     expect(screen.getByText(/Costo de los productos/).textContent).toContain('10.700');
@@ -37,7 +90,7 @@ describe('envío en Qué sigue', () => {
     await waitFor(() => expect(save).toHaveBeenCalledOnce());
     expect(save.mock.calls[0]![0]).toMatchObject({orderId:'shipping-test',method:'percentage',basisPoints:500,expectedCostCents:1_070_000,expectedRevision:0});
     await waitFor(() => expect(screen.queryByRole('textbox')).not.toBeInTheDocument());
-    expect(onEditingChange).toHaveBeenLastCalledWith('shipping-test',false);
+    expect(onEditingChange).toHaveBeenLastCalledWith('shipping-test',{editing:false,saving:false,dirty:false});
   });
   it('cancelar no guarda ni cobra', () => {
     renderEditor(); fireEvent.click(screen.getByRole('button',{name:'Agregar'}));

@@ -33,7 +33,7 @@ export default defineConfig({
     {
       name: 'firefox-smoke',
       use: { ...devices['Desktop Firefox'] },
-      testMatch: /01-storefront-checkout\.spec\.ts|02-import-order\.spec\.ts/
+      testMatch: /01-storefront-checkout\.spec\.ts|02-import-order\.spec\.ts|13-app-confirmations\.spec\.ts/
     }
   ],
   webServer: isRemoteUrl

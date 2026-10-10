@@ -1,3 +1,4 @@
+import { AppConfirmationProvider } from '@/components/ui/AppConfirmation';
 import { useState, type PropsWithChildren } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
@@ -54,9 +55,9 @@ it('requires an explicit count for available products and locks units in transit
   api.saveOrderPacking.mockResolvedValue({ ...order, packingRevision: 1 });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
-    <QueryClientProvider client={client}>
+    <QueryClientProvider client={client}><AppConfirmationProvider>
       <OrderPackingEditor order={order} />
-    </QueryClientProvider>
+    </AppConfirmationProvider></QueryClientProvider>
   );
 
   expect(screen.getByText('Armado sin verificar')).toBeInTheDocument();
@@ -106,9 +107,9 @@ it('keeps counts independent and requires explicit input for each product', asyn
   order.items[0]!.physicalReservedQuantity = 3;
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
-    <QueryClientProvider client={client}>
+    <QueryClientProvider client={client}><AppConfirmationProvider>
       <OrderPackingEditor order={order} />
-    </QueryClientProvider>
+    </AppConfirmationProvider></QueryClientProvider>
   );
 
   const first = screen.getByRole('textbox', { name: 'Unidades en bolsita de B Complex' });
@@ -145,9 +146,9 @@ it('renders locked rows with 0 en bolsita and direct inventory link when all ite
 
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
-    <QueryClientProvider client={client}>
+    <QueryClientProvider client={client}><AppConfirmationProvider>
       <OrderPackingEditor order={order} />
-    </QueryClientProvider>
+    </AppConfirmationProvider></QueryClientProvider>
   );
 
   // The card is visible (never hidden)
@@ -177,9 +178,9 @@ it('offers one save action and allows touch steppers without implicitly filling 
   api.saveOrderPacking.mockResolvedValue({ ...order, packingRevision: 1 });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
-    <QueryClientProvider client={client}>
+    <QueryClientProvider client={client}><AppConfirmationProvider>
       <OrderPackingEditor order={order} />
-    </QueryClientProvider>
+    </AppConfirmationProvider></QueryClientProvider>
   );
 
   // Quick fill all available
@@ -238,7 +239,7 @@ it('distingue una falta sin reposición de mercadería en camino cuando no hay r
     }]
   };
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  render(<QueryClientProvider client={client}><OrderPackingEditor order={order} /></QueryClientProvider>);
+  render(<QueryClientProvider client={client}><AppConfirmationProvider><OrderPackingEditor order={order} /></AppConfirmationProvider></QueryClientProvider>);
 
   expect(screen.getByText('En camino y sin reposición')).toBeInTheDocument();
   expect(screen.getByText(/Sin reposición: 1/i)).toBeInTheDocument();
@@ -254,7 +255,7 @@ it('pide contar una línea al recibir mercadería sin borrar cantidades escritas
   first.items[0]!.incomingQuantity = 2;
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const { rerender } = render(
-    <QueryClientProvider client={client}><OrderPackingEditor order={first} /></QueryClientProvider>
+    <QueryClientProvider client={client}><AppConfirmationProvider><OrderPackingEditor order={first} /></AppConfirmationProvider></QueryClientProvider>
   );
   const omapure = screen.getByRole('textbox', { name: 'Unidades en bolsita de Omapure' });
   fireEvent.change(omapure, { target: { value: '1' } });
@@ -265,7 +266,7 @@ it('pide contar una línea al recibir mercadería sin borrar cantidades escritas
       ? { ...item, physicalReservedQuantity: 1, incomingQuantity: 1 }
       : item)
   };
-  rerender(<QueryClientProvider client={client}><OrderPackingEditor order={received} /></QueryClientProvider>);
+  rerender(<QueryClientProvider client={client}><AppConfirmationProvider><OrderPackingEditor order={received} /></AppConfirmationProvider></QueryClientProvider>);
 
   expect(screen.getByRole('textbox', { name: 'Unidades en bolsita de B Complex' })).toHaveValue('');
   expect(screen.getByText('Falta ingresar (0 si ninguna)')).toBeInTheDocument();
@@ -278,7 +279,7 @@ it('reemplaza el cero previo al escribir una unidad y guarda el número visible'
   const order = sampleOrder();
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   api.saveOrderPacking.mockResolvedValue({ ...order, packingRevision: 1 });
-  render(<QueryClientProvider client={client}><OrderPackingEditor order={order} /></QueryClientProvider>);
+  render(<QueryClientProvider client={client}><AppConfirmationProvider><OrderPackingEditor order={order} /></AppConfirmationProvider></QueryClientProvider>);
 
   fireEvent.change(screen.getByRole('textbox', { name: 'Unidades en bolsita de Omapure' }), { target: { value: '0' } });
   const bComplex = screen.getByRole('textbox', { name: 'Unidades en bolsita de B Complex' });
@@ -312,7 +313,7 @@ it('permite borrar 11 por completo antes de escribir 7 sin restaurar el valor an
   }];
   api.saveOrderPacking.mockResolvedValue({ ...order, packingRevision: 1 });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  render(<QueryClientProvider client={client}><OrderPackingEditor order={order} /></QueryClientProvider>);
+  render(<QueryClientProvider client={client}><AppConfirmationProvider><OrderPackingEditor order={order} /></AppConfirmationProvider></QueryClientProvider>);
 
   const count = screen.getByRole('textbox', { name: 'Unidades en bolsita de B Complex' });
   expect(count).toHaveValue('11');
@@ -336,7 +337,7 @@ it('permite borrar 11 por completo antes de escribir 7 sin restaurar el valor an
 it('rechaza letras, signos y decimales completos sin alterar el vacío o el conteo escrito', () => {
   const order = sampleOrder();
   const client = new QueryClient();
-  render(<QueryClientProvider client={client}><OrderPackingEditor order={order} /></QueryClientProvider>);
+  render(<QueryClientProvider client={client}><AppConfirmationProvider><OrderPackingEditor order={order} /></AppConfirmationProvider></QueryClientProvider>);
   const count = screen.getByRole('textbox', { name: 'Unidades en bolsita de B Complex' });
   const other = screen.getByRole('textbox', { name: 'Unidades en bolsita de Omapure' });
   fireEvent.change(other, { target: { value: '0' } });
@@ -362,7 +363,7 @@ it('rechaza letras, signos y decimales completos sin alterar el vacío o el cont
 it('rechaza pegar texto inválido sin reemplazar la selección y admite pegar dígitos', () => {
   const order = sampleOrder();
   const client = new QueryClient();
-  render(<QueryClientProvider client={client}><OrderPackingEditor order={order} /></QueryClientProvider>);
+  render(<QueryClientProvider client={client}><AppConfirmationProvider><OrderPackingEditor order={order} /></AppConfirmationProvider></QueryClientProvider>);
   const count = screen.getByRole('textbox', { name: 'Unidades en bolsita de B Complex' }) as HTMLInputElement;
   fireEvent.change(count, { target: { value: '1' } });
   count.setSelectionRange(0, 1);
@@ -384,17 +385,17 @@ it('conserva un campo borrado al refrescar o reabrir y permite escribir otro nú
     incomingQuantity: 0, packedQuantity: 11 }];
   const store: PackingDraftStore = new Map();
   const client = new QueryClient();
-  const view = render(<QueryClientProvider client={client}><OrderPackingEditor order={order} draftStore={store} /></QueryClientProvider>);
+  const view = render(<QueryClientProvider client={client}><AppConfirmationProvider><OrderPackingEditor order={order} draftStore={store} /></AppConfirmationProvider></QueryClientProvider>);
   fireEvent.change(screen.getByRole('textbox', { name: 'Unidades en bolsita de B Complex' }), { target: { value: '' } });
-  view.rerender(<QueryClientProvider client={client}><OrderPackingEditor order={structuredClone(order)} draftStore={store} /></QueryClientProvider>);
+  view.rerender(<QueryClientProvider client={client}><AppConfirmationProvider><OrderPackingEditor order={structuredClone(order)} draftStore={store} /></AppConfirmationProvider></QueryClientProvider>);
   expect(screen.getByRole('textbox', { name: 'Unidades en bolsita de B Complex' })).toHaveValue('');
   view.unmount();
-  const next = render(<QueryClientProvider client={client}><OrderPackingEditor order={order} draftStore={store} /></QueryClientProvider>);
+  const next = render(<QueryClientProvider client={client}><AppConfirmationProvider><OrderPackingEditor order={order} draftStore={store} /></AppConfirmationProvider></QueryClientProvider>);
   const count = screen.getByRole('textbox', { name: 'Unidades en bolsita de B Complex' });
   expect(count).toHaveValue('');
   fireEvent.change(count, { target: { value: '7' } });
   const changed = { ...order, packingRevision: 1, items: [{ ...order.items[0]!, packedQuantity: 10 }] };
-  next.rerender(<QueryClientProvider client={client}><OrderPackingEditor order={changed} draftStore={store} /></QueryClientProvider>);
+  next.rerender(<QueryClientProvider client={client}><AppConfirmationProvider><OrderPackingEditor order={changed} draftStore={store} /></AppConfirmationProvider></QueryClientProvider>);
   expect(count).toHaveValue('7');
   expect(screen.getByRole('alert')).toHaveTextContent('El pedido cambió');
   expect(screen.getByRole('button', { name: 'Guardar armado' })).toBeDisabled();
@@ -405,7 +406,7 @@ it('conserva un campo borrado al refrescar o reabrir y permite escribir otro nú
 it('opens inventory links in a new tab with target _blank and noopener noreferrer', async () => {
   const order = sampleOrder();
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  render(<QueryClientProvider client={client}><OrderPackingEditor order={order} /></QueryClientProvider>);
+  render(<QueryClientProvider client={client}><AppConfirmationProvider><OrderPackingEditor order={order} /></AppConfirmationProvider></QueryClientProvider>);
 
   const incomingLink = screen.getByRole('link', { name: /Hay productos en camino\. Ver compra en Inventario/ });
   expect(incomingLink).toHaveAttribute('target', '_blank');
@@ -415,23 +416,23 @@ it('opens inventory links in a new tab with target _blank and noopener noreferre
   client.clear();
 });
 
-it('preserves a dirty count on an external revision and never silently adopts the new revision', () => {
+it('preserves a dirty count on an external revision and never silently adopts the new revision', async () => {
   const order = sampleOrder();
   const client = new QueryClient();
-  const { rerender } = render(<QueryClientProvider client={client}><OrderPackingEditor order={order} /></QueryClientProvider>);
+  const { rerender } = render(<QueryClientProvider client={client}><AppConfirmationProvider><OrderPackingEditor order={order} /></AppConfirmationProvider></QueryClientProvider>);
   const count = screen.getByRole('textbox', { name: 'Unidades en bolsita de B Complex' });
   fireEvent.change(count, { target: { value: '1' } });
   const changed = { ...order, packingRevision: 1, items: order.items.map(item => ({ ...item, packedQuantity: 0 })) };
-  rerender(<QueryClientProvider client={client}><OrderPackingEditor order={changed} /></QueryClientProvider>);
+  rerender(<QueryClientProvider client={client}><AppConfirmationProvider><OrderPackingEditor order={changed} /></AppConfirmationProvider></QueryClientProvider>);
   expect(count).toHaveValue('1');
   expect(screen.getByRole('alert')).toHaveTextContent('El pedido cambió');
   expect(screen.getByRole('button', { name: 'Guardar armado' })).toBeDisabled();
-  vi.spyOn(window, 'confirm').mockReturnValue(false);
   fireEvent.click(screen.getByRole('button', { name: 'Cargar armado actualizado' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Seguir editando' }));
   expect(count).toHaveValue('1');
-  vi.mocked(window.confirm).mockReturnValue(true);
   fireEvent.click(screen.getByRole('button', { name: 'Cargar armado actualizado' }));
-  expect(count).toHaveValue('0');
+  fireEvent.click(screen.getByRole('button', { name: 'Descartar' }));
+  await waitFor(() => expect(count).toHaveValue('0'));
   expect(api.saveOrderPacking).not.toHaveBeenCalled();
   client.clear();
 });
@@ -443,17 +444,17 @@ it('retains an existing malformed draft for correction and keeps a reduced physi
     values: { 'line-one': '1,5', 'line-two': '' }
   }]]);
   const client = new QueryClient();
-  const view = render(<QueryClientProvider client={client}><OrderPackingEditor order={order} draftStore={store} /></QueryClientProvider>);
+  const view = render(<QueryClientProvider client={client}><AppConfirmationProvider><OrderPackingEditor order={order} draftStore={store} /></AppConfirmationProvider></QueryClientProvider>);
   expect(screen.getByRole('textbox', { name: 'Unidades en bolsita de B Complex' })).toHaveValue('1,5');
   view.unmount();
-  const next = render(<QueryClientProvider client={client}><OrderPackingEditor order={order} draftStore={store} /></QueryClientProvider>);
+  const next = render(<QueryClientProvider client={client}><AppConfirmationProvider><OrderPackingEditor order={order} draftStore={store} /></AppConfirmationProvider></QueryClientProvider>);
   const count = screen.getByRole('textbox', { name: 'Unidades en bolsita de B Complex' });
   expect(count).toHaveValue('1,5');
   expect(screen.getByRole('button', { name: 'Sumar una unidad de B Complex' })).toBeDisabled();
   expect(screen.getByRole('button', { name: 'Restar una unidad de B Complex' })).toBeDisabled();
   fireEvent.change(count, { target: { value: '1' } });
   const reduced = { ...order, items: order.items.map(item => ({ ...item, physicalReservedQuantity: 0 })) };
-  next.rerender(<QueryClientProvider client={client}><OrderPackingEditor order={reduced} draftStore={store} /></QueryClientProvider>);
+  next.rerender(<QueryClientProvider client={client}><AppConfirmationProvider><OrderPackingEditor order={reduced} draftStore={store} /></AppConfirmationProvider></QueryClientProvider>);
   expect(count).toHaveValue('1');
   expect(screen.getByText(/Ya no hay unidades físicas reservadas/)).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Guardar armado' })).toBeDisabled();
@@ -468,7 +469,7 @@ it('uses the authoritative save response, stays locked during saving and preserv
   let reject!: (error: Error) => void;
   api.saveOrderPacking.mockImplementationOnce(() => new Promise((_resolve, fail) => { reject = fail; }));
   const client = new QueryClient();
-  render(<QueryClientProvider client={client}><OrderPackingEditor order={order} /></QueryClientProvider>);
+  render(<QueryClientProvider client={client}><AppConfirmationProvider><OrderPackingEditor order={order} /></AppConfirmationProvider></QueryClientProvider>);
   fireEvent.change(screen.getByRole('textbox', { name: 'Unidades en bolsita de B Complex' }), { target: { value: '1' } });
   fireEvent.change(screen.getByRole('textbox', { name: 'Unidades en bolsita de Omapure' }), { target: { value: '0' } });
   fireEvent.click(screen.getByRole('button', { name: 'Guardar armado' }));
@@ -494,8 +495,8 @@ it('shows an in-flight save failure after collapsing and reopening the editor wi
   api.saveOrderPacking.mockImplementationOnce(() => new Promise((_resolve, fail) => { reject = fail; }));
   function Host({ show }: { show: boolean }) {
     const [epoch, setEpoch] = useState(0);
-    return <QueryClientProvider client={client}>{show ? <OrderPackingEditor order={order} draftStore={drafts}
-      draftEpoch={epoch} onDraftChange={() => setEpoch(n => n + 1)} /> : null}</QueryClientProvider>;
+    return <QueryClientProvider client={client}><AppConfirmationProvider>{show ? <OrderPackingEditor order={order} draftStore={drafts}
+      draftEpoch={epoch} onDraftChange={() => setEpoch(n => n + 1)} /> : null}</AppConfirmationProvider></QueryClientProvider>;
   }
   const view = render(<Host show />);
   fireEvent.change(screen.getByRole('textbox', { name: 'Unidades en bolsita de B Complex' }), { target: { value: '1' } });

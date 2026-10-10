@@ -1,5 +1,6 @@
+import { AppConfirmationProvider } from '@/components/ui/AppConfirmation';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { PropsWithChildren } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { demoProducts, demoOwner, toDemoInventory } from '@/data/demo-data';
@@ -38,7 +39,7 @@ vi.mock('@tanstack/react-router', () => ({
 
 function Wrapper({ children }: PropsWithChildren) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
-  return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+  return <QueryClientProvider client={client}><AppConfirmationProvider>{children}</AppConfirmationProvider></QueryClientProvider>;
 }
 
 describe('Carga de compras', () => {
@@ -54,22 +55,26 @@ describe('Carga de compras', () => {
 
   it('daily purchase: protects edited data from Escape, close and Cancel without saving implicitly', async () => {
     const onClose = vi.fn();
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    const native = vi.spyOn(window, 'confirm');
     render(<PurchaseFormModal onClose={onClose} />, { wrapper: Wrapper });
     const supplier = screen.getByLabelText('Proveedor · opcional');
     fireEvent.change(supplier, { target: { value: 'Compra que estoy preparando' } });
     fireEvent.keyDown(supplier, { key: 'Escape' });
+    expect(screen.getByRole('dialog', { name: '¿Descartar la compra sin guardar?' })).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: 'Escape' });
     fireEvent.click(screen.getByRole('button', { name: 'Cerrar modal' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Seguir editando' }));
     fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Seguir editando' }));
     expect(onClose).not.toHaveBeenCalled();
     expect(supplier).toHaveValue('Compra que estoy preparando');
-    expect(confirm).toHaveBeenCalledTimes(3);
-    confirm.mockReturnValue(true);
+    expect(native).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
-    expect(onClose).toHaveBeenCalledTimes(1);
+    fireEvent.click(within(screen.getByRole('dialog', { name: /^¿/ })).getByRole('button', { name: 'Descartar' }));
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
     expect(api.createPurchase).not.toHaveBeenCalled();
     expect(api.updatePurchase).not.toHaveBeenCalled();
-    confirm.mockRestore();
+    native.mockRestore();
   });
 
   it('daily purchase: closes an unchanged form without confirmation', () => {
@@ -163,7 +168,7 @@ describe('Carga de compras', () => {
     api.listMovements.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 25 });
     api.listPurchases.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 15 });
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    render(<QueryClientProvider client={client}><InventoryPage /></QueryClientProvider>);
+    render(<QueryClientProvider client={client}><AppConfirmationProvider><InventoryPage /></AppConfirmationProvider></QueryClientProvider>);
     fireEvent.click(await screen.findByRole('button', { name: /Creatina Monohidratada.*u\./ }));
     const count = screen.getByRole('textbox', { name: 'Aviso Comprar' });
     fireEvent.change(count, { target: { value: '11' } });
@@ -174,9 +179,9 @@ describe('Carga de compras', () => {
     fireEvent.change(count, { target: { value: '' } });
     fireEvent.blur(count);
     expect(count).toHaveValue('');
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
     fireEvent.click(screen.getByRole('button', { name: 'Cargar avisos actualizados' }));
-    expect(count).toHaveValue('10');
+    fireEvent.click(within(screen.getByRole('dialog', { name: /^¿/ })).getByRole('button', { name: 'Descartar' }));
+    await waitFor(() => expect(count).toHaveValue('10'));
     fireEvent.change(count, { target: { value: '1,5' } });
     expect(count).toHaveValue('10');
     expect(screen.queryByRole('button', { name: /^Guardar$/ })).not.toBeInTheDocument();
@@ -190,7 +195,7 @@ describe('Carga de compras', () => {
     api.listMovements.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 25 });
     api.listPurchases.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 15 });
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    render(<QueryClientProvider client={client}><InventoryPage /></QueryClientProvider>);
+    render(<QueryClientProvider client={client}><AppConfirmationProvider><InventoryPage /></AppConfirmationProvider></QueryClientProvider>);
     fireEvent.click(await screen.findByRole('button', { name: /Creatina Monohidratada.*u\./ }));
     const count = screen.getByRole('textbox', { name: 'Aviso Comprar' });
     fireEvent.change(count, { target: { value } });
@@ -221,7 +226,7 @@ describe('Carga de compras', () => {
     render(<InventoryPage />, { wrapper: Wrapper });
     fireEvent.click(await screen.findByRole('button', { name: /Creatina Monohidratada.*u\./ }));
     fireEvent.click(screen.getByRole('button', { name: 'Corregir stock' }));
-    fireEvent.change(screen.getByLabelText('¿Cuántas unidades hay realmente?'), { target: { value: '6' } });
+    fireEvent.change(await screen.findByLabelText('¿Cuántas unidades hay realmente?'), { target: { value: '6' } });
     fireEvent.change(screen.getByLabelText('Motivo de la corrección'), { target: { value: 'Conteo físico' } });
     fireEvent.click(screen.getByRole('button', { name: 'Guardar corrección' }));
     await waitFor(() => expect(api.adjustStock).toHaveBeenCalledWith(demoProducts[0]!.id, -1, 'Conteo físico', 7));
@@ -231,18 +236,17 @@ describe('Carga de compras', () => {
     api.listInventory.mockResolvedValue(toDemoInventory(demoProducts));
     api.listMovements.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 25 });
     api.listPurchases.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 15 });
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
     render(<InventoryPage />, { wrapper: Wrapper });
     fireEvent.click(await screen.findByRole('button', { name: /Creatina Monohidratada.*u\./ }));
     const urgent = screen.getByRole('textbox', { name: 'Aviso Urgente' });
     fireEvent.change(urgent, { target: { value: '9' } });
     fireEvent.click(screen.getByRole('button', { name: 'Corregir stock' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Seguir editando' }));
     expect(urgent).toHaveValue('9');
     expect(screen.queryByLabelText('¿Cuántas unidades hay realmente?')).not.toBeInTheDocument();
-    confirm.mockReturnValue(true);
     fireEvent.click(screen.getByRole('button', { name: 'Corregir stock' }));
-    confirm.mockReturnValue(false);
-    const count = screen.getByLabelText('¿Cuántas unidades hay realmente?');
+    fireEvent.click(within(screen.getByRole('dialog', { name: /^¿/ })).getByRole('button', { name: 'Descartar' }));
+    const count = await screen.findByLabelText('¿Cuántas unidades hay realmente?');
     fireEvent.change(count, { target: { value: '' } });
     fireEvent.blur(count);
     fireEvent.change(count, { target: { value: 'abc' } });
@@ -250,15 +254,18 @@ describe('Carga de compras', () => {
     fireEvent.change(count, { target: { value: '6' } });
     fireEvent.change(screen.getByLabelText('Motivo de la corrección'), { target: { value: 'Conteo físico pendiente de revisión' } });
     fireEvent.keyDown(window, { key: 'Escape' });
+    fireEvent.click(screen.getByRole('button', { name: 'Seguir editando' }));
     fireEvent.click(screen.getByRole('button', { name: 'Cerrar modal' }));
+    fireEvent.keyDown(window, { key: 'Escape' });
     fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Seguir editando' }));
     expect(count).toHaveValue('6');
     expect(screen.getByLabelText('Motivo de la corrección')).toHaveValue('Conteo físico pendiente de revisión');
     expect(api.adjustStock).not.toHaveBeenCalled();
     expect(api.updateStockThresholds).not.toHaveBeenCalled();
-    confirm.mockReturnValue(true);
     fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    fireEvent.click(within(screen.getByRole('dialog', { name: /^¿/ })).getByRole('button', { name: 'Descartar' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
   });
 
   it('bloquea una corrección si cambia el stock y exige un conteo nuevo sin autocompletar el anterior', async () => {
@@ -268,11 +275,10 @@ describe('Carga de compras', () => {
     api.listPurchases.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 15 });
     api.adjustStock.mockResolvedValue(undefined);
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
-    render(<QueryClientProvider client={client}><InventoryPage /></QueryClientProvider>);
+    render(<QueryClientProvider client={client}><AppConfirmationProvider><InventoryPage /></AppConfirmationProvider></QueryClientProvider>);
     fireEvent.click(await screen.findByRole('button', { name: /Creatina Monohidratada.*u\./ }));
     fireEvent.click(screen.getByRole('button', { name: 'Corregir stock' }));
-    const count = screen.getByLabelText('¿Cuántas unidades hay realmente?');
+    const count = await screen.findByLabelText('¿Cuántas unidades hay realmente?');
     fireEvent.change(count, { target: { value: '6' } });
     fireEvent.change(screen.getByLabelText('Motivo de la corrección'), { target: { value: 'Conteo físico' } });
     client.setQueryData(['inventory'], inventory.map(item => item.id === demoProducts[0]!.id ? { ...item, onHand: 8 } : item));
@@ -280,12 +286,13 @@ describe('Carga de compras', () => {
     expect(screen.getByText('Registrado al abrir: 7 · Reservadas ahora: 3 · Libres ahora: 5')).toBeVisible();
     expect(screen.getByRole('button', { name: 'Guardar corrección' })).toBeDisabled();
     fireEvent.click(screen.getByRole('button', { name: 'Volver a contar' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Seguir editando' }));
     expect(count).toHaveValue('6');
     expect(api.adjustStock).not.toHaveBeenCalled();
-    confirm.mockReturnValue(true);
     fireEvent.click(screen.getByRole('button', { name: 'Volver a contar' }));
+    fireEvent.click(within(screen.getByRole('dialog', { name: /^¿/ })).getByRole('button', { name: 'Descartar' }));
+    await waitFor(() => expect(count).toHaveValue(''));
     fireEvent.blur(count);
-    expect(count).toHaveValue('');
     expect(screen.getByRole('button', { name: 'Guardar corrección' })).toBeDisabled();
     fireEvent.change(count, { target: { value: '7' } });
     fireEvent.click(screen.getByRole('button', { name: 'Guardar corrección' }));
@@ -331,8 +338,8 @@ describe('Carga de compras', () => {
     expect(product).toHaveTextContent('TODO RESERVADO');
     fireEvent.click(product);
     fireEvent.click(screen.getByRole('button', { name: 'Corregir stock' }));
-    expect(screen.getByText('Registrado al abrir: 10 · Reservadas ahora: 10 · Libres ahora: 0')).toBeVisible();
-    fireEvent.change(screen.getByLabelText('¿Cuántas unidades hay realmente?'), { target: { value: '7' } });
+    expect(await screen.findByText('Registrado al abrir: 10 · Reservadas ahora: 10 · Libres ahora: 0')).toBeVisible();
+    fireEvent.change(await screen.findByLabelText('¿Cuántas unidades hay realmente?'), { target: { value: '7' } });
     expect(screen.getByText('Ajuste físico: de 10 a 7 unidades.')).toBeVisible();
     expect(screen.getByText('-3 unidades')).toBeVisible();
     expect(screen.getByRole('alert')).toHaveTextContent('faltarán 3 unidades para cubrir las reservas');

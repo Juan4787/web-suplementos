@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/Button';
 import { CurrencyInput, Field, Input } from '@/components/ui/Field';
 import { ErrorState } from '@/components/ui/DataState';
@@ -8,11 +8,15 @@ import { parsePercentageBasisPoints, percentageShippingCents, shippingFeeNeedsRe
 import type { Order, OrderShippingFeeInput } from '@/domain/types';
 import { getBusinessApi } from '@/services/business-api';
 
+export type ShippingEditorState = { editing: boolean; saving: boolean; dirty: boolean };
+const draftSignature = (method: 'manual' | 'percentage', amount: number | undefined, percentage: string) =>
+  JSON.stringify([method, method === 'manual' ? amount ?? 0 : parsePercentageBasisPoints(percentage) ?? percentage]);
+
 export function OrderShippingFeeEditor({ order, canEdit, disabled, onEditingChange }: {
   order: Order;
   canEdit: boolean;
   disabled: boolean;
-  onEditingChange: (orderId: string, editing: boolean) => void;
+  onEditingChange: (orderId: string, state: ShippingEditorState) => void;
 }) {
   const queryClient = useQueryClient();
   const editorId = useId();
@@ -26,16 +30,14 @@ export function OrderShippingFeeEditor({ order, canEdit, disabled, onEditingChan
   const [costBase, setCostBase] = useState<number | null>(order.costTotalCents);
   const [revision, setRevision] = useState(0);
   const request = useRef<{ signature: string; input: OrderShippingFeeInput } | null>(null);
+  const initialDraft = useRef('');
   const editable = canEdit && order.paymentState === 'pending' && order.orderState !== 'cancelled' && order.saleType !== 'gift' && order.paymentMethod !== 'gift';
   const active = editing && editable;
+  const dirty = active && (draftSignature(method, amount, percentage) !== initialDraft.current || shippingFeeNeedsReview(order));
   useEffect(() => {
     if (wasEditing.current && !active) toggleRef.current?.focus();
     wasEditing.current = active;
   }, [active]);
-  useEffect(() => {
-    onEditingChange(order.id, active);
-    return () => onEditingChange(order.id, false);
-  }, [order.id, active, onEditingChange]);
   const basisPoints = parsePercentageBasisPoints(percentage);
   let calculated: number | null = method === 'manual' ? (amount ?? 0) * 100 : null;
   if (method === 'percentage' && basisPoints !== null && costBase !== null) {
@@ -59,10 +61,18 @@ export function OrderShippingFeeEditor({ order, canEdit, disabled, onEditingChan
       setEditing(false);
     }
   });
+  useLayoutEffect(() => {
+    onEditingChange(order.id, { editing: active, saving: save.isPending, dirty });
+    return () => onEditingChange(order.id, { editing: false, saving: false, dirty: false });
+  }, [order.id, active, save.isPending, dirty, onEditingChange]);
   const begin = () => {
-    setMethod(order.shippingFeeMethod === 'percentage' ? 'percentage' : 'manual');
-    setAmount(order.shippingFeeCents > 0 ? order.shippingFeeCents / 100 : undefined);
-    setPercentage(order.shippingFeeBasisPoints !== undefined && order.shippingFeeBasisPoints !== null ? String(order.shippingFeeBasisPoints / 100).replace('.', ',') : '');
+    const nextMethod = order.shippingFeeMethod === 'percentage' ? 'percentage' : 'manual';
+    const nextAmount = order.shippingFeeCents > 0 ? order.shippingFeeCents / 100 : undefined;
+    const nextPercentage = order.shippingFeeBasisPoints !== undefined && order.shippingFeeBasisPoints !== null ? String(order.shippingFeeBasisPoints / 100).replace('.', ',') : '';
+    initialDraft.current = draftSignature(nextMethod, nextAmount, nextPercentage);
+    setMethod(nextMethod);
+    setAmount(nextAmount);
+    setPercentage(nextPercentage);
     setRevision(order.shippingFeeRevision ?? 0);
     setCostBase(order.costTotalCents);
     setPercentageNotice(false);
@@ -107,7 +117,7 @@ export function OrderShippingFeeEditor({ order, canEdit, disabled, onEditingChan
       {save.error ? <ErrorState error={save.error} /> : null}
       <div className="flex flex-wrap justify-end gap-2">
         <Button type="button" size="sm" variant="ghost" onClick={() => setEditing(false)}>Cancelar</Button>
-        <Button type="button" size="sm" variant="dark" loading={save.isPending} disabled={calculated === null || changedElsewhere || costChanged || (method === 'percentage' && percentageNotice)} onClick={() => save.mutate()}>Guardar envío</Button>
+        <Button type="button" size="sm" variant="dark" loading={save.isPending} disabled={!dirty || calculated === null || changedElsewhere || costChanged || (method === 'percentage' && percentageNotice)} onClick={() => save.mutate()}>Guardar envío</Button>
       </div>
       <p className="text-xs text-ink-700">Guardá o cancelá esta edición antes de cobrar.</p>
     </fieldset> : null}

@@ -1,3 +1,4 @@
+import { AppConfirmationProvider } from '@/components/ui/AppConfirmation';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { PropsWithChildren } from 'react';
@@ -6,14 +7,46 @@ import type { Order } from '@/domain/types';
 import { demoOrders } from '@/data/demo-data';
 import OrdersPage from './OrdersPage';
 
-const api = vi.hoisted(() => ({ listOrders: vi.fn(), transitionOrder: vi.fn(), saveOrderPacking: vi.fn() }));
+const api = vi.hoisted(() => ({ listOrders: vi.fn(), transitionOrder: vi.fn(), saveOrderPacking: vi.fn(), saveOrderShippingFee: vi.fn() }));
 const navigation = vi.hoisted(() => vi.fn<(options: { enableBeforeUnload: boolean;
-  shouldBlockFn: (input: { current: { pathname: string }; next: { pathname: string } }) => boolean }) => void>());
+  shouldBlockFn: (input: { current: { pathname: string }; next: { pathname: string } }) => boolean | Promise<boolean> }) => void>());
 vi.mock('@/services/business-api', () => ({ getBusinessApi: async () => api }));
 vi.mock('@/components/layout/AdminShell', () => ({ PageHeader: () => <h1>Pedidos</h1> }));
 vi.mock('@tanstack/react-router', () => ({ useSearch: () => ({}), useBlocker: navigation, Link: ({ children, to }: PropsWithChildren<{ to: string }>) => <a href={to}>{children}</a> }));
 vi.mock('@/features/auth/AuthProvider', () => ({ useAuth: () => ({ user: { active: true, role: 'owner' } }) }));
 afterEach(cleanup);
+
+it('does not discard or switch an order while its shipping save is pending and preserves failed input', async () => {
+  const order: Order = {...demoOrders[0]!,orderState:'confirmed',paymentState:'pending',fulfillmentState:'pending',
+    shippingFeeCents:0,shippingFeeRevision:0};
+  api.listOrders.mockResolvedValue({items:[order,{...order,id:'second-order',number:5000}],total:2,page:1,pageSize:50,pendingTotal:2,completedTotal:0});
+  let reject!: (error:Error)=>void;
+  api.saveOrderShippingFee.mockImplementationOnce(()=>new Promise((_resolve,fail)=>{reject=fail;}));
+  const client=new QueryClient({defaultOptions:{queries:{retry:false},mutations:{retry:false}}});
+  render(<QueryClientProvider client={client}><AppConfirmationProvider><OrdersPage /></AppConfirmationProvider></QueryClientProvider>);
+  const headers=await screen.findAllByRole('button',{name:/Ver pedido y acciones/});
+  fireEvent.click(headers[0]!);
+  fireEvent.click(screen.getByRole('button',{name:'Agregar'}));
+  expect(navigation.mock.lastCall![0].enableBeforeUnload).toBe(false);
+  fireEvent.change(screen.getByRole('textbox',{name:'Envío en pesos'}),{target:{value:'12500'}});
+  expect(navigation.mock.lastCall![0].enableBeforeUnload).toBe(true);
+  fireEvent.click(screen.getByRole('button',{name:'Guardar envío'}));
+  await waitFor(()=>expect(api.saveOrderShippingFee).toHaveBeenCalled());
+  expect(headers[1]).toBeDisabled();
+  expect(screen.getByRole('button',{name:'Marcar como cobrado'})).toBeDisabled();
+  let decision!: boolean | Promise<boolean>;
+  act(()=>{decision=navigation.mock.lastCall![0].shouldBlockFn({current:{pathname:'/app/pedidos'},next:{pathname:'/app/inventario'}});});
+  expect(screen.getByRole('dialog',{name:'El guardado ya comenzó'})).toHaveTextContent('Salir no cancela el guardado');
+  expect(screen.queryByRole('button',{name:'Descartar'})).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button',{name:'Seguir esperando'}));
+  expect(await decision).toBe(true);
+  await act(async()=>reject(new Error('Sin conexión')));
+  await waitFor(()=>expect(screen.getByRole('textbox',{name:'Envío en pesos'})).toBeEnabled());
+  expect(screen.getByRole('textbox',{name:'Envío en pesos'})).toHaveValue('12.500');
+  expect(headers[1]).toBeEnabled();
+  expect(navigation.mock.lastCall![0].enableBeforeUnload).toBe(true);
+  client.clear();
+});
 
 it.each(['entrega', 'cancelación', 'regalo'])('confirma %s fuera de la tarjeta y permite encontrar el pedido nuevamente', async variant => {
   let order: Order = { ...demoOrders[0]!, orderState: 'confirmed', paymentState: variant === 'entrega' ? 'paid' : 'pending', fulfillmentState: 'pending', stockReadiness: 'ready' };
@@ -33,7 +66,7 @@ it.each(['entrega', 'cancelación', 'regalo'])('confirma %s fuera de la tarjeta 
     return order;
   });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
-  render(<QueryClientProvider client={client}><OrdersPage /></QueryClientProvider>);
+  render(<QueryClientProvider client={client}><AppConfirmationProvider><OrdersPage /></AppConfirmationProvider></QueryClientProvider>);
   fireEvent.click(await screen.findByRole('button', { name: /Ver pedido y acciones/ }));
   if (variant === 'entrega') {
     fireEvent.click(screen.getByRole('button', { name: 'Marcar como entregado' }));
@@ -84,9 +117,9 @@ it('permite marcar un pedido como listo para entregar desde las acciones operati
 
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
   render(
-    <QueryClientProvider client={client}>
+    <QueryClientProvider client={client}><AppConfirmationProvider>
       <OrdersPage />
-    </QueryClientProvider>
+    </AppConfirmationProvider></QueryClientProvider>
   );
 
   fireEvent.click(await screen.findByRole('button', { name: /Ver pedido y acciones/ }));
@@ -118,7 +151,7 @@ it('pide revisar físicamente una bolsita histórica lista antes de descontar su
   });
   api.transitionOrder.mockResolvedValue({ ...order, fulfillmentState: 'delivered' });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
-  render(<QueryClientProvider client={client}><OrdersPage /></QueryClientProvider>);
+  render(<QueryClientProvider client={client}><AppConfirmationProvider><OrdersPage /></AppConfirmationProvider></QueryClientProvider>);
 
   fireEvent.click(await screen.findByRole('button', { name: /Ver pedido y acciones/ }));
   fireEvent.click(screen.getByRole('button', { name: 'Marcar como entregado' }));
@@ -142,7 +175,7 @@ it('pide la misma verificación al enviar un pedido histórico listo', async () 
   });
   api.transitionOrder.mockResolvedValue({ ...order, fulfillmentState: 'shipped' });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
-  render(<QueryClientProvider client={client}><OrdersPage /></QueryClientProvider>);
+  render(<QueryClientProvider client={client}><AppConfirmationProvider><OrdersPage /></AppConfirmationProvider></QueryClientProvider>);
 
   fireEvent.click(await screen.findByRole('button', { name: /Ver pedido y acciones/ }));
   fireEvent.click(screen.getByRole('button', { name: 'Más opciones' }));
@@ -169,7 +202,7 @@ it('mantiene visible la tarjeta de bolsita con estado bloqueado e invitación a 
     pendingTotal: 1, completedTotal: 0, preparingTotal: 0, readyPickupTotal: 0
   });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
-  render(<QueryClientProvider client={client}><OrdersPage /></QueryClientProvider>);
+  render(<QueryClientProvider client={client}><AppConfirmationProvider><OrdersPage /></AppConfirmationProvider></QueryClientProvider>);
 
   fireEvent.click(await screen.findByRole('button', { name: /Ver pedido y acciones/ }));
   expect(screen.getByText('Qué sigue')).toBeInTheDocument();
@@ -202,7 +235,7 @@ it('mantiene el formulario cuando hay unidades físicas para un armado parcial',
     pendingTotal: 1, completedTotal: 0, preparingTotal: 1, readyPickupTotal: 0
   });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
-  render(<QueryClientProvider client={client}><OrdersPage /></QueryClientProvider>);
+  render(<QueryClientProvider client={client}><AppConfirmationProvider><OrdersPage /></AppConfirmationProvider></QueryClientProvider>);
 
   fireEvent.click(await screen.findByRole('button', { name: /Ver pedido y acciones/ }));
   expect(screen.getByRole('region', { name: `Armado del pedido ${order.number}` })).toBeInTheDocument();
@@ -220,7 +253,7 @@ it('allows collapsing a single search result and preserves that choice after a r
     total: query ? 1 : 2, page: 1, pageSize: 50, pendingTotal: 2, completedTotal: 0
   }));
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  render(<QueryClientProvider client={client}><OrdersPage /></QueryClientProvider>);
+  render(<QueryClientProvider client={client}><AppConfirmationProvider><OrdersPage /></AppConfirmationProvider></QueryClientProvider>);
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: String(order.number) } });
   const count = await screen.findByRole('textbox', { name: /Unidades en bolsita de/ });
   fireEvent.change(count, { target: { value: '1' } });
@@ -244,24 +277,27 @@ it('explains that a submitted packing save can still complete when leaving the p
   let reject!: (error: Error) => void;
   api.saveOrderPacking.mockImplementationOnce(() => new Promise((_resolve, fail) => { reject = fail; }));
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  render(<QueryClientProvider client={client}><OrdersPage /></QueryClientProvider>);
+  render(<QueryClientProvider client={client}><AppConfirmationProvider><OrdersPage /></AppConfirmationProvider></QueryClientProvider>);
   fireEvent.click((await screen.findAllByRole('button', { name: /Ver pedido y acciones/ }))[0]!);
   fireEvent.change(screen.getByRole('textbox', { name: /Unidades en bolsita de/ }), { target: { value: '1' } });
   fireEvent.click(screen.getByRole('button', { name: 'Guardar armado' }));
   await waitFor(() => expect(api.saveOrderPacking).toHaveBeenCalled());
   const blocker = navigation.mock.lastCall![0];
-  const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
-  expect(blocker.shouldBlockFn({ current: { pathname: '/app/pedidos' }, next: { pathname: '/app/inventario' } })).toBe(true);
-  const prompt = confirm.mock.lastCall![0];
+  let decision!: boolean | Promise<boolean>;
+  act(() => { decision = blocker.shouldBlockFn({ current: { pathname: '/app/pedidos' }, next: { pathname: '/app/inventario' } }); });
+  expect(screen.getByRole('dialog', { name: 'El guardado ya comenzó' })).toHaveTextContent('Salir no cancela');
+  expect(screen.queryByRole('button', { name: 'Descartar' })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Seguir esperando' }));
+  expect(await decision).toBe(true);
   fireEvent.click(screen.getByRole('button', { name: /Ver pedido y acciones/ }));
   fireEvent.change(screen.getByRole('textbox', { name: /Unidades en bolsita de/ }), { target: { value: '1' } });
   const mixed = navigation.mock.lastCall![0];
-  expect(mixed.shouldBlockFn({ current: { pathname: '/app/pedidos' }, next: { pathname: '/app/inventario' } })).toBe(true);
-  expect(confirm.mock.lastCall![0]).toContain('otros conteos sin guardar se perderán');
+  act(() => { decision = mixed.shouldBlockFn({ current: { pathname: '/app/pedidos' }, next: { pathname: '/app/inventario' } }); });
+  expect(screen.getByRole('dialog')).toHaveTextContent('Los demás cambios sin guardar se descartarán');
+  fireEvent.click(screen.getByRole('button', { name: 'Seguir esperando' }));
+  expect(await decision).toBe(true);
   await act(async () => reject(new Error('Sin conexión')));
-  confirm.mockRestore(); client.clear();
-  expect(prompt).toContain('guardando');
-  expect(prompt).not.toContain('descartar');
+  client.clear();
 });
 
 it('allows explicitly discarding a draft when another operator cancelled the order and the editor disappeared', async () => {
@@ -272,7 +308,7 @@ it('allows explicitly discarding a draft when another operator cancelled the ord
   api.listOrders.mockResolvedValue(page);
   api.transitionOrder.mockClear();
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  render(<QueryClientProvider client={client}><OrdersPage /></QueryClientProvider>);
+  render(<QueryClientProvider client={client}><AppConfirmationProvider><OrdersPage /></AppConfirmationProvider></QueryClientProvider>);
   fireEvent.click(await screen.findByRole('button', { name: /Ver pedido y acciones/ }));
   fireEvent.change(screen.getByRole('textbox', { name: /Unidades en bolsita de/ }), { target: { value: '1' } });
   expect(screen.getByText(/Tenés armados sin guardar/)).toBeVisible();
@@ -280,12 +316,12 @@ it('allows explicitly discarding a draft when another operator cancelled the ord
     items: [{ ...order, orderState: 'cancelled' }], pendingTotal: 0, completedTotal: 1 }); });
   await waitFor(() => expect(screen.queryByRole('textbox', { name: /Unidades en bolsita de/ })).not.toBeInTheDocument());
   const discard = screen.getByRole('button', { name: `Descartar conteo #${order.number}` });
-  const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
   fireEvent.click(discard);
+  fireEvent.click(screen.getByRole('button', { name: 'Seguir editando' }));
   expect(screen.getByText(/Tenés armados sin guardar/)).toBeVisible();
-  confirm.mockReturnValue(true);
   fireEvent.click(discard);
-  expect(screen.queryByText(/Tenés armados sin guardar/)).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Descartar' }));
+  await waitFor(() => expect(screen.queryByText(/Tenés armados sin guardar/)).not.toBeInTheDocument());
   expect(api.transitionOrder).not.toHaveBeenCalled();
-  confirm.mockRestore(); client.clear();
+  client.clear();
 });

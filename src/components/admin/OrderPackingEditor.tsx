@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useAppConfirmation } from '@/components/ui/AppConfirmation';
 import { Link } from '@tanstack/react-router';
 import { AlertTriangle, ArrowRight, Lock, Minus, Package, Plus } from 'lucide-react';
 import { queryKeys } from '@/app/query-keys';
@@ -20,6 +21,7 @@ export function OrderPackingEditor({ order: receivedOrder, draftStore, draftEpoc
   canReceivePurchases?: boolean;
 }) {
   const queryClient = useQueryClient();
+  const askConfirmation = useAppConfirmation();
   const [draft, setDraftState] = useState<PackingDraft>(() => draftStore?.get(receivedOrder.id)
     ?? { baseline: receivedOrder, values: packingValues(receivedOrder) });
   const draftRef = useRef(draft);
@@ -157,7 +159,7 @@ export function OrderPackingEditor({ order: receivedOrder, draftStore, draftEpoc
         <div role="alert" className="mt-3 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
           <p>El pedido cambió mientras lo editabas. Conservamos tu conteo sin guardarlo. Revisá el armado actualizado antes de continuar.</p>
           <Button variant="secondary" size="sm" className="mt-2" disabled={busy}
-            onClick={() => { if (window.confirm('¿Descartar tu conteo sin guardar y cargar el armado actualizado?')) {
+            onClick={async () => { if (await askConfirmation({ title: '¿Cargar el armado actualizado?', description: 'Se descartarán las cantidades que escribiste sin guardar y se cargará el conteo actualizado del pedido.' })) {
               persist({ baseline: order, values: packingValues(order) }); setSaved(false); save.reset();
             } }}>Cargar armado actualizado</Button>
         </div>
@@ -385,7 +387,7 @@ export function OrderPackingEditor({ order: receivedOrder, draftStore, draftEpoc
 
             <div className="flex flex-wrap items-center gap-2">
               {packingDraftDirty(draft) && !conflict ? <Button type="button" variant="ghost" size="sm" disabled={busy}
-                onClick={() => { if (window.confirm('¿Descartar las cantidades que escribiste sin guardar?')) {
+                onClick={async () => { if (await askConfirmation({ title: '¿Descartar el conteo?', description: 'Se descartarán las cantidades que escribiste sin guardar. Podés seguir editando si querés conservarlas.' })) {
                   persist({ baseline: order, values: packingValues(order) }); setSaved(false); save.reset();
                 } }}>Descartar cambios</Button> : null}
               <Button

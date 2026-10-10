@@ -1,4 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useAppConfirmation } from '@/components/ui/AppConfirmation';
 import { Link, useBlocker } from '@tanstack/react-router';
 import {
   AlertTriangle,
@@ -38,6 +39,7 @@ export default function ImportOrderPage() {
   const [parseError, setParseError] = useState<unknown>(null);
   const [created, setCreated] = useState<Order | null>(null);
   const queryClient = useQueryClient();
+  const askConfirmation = useAppConfirmation();
   const activeImport = useRef<ImportOrderInput | null>(null);
 
   const productsQuery = useBusinessQuery({
@@ -90,8 +92,10 @@ export default function ImportOrderPage() {
     onSettled: (_data, _error, input) => { if (activeImport.current === input) activeImport.current = null; }
   });
   useBlocker({
-    shouldBlockFn: ({ current, next }) => confirm.isPending && current.pathname !== next.pathname &&
-      !window.confirm('El pedido se está guardando. Si salís, revisá después la lista de Pedidos antes de volver a cargarlo. ¿Salir ahora?'),
+    shouldBlockFn: async ({ current, next }) => confirm.isPending && current.pathname !== next.pathname &&
+      !await askConfirmation({ title: 'El guardado ya comenzó',
+        description: 'Salir no cancela el guardado del pedido. Revisá la lista de Pedidos al volver antes de importarlo otra vez.',
+        confirmLabel: 'Salir', cancelLabel: 'Seguir esperando' }),
     enableBeforeUnload: confirm.isPending
   });
 

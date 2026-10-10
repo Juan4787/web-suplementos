@@ -1,3 +1,4 @@
+import { AppConfirmationProvider } from '@/components/ui/AppConfirmation';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { PropsWithChildren } from 'react';
@@ -115,7 +116,7 @@ function createWrapper() {
   });
 
   return ({ children }: PropsWithChildren) => (
-    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    <QueryClientProvider client={queryClient}><AppConfirmationProvider>{children}</AppConfirmationProvider></QueryClientProvider>
   );
 }
 
@@ -313,7 +314,7 @@ describe('CreateOrderPage', () => {
     const refreshing = new Promise<void>(resolve => { finishRefresh = resolve; });
     const invalidate = vi.spyOn(client, 'invalidateQueries').mockReturnValue(refreshing);
     mockConfirm.mockResolvedValue({ ...demoOrders[0]!, number: 9001 });
-    render(<QueryClientProvider client={client}><CreateOrderPage /></QueryClientProvider>);
+    render(<QueryClientProvider client={client}><AppConfirmationProvider><CreateOrderPage /></AppConfirmationProvider></QueryClientProvider>);
     await screen.findByText('Creatina Creapure');
     fireEvent.click(screen.getAllByRole('button', { name: /agregar/i })[0]!);
     fireEvent.change(screen.getByPlaceholderText('Ej. Marta'), { target: { value: 'Cliente' } });

@@ -25,7 +25,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from '@/app/query-keys';
 import { useBusinessQuery } from '@/app/use-business-query';
 import { OrderStatus } from '@/components/admin/OrderStatus';
-import { OrderShippingFeeEditor } from '@/components/admin/OrderShippingFeeEditor';
+import { OrderShippingFeeEditor, type ShippingEditorState } from '@/components/admin/OrderShippingFeeEditor';
 import { shippingFeeNeedsReview } from '@/domain/order-shipping';
 import { OrderPackingEditor } from '@/components/admin/OrderPackingEditor';
 import { PageHeader } from '@/components/layout/AdminShell';
@@ -49,6 +49,7 @@ import { can } from '@/domain/permissions';
 import { useAuth } from '@/features/auth/AuthProvider';
 import { cleanSearchTerm } from '@/lib/search';
 import { AppError } from '@/domain/errors';
+import { useAppConfirmation } from '@/components/ui/AppConfirmation';
 
 const normalizeOrderSearch = (value: unknown): string =>
   cleanSearchTerm(value).replace(/^(?:pedido\s*)?#\s*(\d+)$/i, '$1');
@@ -60,19 +61,33 @@ const needsUnverifiedBagConfirmation = (order: Order, action: OrderAction): bool
 export default function OrdersPage() {
   const queryClient = useQueryClient();
   const { user } = useAuth();
-  const [shippingEditing, setShippingEditing] = useState<Record<string, boolean>>({});
-  const notifyShippingEditing = useCallback((id: string, editing: boolean) => setShippingEditing(current => current[id] === editing ? current : { ...current, [id]: editing }), []);
-  const hasShippingEdits = Object.values(shippingEditing).some(Boolean);
+  const askConfirmation = useAppConfirmation();
+  const [shippingEditing, setShippingEditing] = useState<Record<string, ShippingEditorState>>({});
+  const notifyShippingEditing = useCallback((id: string, state: ShippingEditorState) => setShippingEditing(current =>
+    current[id]?.editing === state.editing && current[id]?.saving === state.saving && current[id]?.dirty === state.dirty ? current : { ...current, [id]: state }), []);
+  const hasShippingEdits = Object.values(shippingEditing).some(value => value.editing);
+  const hasShippingChanges = Object.values(shippingEditing).some(value => value.dirty);
+  const hasShippingSaves = Object.values(shippingEditing).some(value => value.saving);
   const [draftStore] = useState<PackingDraftStore>(() => new Map());
   const [draftEpoch, setDraftEpoch] = useState(0);
   const notifyDraft = useCallback(() => setDraftEpoch(epoch => epoch + 1), []);
   const unsaved = [...draftStore.values()].filter(draft => draft.saving || packingDraftDirty(draft));
   useBlocker({
-    shouldBlockFn: ({ current, next }) => current.pathname !== next.pathname && (unsaved.length > 0 || hasShippingEdits) &&
-      !window.confirm(hasShippingEdits ? 'Hay una edición de envío sin cerrar. Si salís, revisá el pedido antes de volver a guardar o cobrar. ¿Salir ahora?' : unsaved.some(draft => draft.saving)
-        ? `El armado se está guardando y puede completarse aunque salgas.${unsaved.some(draft => !draft.saving) ? ' Los otros conteos sin guardar se perderán al salir.' : ''} Revisá después los pedidos antes de volver a guardar. ¿Salir ahora?`
-        : 'Hay armados sin guardar. ¿Salir y descartar esos cambios?'),
-    enableBeforeUnload: unsaved.length > 0 || hasShippingEdits
+    shouldBlockFn: async ({ current, next }) => {
+      if (current.pathname === next.pathname || (!unsaved.length && !hasShippingChanges && !hasShippingSaves)) return false;
+      const saving = hasShippingSaves || unsaved.some(draft => draft.saving);
+      return !await askConfirmation({
+        title: saving ? 'El guardado ya comenzó' : '¿Descartar los cambios?',
+        description: saving
+          ? 'Salir no cancela el guardado. Revisá el pedido al volver antes de guardar o cobrar otra vez. Los demás cambios sin guardar se descartarán.'
+          : hasShippingChanges ? (unsaved.length
+            ? 'Hay una edición de envío y conteos de bolsitas sin guardar. Podés seguir editando o descartar estos cambios para salir de Pedidos.'
+            : 'Hay una edición de envío sin guardar. Podés seguir editando o descartar los cambios para salir de Pedidos.')
+            : 'Hay conteos de bolsitas sin guardar. Podés seguir editando o descartarlos para salir de Pedidos.',
+        ...(saving ? { confirmLabel: 'Salir', cancelLabel: 'Seguir esperando' } : {})
+      });
+    },
+    enableBeforeUnload: unsaved.length > 0 || hasShippingChanges || hasShippingSaves
   });
   const [page, setPage] = useState(1);
   const routeSearchParams = useSearch({ strict: false }) as { search?: string | number } | undefined;
@@ -129,7 +144,7 @@ export default function OrdersPage() {
   const transition = useMutation({
     mutationFn: async (variables: { orderId: string; action: OrderAction; expected?: OrderPaymentExpectation }) =>
       {
-        if (shippingEditing[variables.orderId]) throw new AppError('business', 'Hay una edición de envío sin guardar.', { nextAction: 'Guardá o cancelá la edición antes de cambiar el estado del pedido.' });
+        if (shippingEditing[variables.orderId]?.editing) throw new AppError('business', 'Hay una edición de envío sin guardar.', { nextAction: 'Guardá o cancelá la edición antes de cambiar el estado del pedido.' });
         const draft = draftStore.get(variables.orderId);
         if (draft && (draft.saving || packingDraftDirty(draft))) throw new AppError('business', 'Hay un conteo de bolsita sin guardar.', { nextAction: 'Guardá o descartá ese conteo antes de cambiar el estado del pedido.' });
         const api = await getBusinessApi();
@@ -303,8 +318,8 @@ export default function OrdersPage() {
           return <div key={draft.baseline.id} className="flex flex-wrap gap-2"><Button variant="secondary" size="sm"
             onClick={() => { setPage(1); setFilter('all'); setSearch(String(draft.baseline.number)); setExpanded(draft.baseline.id); }}>
             Ver pedido #{draft.baseline.number}{draft.saving ? ' · Guardando…' : ''}
-          </Button>{editorUnavailable && !draft.saving ? <Button variant="ghost" size="sm" onClick={() => {
-            if (window.confirm(`¿Descartar el conteo sin guardar del pedido #${draft.baseline.number}?`)) {
+          </Button>{editorUnavailable && !draft.saving ? <Button variant="ghost" size="sm" onClick={async () => {
+            if (await askConfirmation({ title: '¿Descartar el conteo?', description: `Se descartarán las cantidades sin guardar del pedido #${draft.baseline.number}.` })) {
               const baseline = latest ?? draft.baseline;
               draftStore.set(baseline.id, { baseline, values: packingValues(baseline) }); notifyDraft();
             }
@@ -373,8 +388,12 @@ export default function OrdersPage() {
                         ? 'bg-white border-b border-ink-950/6'
                         : 'hover:bg-cream-50/60'
                     )}
-                    onClick={() => {
-                      if (hasShippingEdits && !window.confirm('Hay una edición de envío sin cerrar. ¿Descartarla y cambiar de pedido?')) return;
+                    disabled={hasShippingSaves}
+                    onClick={async () => {
+                      if (hasShippingSaves) return;
+                      if (hasShippingChanges && !await askConfirmation({ title: '¿Descartar la edición de envío?',
+                        description: open ? 'Tenés cambios de envío sin guardar. Descartarlos cierra las acciones de este pedido.'
+                          : `Tenés cambios de envío sin guardar. Descartarlos cierra esa edición y abre el pedido #${order.number}.` })) return;
                       setExpanded(open ? null : order.id);
                     }}
                     aria-expanded={open}
@@ -666,7 +685,7 @@ export default function OrdersPage() {
                                   transition.isPending &&
                                   transition.variables?.action === 'mark_paid'
                                 }
-                                disabled={shippingEditing[order.id] || shippingFeeNeedsReview(order)}
+                                disabled={shippingEditing[order.id]?.editing || shippingFeeNeedsReview(order)}
                                 onClick={() => setConfirmAction({ order, action: 'mark_paid' })}
                               >
                                 Marcar como cobrado
@@ -686,7 +705,7 @@ export default function OrdersPage() {
                                       variant="secondary"
                                       size="sm"
                                       title="Cobrar el costo de mercadería más el envío guardado"
-                                      disabled={shippingEditing[order.id] || shippingFeeNeedsReview(order)}
+                                      disabled={shippingEditing[order.id]?.editing || shippingFeeNeedsReview(order)}
                                       className="w-full justify-center text-amber-900 border-amber-200 bg-amber-50/70 hover:bg-amber-100 hover:text-amber-950 hover:border-amber-300 font-bold text-xs py-2 h-auto"
                                       onClick={() => setConfirmAction({ order, action: 'mark_at_cost' })}
                                     >
@@ -700,7 +719,7 @@ export default function OrdersPage() {
                                       variant="secondary"
                                       size="sm"
                                       title="Regalar el pedido completo: elimina el cargo de envío y registra cobro cero"
-                                      disabled={shippingEditing[order.id]}
+                                      disabled={shippingEditing[order.id]?.editing}
                                       className="w-full justify-center text-purple-900 border-purple-200 bg-purple-50/70 hover:bg-purple-100 hover:text-purple-950 hover:border-purple-300 font-bold text-xs py-2 h-auto"
                                       onClick={() => setConfirmAction({ order, action: 'mark_gifted' })}
                                     >

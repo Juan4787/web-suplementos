@@ -1,4 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useAppConfirmation } from '@/components/ui/AppConfirmation';
 import { Link, useNavigate, useBlocker } from '@tanstack/react-router';
 import {
   AlertCircle,
@@ -60,6 +61,7 @@ type SelectedItem = CartLine & {
 export default function CreateOrderPage() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
+  const askConfirmation = useAppConfirmation();
   const navigate = useNavigate();
 
   // Consultas de datos requeridos
@@ -279,8 +281,10 @@ export default function CreateOrderPage() {
 
   // Validación y envío del formulario
   useBlocker({
-    shouldBlockFn: ({ current, next }) => confirmMutation.isPending && current.pathname !== next.pathname &&
-      !window.confirm('El pedido se está guardando. Si salís, revisá después la lista de Pedidos antes de volver a cargarlo. ¿Salir ahora?'),
+    shouldBlockFn: async ({ current, next }) => confirmMutation.isPending && current.pathname !== next.pathname &&
+      !await askConfirmation({ title: 'El guardado ya comenzó',
+        description: 'Salir no cancela el guardado del pedido. Revisá la lista de Pedidos al volver antes de cargarlo otra vez.',
+        confirmLabel: 'Salir', cancelLabel: 'Seguir esperando' }),
     enableBeforeUnload: confirmMutation.isPending
   });
   const handleSubmit = () => {

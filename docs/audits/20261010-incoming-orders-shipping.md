@@ -193,7 +193,7 @@ La captura previa era de las 06:34 de Argentina. Mientras se trabajaba, a las 08
 
 La conciliación no permite diferencias generales: valida las relaciones del pedido, el origen, pago pendiente, fecha anterior al comando de migración, cantidades y movimiento, y guarda fingerprints de las tablas. La auditoría posterior solo acepta esa actividad si esos fingerprints coinciden exactamente; toda diferencia adicional sigue fallando. Evidencia: `output/audit/shipping-external-activity.json`, `/tmp/supplements-shipping-external-activity-certified-20261010.log`. La hipótesis inicial de que nadie usaría la aplicación durante el trabajo no se trató como garantía.
 
-La publicación final se completó a las 10:35:51 de Argentina en `https://tienda.desuplementos.workers.dev`, perfil `impulso`, Worker `tienda`. La versión `a646989b-c7da-4d15-87c0-a59b4c1f44d1` está activa al 100 %. La compilación final corresponde al código de aplicación de `1eab010`, que añade la corrección visual al cambio principal `90a03d6`. El certificado posterior modifica documentación, sin cambiar la aplicación compilada.
+La publicación principal, anterior a la corrección posterior de diálogos, se completó a las 10:35:51 de Argentina en `https://tienda.desuplementos.workers.dev`, perfil `impulso`, Worker `tienda`. La versión `a646989b-c7da-4d15-87c0-a59b4c1f44d1` quedó activa al 100 %. Esa compilación corresponde al código de aplicación de `1eab010`, que añade la corrección visual al cambio principal `90a03d6`. El certificado posterior `a8dc7ec` modifica documentación, sin cambiar aquella aplicación compilada. Sus tres artefactos principales originales se conservan en `output/audit/shipping-principal-certified/`; los artefactos del nivel superior se actualizan con la certificación posterior.
 
 | Comprobación real | Resultado | Evidencia |
 | --- | --- | --- |
@@ -228,3 +228,44 @@ pnpm test:contract
 ```
 
 Los comandos de migración/publicación son mutaciones autorizadas de código y esquema. No deben confundirse con los scripts de lectura ni ejecutarse de nuevo para consultar resultados. La conciliación documentada utiliza el respaldo concreto de este trabajo y exige coincidencia exacta; no es una excepción general para ignorar cambios de producción.
+
+## Corrección posterior: decisiones dentro de la interfaz
+
+La captura de la dueña identificó una confirmación nativa al cambiar de pedido con el envío abierto. Se sustituyeron todas las llamadas explícitas a `window.confirm` de la aplicación por un diálogo compartido de la propia interfaz. Los botones de descarte son **Descartar** y **Seguir editando**; no hay un **Aceptar** genérico ni apariencia de error. El título y la descripción explican qué edición se perderá y qué acción seguirá. Se distingue cerrar las acciones del pedido actual de abrir otro pedido.
+
+El foco inicial está en **Seguir editando**. Escape, el fondo del diálogo y cerrar conservan los datos. Enter sobre la decisión inicialmente enfocada también conserva. Solo la elección explícita de **Descartar** autoriza eliminar una edición. Se confina el foco, se bloquea la interacción con el fondo y se restituye el foco al control de origen. Un diálogo sobre una compra o un panel usa la profundidad de las ventanas existentes: Escape cierra solamente la confirmación, conserva la ventana inferior y mantiene el bloqueo del desplazamiento.
+
+Las decisiones simultáneas no se reemplazan unas a otras. Si desaparece el editor de origen, la solicitud pendiente se resuelve como conservar; no puede ejecutarse más tarde un descarte de una pantalla que ya no está. El desmontaje de la aplicación también resuelve la decisión pendiente sin aprobar el descarte. El contexto compartido mantiene su identidad para evitar volver a renderizar todos los editores al abrir una confirmación.
+
+### Edición abierta, cambios y guardado son estados distintos
+
+- Abrir el envío sin modificarlo permite cambiar de pedido o navegar sin una pregunta falsa de descarte. Guardar sin cambios está deshabilitado.
+- Volver al monto guardado elimina el estado de cambios. Los valores de un método oculto no hacen aparecer un descarte falso: cambiar a porcentaje y volver al mismo monto manual conserva el estado original. `5` y `5,00` son el mismo porcentaje; un envío vacío y cero representan el mismo cargo cero.
+- Un porcentaje que necesita revisión por un costo nuevo permite guardar la revisión explícita aunque no se cambie el número. Las validaciones de base de costo, revisión y cobro siguen vigentes.
+- Mientras se guarda el envío no se puede cambiar de tarjeta ni cobrar. Si el guardado falla, se conservan método, monto y edición para reintentar. El estado de guardado se comunica antes de pintar la interfaz.
+- Cuando una operación ya se envió, el diálogo de navegación dice **El guardado ya comenzó**, con **Salir** y **Seguir esperando**. Explica que salir no cancela el guardado y que hay que revisar el resultado antes de volver a cargar o cobrar. No promete descartar una operación que el servidor ya puede completar.
+- Si hay simultáneamente cambios de envío y conteos de bolsitas, la explicación incluye ambos. Abrir un envío intacto no hace llamar “envío sin guardar” a un conteo de bolsita pendiente.
+
+Se aplicó la misma presentación a compras nuevas/editadas, avisos de inventario, correcciones de stock, conteos de bolsitas, recarga de datos actualizados y navegación durante la creación/importación de pedidos. Se mantienen las restricciones y escrituras de negocio existentes; esta corrección no añade migraciones ni cambia cálculos financieros.
+
+La navegación interna utiliza este diálogo de la app. El cierre de una pestaña, la recarga completa y la salida del sitio conservan la protección `beforeunload` cuando hay datos pendientes: el navegador impone esa advertencia y no permite personalizar sus botones ni esperar un diálogo de React. No se quitó la protección contra pérdida de datos para ocultar esa limitación del navegador.
+
+Archivos principales: `src/components/ui/AppConfirmation.tsx`, `Modal.tsx`, `use-dialog-focus.ts`, `src/main.tsx`, `src/components/admin/OrderShippingFeeEditor.tsx`, `OrderPackingEditor.tsx`, y las páginas `OrdersPage.tsx`, `CreateOrderPage.tsx`, `ImportOrderPage.tsx`, `InventoryPage.tsx`. La comprobación real se amplía en `scripts/verify-shipping-production-ui-readonly.mjs`; intercepta toda escritura de negocio y compara el envío real antes/después de descartar solamente un borrador local.
+
+Los logs de certificación del cambio principal están copiados en `output/audit/shipping-certification-logs/`, con permisos privados. No se versionan datos reales, credenciales ni respaldos.
+
+### Regresión de la interfaz corregida
+
+La suite completa posterior aprueba 69 archivos y **596 pruebas**, con la misma comprobación de producción omitida explícitamente por el déficit físico anterior. Las 102 comprobaciones enfocadas iniciales también aprobaron; después se amplió la cobertura de equivalencias numéricas y se ejecutó la suite completa. Evidencia: `/tmp/supplements-app-confirmation-vitest-certified-20261010.log`.
+
+La suite completa de navegador posterior aprueba **73 casos**, con dos casos de escrituras reales omitidos (75 en total). Incluye Chromium de escritorio, Chrome móvil y Firefox. Nueve casos ejercitan específicamente las tres situaciones nuevas en los tres entornos: cambio de pedido, navegación interna/Atrás, y confirmación anidada. Se comprueban Escape, Enter, foco, importe conservado, descarte explícito, ausencia de confirmaciones nativas y ausencia de errores de consola. También se repiten tienda, importación, cobro, entrega, cancelación, inventario, ventas, gastos, Excel y los flujos de envío/reservas. Evidencia: `/tmp/supplements-app-confirmation-e2e-certified-20261010.log`.
+
+La primera ejecución de las pruebas nuevas detectó un problema del fixture: se habían creado pedidos por API demo directamente y la lista inicial permanecía en caché. Se invalidan explícitamente esas consultas, como hacen las mutaciones reales de la interfaz. No se relajaron las comprobaciones de interacción ni se cambió la aplicación para ocultar ese fallo del fixture. Las capturas finales se inspeccionaron visualmente, además de verificar los estados y resultados.
+
+### Pestañas abiertas durante la publicación
+
+El alojamiento publica archivos estáticos junto con cada versión del Worker. Como inferencia para este despliegue, una pestaña anterior que carga una sección después del cambio puede pedir un nombre de archivo que la nueva compilación no incluya. La documentación de [versiones](https://developers.cloudflare.com/workers/versions-and-deployments/) y [afinidad de versión y archivos estáticos](https://developers.cloudflare.com/workers/versions-and-deployments/gradual-deployments/version-affinity/) explica el empaquetado y este riesgo de mezclar nombres de versiones.
+
+Se verificó nuevamente la compilación anterior servida (81 recursos, mismos bytes) antes de capturar sus 80 archivos JavaScript/CSS con nombres hash. `scripts/preserve-shipping-session-assets.mjs` comprueba cada hash contra el certificado concreto anterior y rechaza colisiones. Después de compilar se conservan solo esos archivos junto con los nuevos; jamás se restaura el HTML anterior, el Worker, configuración ni datos. Es una protección específica de esta publicación, no una política de acumular versiones indefinidamente.
+
+`scripts/verify-shipping-open-tab-readonly.mjs` permite mantener una pestaña real de la dueña abierta antes del despliegue, con un importe de recepción escrito solamente en memoria. Tras certificar la versión nueva, comprueba que el importe continúa intacto y que una página de Ventas de la versión anterior se carga por primera vez sin recargar. Intercepta y bloquea todas las escrituras de negocio. La prueba no ingresa mercadería, gastos ni cobros reales.

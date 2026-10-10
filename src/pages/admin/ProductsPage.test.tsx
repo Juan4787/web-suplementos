@@ -1,3 +1,4 @@
+import { AppConfirmationProvider } from '@/components/ui/AppConfirmation';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { useState } from 'react';
@@ -34,7 +35,7 @@ describe('Compras reflejadas en Productos', () => {
     ]);
     const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
     clients.push(client);
-    render(<QueryClientProvider client={client}><ProductsPage /></QueryClientProvider>);
+    render(<QueryClientProvider client={client}><AppConfirmationProvider><ProductsPage /></AppConfirmationProvider></QueryClientProvider>);
     expect((await screen.findByText('En camino')).nextElementSibling).toHaveTextContent('10 unidades');
     expect(screen.getByText(`Ya reservadas: ${reserved}. Libres para nuevos pedidos: ${10 - reserved}.`)).toBeVisible();
   });
@@ -49,7 +50,7 @@ describe('Compras reflejadas en Productos', () => {
     // Fresh cached data must still be invalidated by purchase/receipt mutations.
     const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity, gcTime: Infinity } } });
     clients.push(client);
-    render(<QueryClientProvider client={client}><Navigation /></QueryClientProvider>);
+    render(<QueryClientProvider client={client}><AppConfirmationProvider><Navigation /></AppConfirmationProvider></QueryClientProvider>);
 
     const stock = async (available: number, incoming: number) => {
       fireEvent.click(screen.getByRole('button', { name: 'Ir a Productos' }));

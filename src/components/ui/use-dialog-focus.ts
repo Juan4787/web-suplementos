@@ -4,6 +4,7 @@ export const DialogDepth = createContext(0);
 
 type Surface = { depth: number; id: string; root: HTMLElement; panel: HTMLElement; close: () => void };
 const surfaces: Surface[] = [];
+export const getTopDialogDepth = () => surfaces.at(-1)?.depth ?? 0;
 const originalInert = new Map<HTMLElement, string | null>();
 let originalOverflow = '';
 

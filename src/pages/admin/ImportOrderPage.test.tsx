@@ -1,3 +1,4 @@
+import { AppConfirmationProvider } from '@/components/ui/AppConfirmation';
 import type { PropsWithChildren } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
@@ -9,7 +10,7 @@ import ImportOrderPage from './ImportOrderPage';
 
 const api = vi.hoisted(() => ({ listAdminProducts: vi.fn(), confirmImportedOrder: vi.fn() }));
 const navigation = vi.hoisted(() => vi.fn<(options: { enableBeforeUnload: boolean;
-  shouldBlockFn: (input: { current: { pathname: string }; next: { pathname: string } }) => boolean }) => void>());
+  shouldBlockFn: (input: { current: { pathname: string }; next: { pathname: string } }) => boolean | Promise<boolean> }) => void>());
 vi.mock('@/services/business-api', () => ({ getBusinessApi: async () => api }));
 vi.mock('@tanstack/react-router', () => ({
   useBlocker: navigation,
@@ -45,7 +46,7 @@ const renderPage = async (
 ) => {
   api.listAdminProducts.mockResolvedValue(products);
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  render(<QueryClientProvider client={queryClient}><ImportOrderPage /></QueryClientProvider>);
+  render(<QueryClientProvider client={queryClient}><AppConfirmationProvider><ImportOrderPage /></AppConfirmationProvider></QueryClientProvider>);
   fireEvent.change(screen.getByLabelText('Mensaje de WhatsApp'), {
     target: { value: message }
   });
@@ -78,9 +79,12 @@ it('keeps the submitted review locked until the result and preserves it after a 
   expect(firstName).toBeDisabled();
   const blocked = navigation.mock.lastCall![0];
   expect(blocked.enableBeforeUnload).toBe(true);
-  const dialog = vi.spyOn(window, 'confirm').mockReturnValue(false);
-  expect(blocked.shouldBlockFn({ current: { pathname: '/app/pedidos/importar' }, next: { pathname: '/app/inventario' } })).toBe(true);
-  expect(dialog).toHaveBeenCalledWith(expect.stringContaining('pedido se está guardando'));
+  let decision!: boolean | Promise<boolean>;
+  act(() => { decision = blocked.shouldBlockFn({ current: { pathname: '/app/pedidos/importar' }, next: { pathname: '/app/inventario' } }); });
+  expect(screen.getByRole('dialog', { name: 'El guardado ya comenzó' })).toHaveTextContent('Salir no cancela');
+  expect(screen.queryByRole('button', { name: 'Descartar' })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Seguir esperando' }));
+  expect(await decision).toBe(true);
   fireEvent.click(screen.getByRole('button', { name: 'Volver' }));
   expect(screen.getByRole('heading', { name: 'Revisá el pedido' })).toBeInTheDocument();
   expect(api.confirmImportedOrder.mock.calls[0]![0].customerFirstName).toBe('Natalia');
