@@ -22,7 +22,7 @@ La modalidad al costo/regalo queda limitada a la dueña tanto en interfaz como e
 
 ### 2. Recibir mercadería
 
-**Costo de envío (opcional)** aparece en la revisión final de recepción completa o parcial, junto al resumen de lo que se registra. Admite pesos enteros: `15000` se muestra `15.000`. Blanco y cero no crean gasto. Se rechazan letras, negativos, signos, centavos, notación exponencial, agrupaciones incorrectas y montos que superen el límite.
+**Costo de envío (opcional)** aparece al inicio de la revisión final de recepción completa o parcial, antes de cualquier lista larga de productos. Cada cambio de paso vuelve al inicio del cuerpo del formulario para que el campo quede visible también en móvil. Admite pesos enteros: `15000` se muestra `15.000`. Blanco y cero no crean gasto. Se rechazan letras, negativos, signos, centavos, notación exponencial, agrupaciones incorrectas y montos que superen el límite.
 
 Un importe positivo crea un gasto puntual vinculado a la operación de recepción y a la compra. La recepción, movimientos de stock, conversión de reservas, gasto y auditoría se confirman en la misma transacción. Si falla el gasto, se revierte también el stock. Un reintento con la misma operación devuelve el resultado anterior; no vuelve a ingresar unidades ni descontar dinero. Cambiar cantidades, compra o envío conservando la operación se rechaza.
 
@@ -107,6 +107,8 @@ Las migraciones son aditivas. Los pedidos anteriores reciben origen normal y mé
 - `scripts/backup-before-shipping-release.mjs`: archivo de respaldo fuera del repositorio, credenciales por stdin, permisos privados y verificación de lectura del archivo.
 - `scripts/verify-shipping-backup-local.mjs`: restaura realmente el respaldo en una base local aislada y compara las 21 tablas públicas con la captura previa.
 - `scripts/verify-shipping-production-ui-readonly.mjs`: inspecciona las pantallas publicadas de la dueña, bloqueando cualquier intento de modificación de negocio.
+- `scripts/verify-shipping-served-build.mjs`: compara los bytes publicados del HTML y de todos los archivos JavaScript/CSS con la compilación final.
+- `scripts/reconcile-shipping-external-activity.mjs`: concilia actividad real previa a las migraciones contra la base restaurada, sin modificar ninguna de las dos.
 
 ## Protección y correcciones encontradas en la auditoría
 
@@ -126,6 +128,7 @@ La revisión amplia detectó y corrigió, antes de publicar:
 8. Las simulaciones conservan la compra concreta de cada reserva, incluso en reposición; dos recepciones demo simultáneas registran stock/gasto juntos.
 9. Un regalo manual cancelado antes de entregar liberaba stock pero conservaba su costo financiero: la cancelación ahora revierte el reconocimiento del regalo. No existían casos históricos de este tipo en producción al revisarlo. El reintento del cobro como regalo reconoce su resultado aunque haya cambiado la revisión al limpiar el envío.
 10. Reducir un borrador que supera la disponibilidad por varias unidades podía quedar bloqueado: se permite corregirlo unidad por unidad y se usa disponibilidad actual.
+11. La inspección visual de una compra real de 90 unidades mostró el envío debajo de una lista larga, aunque la prueba de interacción podía encontrarlo desplazándose. Se movió antes de la lista; una prueba de 12 productos reprodujo además el desplazamiento heredado al cambiar a recepción parcial en móvil. Se reinicia el desplazamiento por paso, sin borrar cantidades/importes. La corrección se comprobó con intersección real del campo en la vista, además de capturas.
 
 Plugin Browser no disponible: se utilizó Playwright. Se inspeccionaron capturas reales del navegador, además de errores de consola, interacción, controles habilitados y desbordes. La emulación de teléfonos no demuestra una prueba en un teléfono físico.
 
@@ -161,12 +164,15 @@ La recuperación debe preservar los datos nuevos: volver a la versión anterior 
 | Concurrencia real | 9 escenarios aprobados con conexiones independientes y espera de bloqueo observada | `/tmp/supplements-shipping-races-certified-20261010.log` |
 | Navegador completo | 62 casos aprobados y 2 omitidos por requerir escrituras reales; Chromium escritorio/móvil y regresiones Firefox | `/tmp/supplements-shipping-e2e-certified-20261010.log` |
 | Inspección visual asentada | 2 comprobaciones adicionales de controles y capturas, escritorio/móvil | `/tmp/supplements-shipping-visual-settled-20261010.log` |
+| Cierre de UX de recepción grande | Después del último ajuste visual: 27 pruebas de InventoryPage y 10 casos del flujo nuevo aprobados; campo visible sin desplazar en recepción completa/parcial, escritorio/móvil | `/tmp/supplements-shipping-receipt-ux-unit-final-20261010.log`, `/tmp/supplements-shipping-receipt-ux-e2e-final-20261010.log` |
 | Exportación | 17 hojas, relaciones y texto literal seguro; lectura de OOXML, ExcelJS y apertura/conversión con LibreOffice | Suite de exportación y navegador |
 | Análisis estático de funciones | Sin errores de `plpgsql_check`; solo variables heredadas sin uso/lectura | Ejecución aislada y revertida |
 | Compilación de producción y despliegue simulado | Aprobados, 202 recursos estáticos y Worker empaquetado | `/tmp/supplements-shipping-build-dry-20261010.log` |
 | Restauración del respaldo | 21 tablas públicas con cantidades y hashes idénticos al original | `output/audit/shipping-backup-restoration.json` |
 
 El calendario completo necesitó actualizar estadísticas del fixture (`ANALYZE`) para evitar planes inadecuados de una copia vacía. La cobertura no se redujo. Una captura tomada durante la transición de color parecía mostrar botones deshabilitados: se comprobó su estado real y color final; no se cambió el diseño por una imagen transitoria.
+
+La suite completa antecede al último ajuste de ubicación/desplazamiento del campo de recepción; después de ese ajuste se repitieron las pruebas afectadas indicadas arriba. Las dos pruebas de ciclo entrante sobre datos reales siguen omitidas por requerir escrituras reales: no se presentan como aprobadas. Las 11 pruebas de evidencia de la asistente también se repitieron después del último cambio de etiquetas.
 
 Comandos reproducibles principales:
 
@@ -181,4 +187,10 @@ Los scripts SQL/HTTP/concurrencia exigen nombres locales `rigorous_ux_shipping_*
 
 ### Publicación y lectura real
 
-Se completará aquí la identificación de la versión publicada, la comparación de datos y funciones y la verificación de los archivos servidos y las pantallas reales. Las comprobaciones locales anteriores se distinguen de esta evidencia de producción.
+Las dos migraciones se aplicaron, sin seeds ni roles nuevos. El código de aplicación quedó registrado en el commit `90a03d6` antes de publicarlo.
+
+La captura previa era de las 06:34 de Argentina. Mientras se trabajaba, a las 08:27:59 se importó el pedido real #2610, antes de iniciar las migraciones. Por eso la primera comparación estricta rechazó diferencias en siete tablas. Se investigó cada fila contra el respaldo restaurado: hay un cliente, un pedido, una línea, una reserva física de 2 unidades y un movimiento de reserva nuevos. El balance correspondiente pasó de 6 físicas / 2 reservadas a 6 físicas / 4 reservadas. Solo cambiaron ese contador/fecha y la revisión/fecha global; los pedidos, clientes y líneas anteriores permanecen idénticos. No hubo unidades físicas cambiadas ni cobros de prueba.
+
+La conciliación no permite diferencias generales: valida las relaciones del pedido, el origen, pago pendiente, fecha anterior al comando de migración, cantidades y movimiento, y guarda fingerprints de las tablas. La auditoría posterior solo acepta esa actividad si esos fingerprints coinciden exactamente; toda diferencia adicional sigue fallando. Evidencia: `output/audit/shipping-external-activity.json`, `/tmp/supplements-shipping-external-activity-certified-20261010.log`. La hipótesis inicial de que nadie usaría la aplicación durante el trabajo no se trató como garantía.
+
+Se completará aquí la identificación de la versión publicada y la verificación de los archivos servidos y las pantallas reales. Las comprobaciones locales anteriores se distinguen de esta evidencia de producción.

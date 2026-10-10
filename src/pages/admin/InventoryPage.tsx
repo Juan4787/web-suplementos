@@ -448,6 +448,10 @@ export function ReceivePurchaseModal({
   const [shortageOperationId] = useState(() => crypto.randomUUID());
   const [replacementOperationIds] = useState<Record<string, string>>({});
   const [step, setStep] = useState<WizardStep>('choice');
+  const wizardBody = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (wizardBody.current) wizardBody.current.scrollTop = 0;
+  }, [step]);
   const [error, setError] = useState<unknown>(null);
   const [operationId] = useState(() => crypto.randomUUID());
   const [shippingPesos, setShippingPesos] = useState<number | undefined>();
@@ -702,12 +706,22 @@ export function ReceivePurchaseModal({
       </div>
 
       {/* Cuerpo principal scrolleable */}
-      <div className="flex-1 overflow-y-auto px-6 py-5 sm:px-8 space-y-5 custom-scrollbar">
+      <div ref={wizardBody} className="flex-1 overflow-y-auto px-6 py-5 sm:px-8 space-y-5 custom-scrollbar">
         {error ? (
           <div className="rounded-xl bg-red-50 border border-red-200 p-3 text-sm font-semibold text-red-800">
             <ErrorState error={error} />
           </div>
         ) : null}
+
+        {step === 'complete_confirm' || step === 'missing_checklist' ? (
+          <fieldset disabled={receiveMutation.isPending} className="rounded-2xl border border-ink-950/10 bg-white p-4">
+            <Field label="Costo de envío (opcional)" hint="Gasto pagado al proveedor. En blanco o 0 no descuenta nada. Si el envío de este paquete ya está registrado en esta compra o en otra, dejalo en blanco; aunque llegue en partes se anota una sola vez.">
+              <CurrencyInput wholePesosOnly value={shippingPesos} onChange={setShippingPesos} placeholder="15.000" />
+            </Field>
+            {(shippingPesos ?? 0) > 0 ? <p aria-live="polite" className="mt-3 text-sm font-semibold text-ink-800">Se registrará {formatMoney((shippingPesos ?? 0) * 100)} como gasto de esta recepción, una sola vez. No cambia el costo unitario de los productos.</p> : null}
+            {step === 'missing_checklist' && totalReceivedUnits === 0 && (shippingPesos ?? 0) > 0 ? <p role="status" className="mt-2 text-sm text-amber-900">No llegaron unidades: se registrará solo el gasto de envío y el control de faltantes.</p> : null}
+          </fieldset>
+        ) : step === 'missing_resolution' && recordedShippingCents > 0 ? <p className="text-sm text-ink-700">Envío ya registrado: <strong>{formatMoney(recordedShippingCents)}</strong>. Resolver los faltantes no vuelve a descontarlo.</p> : null}
 
         {/* ============================================================ */}
         {/* PASO 0: DOS CAMINOS VISUALES GIGANTES                        */}
@@ -1200,15 +1214,6 @@ export function ReceivePurchaseModal({
             </div>
           </div>
         )}
-        {step === 'complete_confirm' || step === 'missing_checklist' ? (
-          <fieldset disabled={receiveMutation.isPending} className="rounded-2xl border border-ink-950/10 bg-white p-4">
-            <Field label="Costo de envío (opcional)" hint="Gasto pagado al proveedor. En blanco o 0 no descuenta nada. Si el envío de este paquete ya está registrado en esta compra o en otra, dejalo en blanco; aunque llegue en partes se anota una sola vez.">
-              <CurrencyInput wholePesosOnly value={shippingPesos} onChange={setShippingPesos} placeholder="15.000" />
-            </Field>
-            {(shippingPesos ?? 0) > 0 ? <p aria-live="polite" className="mt-3 text-sm font-semibold text-ink-800">Se registrará {formatMoney((shippingPesos ?? 0) * 100)} como gasto de esta recepción, una sola vez. No cambia el costo unitario de los productos.</p> : null}
-            {step === 'missing_checklist' && totalReceivedUnits === 0 && (shippingPesos ?? 0) > 0 ? <p role="status" className="mt-2 text-sm text-amber-900">No llegaron unidades: se registrará solo el gasto de envío y el control de faltantes.</p> : null}
-          </fieldset>
-        ) : step === 'missing_resolution' && recordedShippingCents > 0 ? <p className="text-sm text-ink-700">Envío ya registrado: <strong>{formatMoney(recordedShippingCents)}</strong>. Resolver los faltantes no vuelve a descontarlo.</p> : null}
       </div>
 
       {/* Footer de navegación entre pasos */}

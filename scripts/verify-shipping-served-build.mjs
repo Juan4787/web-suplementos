@@ -15,17 +15,22 @@ const files = paths.map(path => ({ path, hash: digest(readFileSync(resolve(direc
 const selected = files.filter(file => file.path === 'index.html' || /\.(js|css)$/.test(file.path));
 assert.ok(selected.some(file => /SalesPage-.*\.js$/.test(file.path)), 'Sales page must be part of the release');
 const checks = [];
+let htmlCacheControl;
 for (const file of selected) {
   const url = WORKER_ORIGIN + '/' + file.path.split('/').map(encodeURIComponent).join('/');
   const response = await fetch(url, { signal: AbortSignal.timeout(20_000), cache: 'no-store' });
   assert.equal(response.status, 200, 'Published resource must load: ' + file.path);
   assert.equal(digest(Buffer.from(await response.arrayBuffer())), file.hash, 'Published bytes differ: ' + file.path);
-  if (file.path === 'index.html') assert.match(response.headers.get('cache-control') ?? '', /no-cache|no-store/);
+  if (file.path === 'index.html') {
+    htmlCacheControl = response.headers.get('cache-control') ?? '';
+    assert.ok(/no-cache|no-store/.test(htmlCacheControl) || (/max-age=0(?:\s*,|\s*$)/.test(htmlCacheControl) && /must-revalidate/.test(htmlCacheControl)),
+      'Published HTML must be revalidated before reuse');
+  }
   checks.push(file.path);
 }
 const evidence = { environment: 'production-served-build', at: new Date().toISOString(), origin: WORKER_ORIGIN,
   buildSha256: digest(Buffer.from(files.map(file => file.path + '\t' + file.hash + '\n').join(''))),
-  files, verifiedResourceCount: checks.length, verifiedResources: checks };
+  files, htmlCacheControl, verifiedResourceCount: checks.length, verifiedResources: checks };
 mkdirSync(resolve(PROJECT_ROOT, 'output/audit'), { recursive: true });
 writeFileSync(resolve(PROJECT_ROOT, 'output/audit/shipping-served-build.json'), JSON.stringify(evidence, null, 2));
 console.log(JSON.stringify({ environment: evidence.environment, buildSha256: evidence.buildSha256,

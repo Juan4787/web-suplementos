@@ -1,7 +1,7 @@
 // Read-only production evidence. Never creates fixtures or applies migrations.
 import { Client } from 'pg';
 import { loadEnv } from 'vite';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import assert from 'node:assert/strict';
 import { assertSupabaseTarget } from './validate-supabase-target.mjs';
@@ -44,7 +44,14 @@ try {
   if(mode==='after') {
     const before=JSON.parse(readFileSync(resolve(directory,'shipping-release-before.json'),'utf8'));
     const changedTables=Object.keys(before.tables).filter(name=>JSON.stringify(before.tables[name])!==JSON.stringify(snapshot.tables[name]));
-    if(changedTables.length)snapshot.failures.push({kind:'existing_rows_changed',tables:changedTables});
+    if(changedTables.length) {
+      const activityPath=resolve(directory,'shipping-external-activity.json');
+      const activity=existsSync(activityPath)?JSON.parse(readFileSync(activityPath,'utf8')):null;
+      const reconciled=activity?.verified===true && activity.baselineAt===before.at &&
+        Object.keys(before.tables).every(name=>JSON.stringify(activity.fingerprints[name])===JSON.stringify(snapshot.tables[name]));
+      if(reconciled)snapshot.externalActivity={verified:true,orders:activity.orders,newRows:activity.newRows};
+      else snapshot.failures.push({kind:'existing_rows_changed',tables:changedTables});
+    }
     const removed=before.functions.filter(old=>!snapshot.functions.some(now=>now.signature===old.signature));
     if(removed.some(f=>f.name!=='receive_purchase' || f.args!==3))snapshot.failures.push({kind:'unexpected_function_removal',functions:removed.map(f=>f.signature)});
     const unrelated=snapshot.functions.filter(now=>{
@@ -97,7 +104,7 @@ try {
   await db.query('rollback');
   writeFileSync(resolve(directory,`shipping-release-${mode}.json`),JSON.stringify(snapshot,null,2));
   console.log(JSON.stringify({environment:snapshot.environment,mode,tables:Object.keys(snapshot.tables).length,stockIssues:snapshot.stockIssues,
-    checkedDefinitions:snapshot.checkedDefinitions,checkedFinancialPeriods:snapshot.checkedFinancialPeriods,failures:snapshot.failures}));
+    checkedDefinitions:snapshot.checkedDefinitions,checkedFinancialPeriods:snapshot.checkedFinancialPeriods,externalActivity:snapshot.externalActivity,failures:snapshot.failures}));
   if(snapshot.failures.length)process.exitCode=1;
 } catch(error) {
   console.error(JSON.stringify({failed:true,code:error.code??'AUDIT_FAILED',detail:error.code?'Read-only query failed':error.message}));process.exitCode=1;

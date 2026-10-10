@@ -1,5 +1,5 @@
 // Inspect published owner UI. Every business mutation is blocked at transport.
-import { chromium } from '@playwright/test';
+import { chromium, expect } from '@playwright/test';
 import { createClient } from '@supabase/supabase-js';
 import { loadEnv } from 'vite';
 import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
@@ -55,19 +55,34 @@ try {
   await page.getByText('Llegó TODO completo',{exact:true}).click();
   const freight=page.getByRole('textbox',{name:'Costo de envío (opcional)'});
   await freight.waitFor();assert.equal(await freight.inputValue(),'');
+  await expect(freight).toBeInViewport({ratio:1});
   checks.push('published supplier receipt offers optional empty freight field');
   await page.screenshot({path:'output/audit/production-shipping/receipt.png',fullPage:true});
+  await page.setViewportSize({width:390,height:844});
+  await expect(freight).toBeInViewport({ratio:1});
+  await page.screenshot({path:'output/audit/production-shipping/receipt-mobile.png',fullPage:true});
+  await page.getByRole('button',{name:'Volver',exact:true}).click();
+  await page.getByText('Llegó con faltante / parte',{exact:true}).click();
+  await expect(freight).toBeInViewport({ratio:1});
+  checks.push('supplier freight visible immediately in large full and partial receipt on desktop and mobile viewport');
+  await page.getByRole('button',{name:'Volver',exact:true}).click();
+  await page.setViewportSize({width:1280,height:900});
   await page.keyboard.press('Escape');
   const orders=await client.rpc('search_orders',{p_page:1,p_page_size:100,p_search:'',p_state:'all'});
   assert.ok(!orders.error);
-  const pending=orders.data.items.find(o=>o.paymentState==='pending'&&o.orderState!=='cancelled'&&o.saleType!=='gift');
+  const pending=orders.data.items.find(o=>o.paymentState==='pending'&&o.orderState!=='cancelled'&&o.saleType!=='gift'&&o.paymentMethod!=='gift');
   if(pending) {
     await page.goto(WORKER_ORIGIN+'/app/pedidos?search='+pending.number);
-    const toggle=page.getByRole('button',{name:pending.shippingFeeCents>0?'Editar':'Agregar',exact:true}).first();
+    const article=page.locator('article').filter({has:page.getByText('#'+pending.number,{exact:true})});
+    await article.waitFor();
+    const header=article.locator('button[aria-expanded]').first();
+    if(await header.getAttribute('aria-expanded')==='false')await header.click();
+    const toggle=article.getByRole('button',{name:pending.shippingFeeCents>0?'Editar':'Agregar',exact:true});
     await toggle.waitFor();await toggle.click();
-    await page.getByRole('button',{name:'Porcentaje',exact:true}).waitFor();
-    assert.equal(await page.getByRole('button',{name:'Porcentaje',exact:true}).isEnabled(),true);
-    await page.getByRole('button',{name:'Cancelar',exact:true}).click();
+    await article.getByRole('button',{name:'Porcentaje',exact:true}).waitFor();
+    assert.equal(await article.getByRole('button',{name:'Porcentaje',exact:true}).isEnabled(),true);
+    await page.screenshot({path:'output/audit/production-shipping/editor.png',fullPage:true});
+    await article.getByRole('button',{name:'Cancelar',exact:true}).click();
     checks.push('published pending-order shipping editor opens and cancels without saving');
     await page.screenshot({path:'output/audit/production-shipping/orders.png',fullPage:true});
   } else checks.push('no pending real order available; editor behavior covered by isolated UI/HTTP tests');

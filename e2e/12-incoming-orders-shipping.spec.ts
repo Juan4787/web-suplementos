@@ -102,6 +102,39 @@ test('cambiar a en camino conserva el borrador y exige corregir la cantidad ante
   await page.screenshot({path:`/tmp/shipping-source-${info.project.name}.png`,fullPage:true});
 });
 
+test('el envío de una compra grande aparece antes de la lista y dentro de la vista inicial',async ({page},info)=>{
+  await fixture(page);
+  const number=await page.evaluate(async()=>{
+    const api=await(window as any).__getBusinessApi();
+    const products=(await api.listAdminProducts()).filter((product:any)=>product.active);
+    const seed=products[0];
+    for(let i=products.length;i<12;i++)products.push(await api.saveProduct({
+      ...seed,id:undefined,sku:'LARGE-SHIP-'+Date.now()+'-'+i,slug:'large-ship-'+Date.now()+'-'+i,
+      name:'Producto de compra grande '+i
+    }));
+    const purchase=await api.createPurchase({supplierName:'Proveedor de compra grande QA',
+      items:products.slice(0,12).map((product:any)=>({productId:product.id,quantity:1,unitCostCents:product.currentCostCents}))});
+    return purchase.number;
+  });
+  await navigate(page,'Inventario');
+  await page.getByRole('button',{name:'Compras',exact:true}).click();
+  await page.locator('article').filter({hasText:`Pedido #${number}`}).getByRole('button',{name:'Recibir mercadería'}).click();
+  for(const mode of ['Llegó TODO completo','Llegó con faltante / parte']) {
+    await page.getByText(mode,{exact:true}).click();
+    const freight=page.getByRole('textbox',{name:'Costo de envío (opcional)'});
+    await expect(freight).toBeInViewport({ratio:1});
+    const input=await freight.boundingBox();
+    const firstProduct=await page.getByRole('dialog').getByText(productsLabel(mode),{exact:true}).boundingBox();
+    expect(input!.y).toBeLessThan(firstProduct!.y);
+    if(mode==='Llegó TODO completo')await page.screenshot({path:`/tmp/shipping-large-receipt-${info.project.name}.png`,fullPage:true});
+    await page.getByRole('button',{name:'Volver',exact:true}).click();
+  }
+});
+
+function productsLabel(mode:string) {
+  return mode==='Llegó TODO completo'?'Detalle de productos a ingresar':'¿Qué productos faltan en esta entrega?';
+}
+
 test('el importe rechaza pegados negativos y centavos sin convertirlos en otro cargo',async ({page})=>{
   await fixture(page);await navigate(page,'Inventario');await page.getByRole('button',{name:'Compras',exact:true}).click();
   await page.locator('article').filter({hasText:'Proveedor envíos QA'}).getByRole('button',{name:'Recibir mercadería'}).click();
