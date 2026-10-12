@@ -278,14 +278,14 @@ export function PageHeader({
   action
 }: {
   title: string;
-  description: string;
+  description?: string | undefined;
   action?: React.ReactNode;
 }) {
   return (
     <header className="mb-7 flex flex-col gap-5 sm:mb-9 md:flex-row md:items-end md:justify-between">
       <div className="max-w-3xl">
         <h1 className="font-display text-3xl font-black tracking-[-0.04em] text-ink-950 sm:text-4xl">{title}</h1>
-        <p className="mt-2 max-w-2xl text-[15.5px] sm:text-base leading-relaxed text-ink-700 font-medium">{description}</p>
+        {description ? <p className="mt-2 max-w-2xl text-[15.5px] sm:text-base leading-relaxed text-ink-700 font-medium">{description}</p> : null}
       </div>
       {action ? <div className="shrink-0">{action}</div> : null}
     </header>

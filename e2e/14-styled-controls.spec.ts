@@ -60,7 +60,18 @@ test('manual order choices and category list work with keyboard, search clearing
 
 test('expense date and month controls preserve exact leap dates and nested focus without saving',async({page},info)=>{
   const errors=watch(page);await local(page,'/app/configuracion');
+  const yearLabel=page.getByRole('button',{name:'Mes a revisar: año'}).locator('span').first();
+  expect(await yearLabel.evaluate(label=>{
+    const range=document.createRange();range.selectNodeContents(label);
+    return range.getClientRects().length;
+  })).toBe(1);
   const current=await page.locator('#misc-expenses-month').inputValue();
+  await page.getByRole('button',{name:'Mes a revisar: mes'}).click();
+  await page.getByRole('listbox').getByRole('option',{name:'Septiembre',exact:true}).click();
+  expect(await page.getByRole('button',{name:'Mes a revisar: mes'}).evaluate(button=>{
+    const range=document.createRange();range.selectNodeContents(button.querySelector('span')!);
+    return range.getBoundingClientRect().right<=button.querySelector('svg')!.getBoundingClientRect().left;
+  })).toBe(true);
   await page.getByRole('button',{name:'Mes a revisar: mes'}).click();
   await page.getByRole('listbox').getByRole('option',{name:'Febrero',exact:true}).click();
   await expect(page.locator('#misc-expenses-month')).toHaveValue(current.slice(0,4)+'-02');

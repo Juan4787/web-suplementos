@@ -20,12 +20,14 @@ export function MonthPicker({value,onChange,id,disabled=false,minYear=2000,maxYe
   const commit=(next:string)=>{
     if(!disabled&&/^\d{4}-(0[1-9]|1[0-2])$/.test(next)&&Number(next.slice(0,4))>=minYear&&Number(next.slice(0,4))<=maxYear)onChange(next);
   };
-  return <div role="group" aria-label="Mes a revisar" className={cn('grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)_5.25rem] gap-1',className)}>
+  return <div role="group" aria-label="Mes a revisar" className={cn('flex min-w-0 flex-1 flex-wrap gap-1',className)}>
     <input type="hidden" id={controlId} value={value} />
     <Select id={controlId+'-month'} aria-label="Mes a revisar: mes" disabled={disabled} searchable={false} size="sm"
+      className="min-w-33 flex-[1_1_8.25rem] [&>button]:gap-1 [&>button]:px-2 [&>button>span]:whitespace-nowrap"
       value={month} onValueChange={next=>commit(year+'-'+next)}
       options={monthNames.map((label,index)=>({value:String(index+1).padStart(2,'0'),label}))} />
     <Select id={controlId+'-year'} aria-label="Mes a revisar: año" disabled={disabled} size="sm"
+      className="min-w-17 flex-[1_1_4.25rem] [&>button]:gap-0.5 [&>button]:px-1 [&>button>span]:whitespace-nowrap"
       value={year} onValueChange={next=>commit(next+'-'+month)}
       options={Array.from({length:Math.max(0,maxYear-minYear+1)},(_,index)=>({value:String(minYear+index),label:String(minYear+index)}))} />
   </div>;

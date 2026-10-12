@@ -465,7 +465,7 @@ export default function CreateOrderPage() {
             ? createdOrder.alreadyImported
               ? `El pedido #${createdOrder.number} ya existía. No se reservaron unidades nuevamente.`
               : `El pedido #${createdOrder.number} fue registrado y las unidades fueron reservadas.`
-            : 'Registrá un pedido recibido por teléfono, mostrador o WhatsApp sin que el cliente use la web.'
+            : undefined
         }
       />
 
@@ -609,9 +609,6 @@ export default function CreateOrderPage() {
                   <h2 className="font-display text-lg font-black text-ink-950">
                     1. Elegir productos del catálogo
                   </h2>
-                  <p className="text-xs font-semibold text-ink-600 mt-0.5">
-                    Buscá suplementos por nombre, código o categoría. Aparecen productos activos, incluso los ocultos en la tienda; podés revisar su visibilidad en Productos.
-                  </p>
                 </div>
                 {categories.length > 0 ? (
                   <Select
