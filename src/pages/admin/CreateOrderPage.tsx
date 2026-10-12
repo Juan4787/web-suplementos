@@ -28,7 +28,8 @@ import { useBusinessQuery } from '@/app/use-business-query';
 import { PageHeader } from '@/components/layout/AdminShell';
 import { Button, buttonStyles } from '@/components/ui/Button';
 import { ErrorState, LoadingState } from '@/components/ui/DataState';
-import { Field, Input } from '@/components/ui/Field';
+import { Field, Input, Select } from '@/components/ui/Field';
+import { ClearSearchButton } from '@/components/ui/ClearSearchButton';
 import { parseShippingAddress } from '@/domain/checkout';
 import { AppError } from '@/domain/errors';
 import { can } from '@/domain/permissions';
@@ -587,9 +588,11 @@ export default function CreateOrderPage() {
             <p className="mb-3 text-base font-extrabold text-ink-950">¿Qué mercadería querés reservar?</p>
             <div className="grid gap-2 sm:grid-cols-2">
               {(['normal', 'incoming_only'] as const).map(source => (
-                <label key={source} className={cn('flex min-h-12 cursor-pointer items-center gap-3 rounded-xl border p-3 text-sm font-bold', stockSource === source ? 'border-brand-600 bg-brand-50 text-brand-950' : 'border-ink-950/15 text-ink-700')}>
-                  <input type="radio" name="stock-source" value={source} checked={stockSource === source} onChange={() => handleStockSourceChange(source)} className="size-4 accent-brand-600" />
-                  {source === 'normal' ? 'Compra normal' : 'Comprar productos en camino'}
+                <label key={source} className={cn('relative flex min-h-14 cursor-pointer items-center gap-3 rounded-xl border px-4 py-3 text-sm font-bold transition-colors has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-brand-600 has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-60', stockSource === source ? 'border-ink-950 bg-ink-950 text-white' : 'border-ink-950/15 bg-white text-ink-700 hover:border-ink-950/40 hover:bg-cream-50')}>
+                  <input type="radio" name="stock-source" value={source} checked={stockSource === source} onChange={() => handleStockSourceChange(source)} className="absolute inset-0 h-full w-full cursor-pointer opacity-0" />
+                  <Package className="size-5 shrink-0" aria-hidden="true" />
+                  <span className="flex-1">{source === 'normal' ? 'Compra normal' : 'Comprar productos en camino'}</span>
+                  {stockSource === source ? <Check className="size-4 shrink-0" aria-hidden="true" /> : null}
                 </label>
               ))}
             </div>
@@ -611,18 +614,14 @@ export default function CreateOrderPage() {
                   </p>
                 </div>
                 {categories.length > 0 ? (
-                  <select
+                  <Select
                     value={selectedCategory}
-                    onChange={(e) => setSelectedCategory(e.target.value)}
-                    className="h-10 w-full sm:w-auto rounded-xl border border-ink-950/15 bg-white px-3 text-xs font-bold text-ink-800 focus:border-brand-500 focus:outline-none shrink-0"
-                  >
-                    <option value="all">Todas las categorías</option>
-                    {categories.map((c) => (
-                      <option key={c} value={c}>
-                        {c}
-                      </option>
-                    ))}
-                  </select>
+                    onValueChange={setSelectedCategory}
+                    aria-label="Categoría de productos"
+                    size="sm"
+                    className="w-full shrink-0 sm:w-52"
+                    options={[{value:'all',label:'Todas las categorías'},...categories.map(category=>({value:category,label:category}))]}
+                  />
                 ) : null}
               </div>
 
@@ -633,8 +632,9 @@ export default function CreateOrderPage() {
                   placeholder="Buscar creatina, proteína, colágeno, SKU…"
                   value={searchProduct}
                   onChange={(e) => setSearchProduct(e.target.value)}
-                  className="h-11 w-full rounded-2xl border border-ink-950/15 bg-cream-50 pl-10 pr-4 text-sm font-semibold text-ink-950 placeholder:text-ink-400 focus:border-brand-600 focus:bg-white focus:outline-none"
+                  className="h-11 w-full rounded-2xl border border-ink-950/15 bg-cream-50 pl-10 pr-12 text-sm font-semibold text-ink-950 placeholder:text-ink-400 focus:border-brand-600 focus:bg-white focus:outline-none"
                 />
+                <ClearSearchButton value={searchProduct} onClear={()=>setSearchProduct('')} />
               </div>
 
               {/* Lista de productos para agregar */}

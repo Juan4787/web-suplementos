@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Select } from './Select';
 
@@ -84,5 +84,39 @@ describe('Select component with search', () => {
     expect(handleChange).toHaveBeenCalledWith({
       target: { value: '2', name: undefined }
     });
+  });
+  it('navigates enabled options without committing; Escape preserves the value and focus', async () => {
+    const onChange=vi.fn();
+    render(<Select aria-label="Producto" value="a" onChange={onChange} options={[
+      {value:'a',label:'Primero'},{value:'b',label:'Agotado',disabled:true},{value:'c',label:'Tercero'}]} />);
+    const trigger=screen.getByRole('button',{name:'Producto'});
+    fireEvent.keyDown(trigger,{key:'ArrowDown'});
+    await waitFor(()=>expect(screen.getByRole('option',{name:'Primero'})).toHaveFocus());
+    fireEvent.keyDown(document.activeElement!,{key:'ArrowDown'});
+    expect(screen.getByRole('option',{name:'Tercero'})).toHaveFocus();
+    expect(onChange).not.toHaveBeenCalled();
+    fireEvent.keyDown(document.activeElement!,{key:'Home'});
+    expect(screen.getByRole('option',{name:'Primero'})).toHaveFocus();
+    fireEvent.keyDown(document.activeElement!,{key:'Escape'});
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+    expect(onChange).not.toHaveBeenCalled();
+  });
+  it('blocks a portalled selection if its enclosing form becomes disabled', () => {
+    const onChange=vi.fn();
+    const view=render(<fieldset><Select aria-label="Producto" value="a" onChange={onChange}
+      options={[{value:'a',label:'Primero'},{value:'c',label:'Tercero'}]} /></fieldset>);
+    fireEvent.click(screen.getByRole('button',{name:'Producto'}));
+    view.rerender(<fieldset disabled><Select aria-label="Producto" value="a" onChange={onChange}
+      options={[{value:'a',label:'Primero'},{value:'c',label:'Tercero'}]} /></fieldset>);
+    fireEvent.click(screen.getByRole('option',{name:'Tercero'}));
+    expect(onChange).not.toHaveBeenCalled();
+  });
+  it('explains a disabled control in the app instead of a browser tooltip', () => {
+    render(<Select aria-label="Rol" disabled title="No podés cambiar tu propio rol." options={[]} />);
+    const trigger=screen.getByRole('button',{name:'Rol'});
+    expect(trigger).not.toHaveAttribute('title');
+    expect(trigger).toHaveAccessibleDescription('No podés cambiar tu propio rol.');
+    expect(screen.getByText('No podés cambiar tu propio rol.')).toBeVisible();
   });
 });

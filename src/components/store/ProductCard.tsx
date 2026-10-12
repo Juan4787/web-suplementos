@@ -106,7 +106,6 @@ export function ProductCard({ product }: { product: StorefrontProduct }) {
                 className="grid size-9 place-items-center rounded-full text-white/90 transition hover:bg-white/20 active:scale-90 disabled:opacity-40 disabled:hover:bg-transparent disabled:cursor-not-allowed"
                 onClick={handleIncrement}
                 disabled={isMaxStock}
-                title={isMaxStock ? `Solo quedan ${maxStock} unidades` : undefined}
                 aria-label={`Sumar una unidad de ${product.name}`}
               >
                 <Plus className="size-4 stroke-[2.5]" />

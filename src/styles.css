@@ -63,7 +63,57 @@ input,
 select,
 textarea {
   font: inherit;
+  caret-color: var(--color-brand-600);
 }
+button, input, textarea { appearance: none; -webkit-appearance: none; }
+
+/* Draw choice controls while preserving their native form and keyboard semantics. */
+input[type="checkbox"],
+input.app-radio {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 1.25rem;
+  height: 1.25rem;
+  flex-shrink: 0;
+  border: 1.5px solid var(--color-ink-600);
+  background-color: white;
+  background-position: center;
+  background-repeat: no-repeat;
+  cursor: pointer;
+}
+input[type="checkbox"] { border-radius: 0.375rem; }
+input.app-radio { border-radius: 50%; }
+input[type="checkbox"]:checked,
+input.app-radio:checked {
+  background-color: var(--color-brand-600);
+  border-color: var(--color-brand-600);
+}
+input[type="checkbox"]:checked {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath fill='none' stroke='white' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round' d='m5 10 3 3 7-7'/%3E%3C/svg%3E");
+}
+input.app-radio:checked {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Ccircle fill='white' cx='10' cy='10' r='4'/%3E%3C/svg%3E");
+}
+input[type="checkbox"]:disabled,
+input.app-radio:disabled { cursor: not-allowed; opacity: 0.5; }
+input[type="number"] { appearance: textfield; -moz-appearance: textfield; }
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+input[type="search"]::-webkit-search-cancel-button,
+input[type="search"]::-webkit-search-decoration { -webkit-appearance: none; }
+summary { list-style: none; }
+summary::-webkit-details-marker { display: none; }
+
+@media (forced-colors: active) {
+  input[type="checkbox"], input.app-radio { forced-color-adjust: none; border-color: ButtonText; background-color: Canvas; }
+  input[type="checkbox"]:checked, input.app-radio:checked { background-color: var(--color-brand-600); border-color: ButtonText; }
+}
+textarea { resize: none; }
+* { scrollbar-width: thin; scrollbar-color: rgb(100 116 139 / 0.5) transparent; }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgb(100 116 139 / 0.5); border-radius: 9999px; }
+details[open] > summary .disclosure-chevron { transform: rotate(180deg); }
 
 button,
 a {

@@ -26,6 +26,7 @@ import { queryKeys } from '@/app/query-keys';
 import { useBusinessQuery } from '@/app/use-business-query';
 import { PageHeader } from '@/components/layout/AdminShell';
 import { Button } from '@/components/ui/Button';
+import { ClearSearchButton } from '@/components/ui/ClearSearchButton';
 import { ErrorState, LoadingState } from '@/components/ui/DataState';
 import { CurrencyInput, Field, Input, Textarea } from '@/components/ui/Field';
 import { Modal } from '@/components/ui/Modal';
@@ -438,7 +439,8 @@ function ProductForm({
               <input
                 ref={fileInputRef}
                 type="file"
-                className="sr-only"
+                className="hidden"
+                tabIndex={-1}
                 accept="image/jpeg,image/png,image/webp,image/avif"
                 onChange={(event) => {
                   const file = event.target.files?.[0] ?? null;
@@ -517,10 +519,16 @@ function ProductForm({
               ) : (
                 /* Estado 2: Dropzone interactivo para agregar */
                 <div
+                  role="button"
+                  tabIndex={0}
+                  aria-label="Elegir imagen del producto"
                   onDragOver={handleDragOver}
                   onDragLeave={handleDragLeave}
                   onDrop={handleDrop}
                   onClick={() => fileInputRef.current?.click()}
+                  onKeyDown={event=>{
+                    if(['Enter',' '].includes(event.key)){event.preventDefault();fileInputRef.current?.click();}
+                  }}
                   className={cn(
                     'relative group cursor-pointer rounded-2xl border-2 border-dashed p-6 sm:p-8 text-center transition-all',
                     isDragging
@@ -897,8 +905,9 @@ export default function ProductsPage() {
             placeholder="Buscar producto o categoría…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="h-11 w-full rounded-full border border-ink-950/15 bg-white pl-10 pr-4 text-[14.5px] font-semibold text-ink-950 placeholder:text-ink-600/70 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+            className="h-11 w-full rounded-full border border-ink-950/15 bg-white pl-10 pr-12 text-[14.5px] font-semibold text-ink-950 placeholder:text-ink-600/70 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
           />
+          <ClearSearchButton value={search} onClear={()=>setSearch('')} />
         </div>
       </div>
 
@@ -996,7 +1005,6 @@ export default function ProductsPage() {
                           variant="ghost"
                           size="sm"
                           className="text-amber-800 hover:bg-amber-50 hover:text-amber-900"
-                          title="Archivar producto (ocultar de la tienda sin borrar historial)"
                           loading={
                             archiveMutation.isPending &&
                             archiveMutation.variables?.productId === product.id
@@ -1010,7 +1018,6 @@ export default function ProductsPage() {
                           variant="ghost"
                           size="sm"
                           className="text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800"
-                          title="Desarchivar producto (reactivar en la tienda)"
                           loading={
                             archiveMutation.isPending &&
                             archiveMutation.variables?.productId === product.id

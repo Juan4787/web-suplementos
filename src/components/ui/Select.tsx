@@ -5,7 +5,9 @@ import {
   useMemo,
   useRef,
   useState,
-  type ReactNode
+  useId,
+  type ReactNode,
+  type KeyboardEvent as ReactKeyboardEvent
 } from 'react';
 import { Check, ChevronDown, Search } from 'lucide-react';
 import { cn } from '@/lib/cn';
@@ -88,6 +90,8 @@ export function Select({
   title
 }: SelectProps) {
   const field = useField();
+  const generatedId = useId();
+  const controlId = id ?? field?.id ?? generatedId;
   const isControlled = controlledValue !== undefined;
   const [internalValue, setInternalValue] = useState(defaultValue);
   const activeValue = isControlled ? controlledValue : internalValue;
@@ -145,7 +149,8 @@ export function Select({
   }, [options, searchTerm]);
 
   const handleSelect = (val: string) => {
-    if (disabled) return;
+    if (disabled || containerRef.current?.querySelector('button')?.matches(':disabled') ||
+      containerRef.current?.closest('[inert]') || !options.some(option => option.value === val && !option.disabled)) return;
     if (!isControlled) {
       setInternalValue(val);
     }
@@ -154,6 +159,24 @@ export function Select({
     setIsOpen(false);
     setSearchTerm('');
     containerRef.current?.querySelector('button')?.focus();
+  };
+
+  const focusOption = (position: 'first' | 'last' | 'selected') => {
+    const enabled = [...(menuRef.current?.querySelectorAll<HTMLButtonElement>('[role="option"]:not(:disabled)') ?? [])];
+    const next = position === 'last' ? enabled.at(-1) : position === 'selected'
+      ? enabled.find(option => option.getAttribute('aria-selected') === 'true') ?? enabled[0] : enabled[0];
+    next?.focus();
+  };
+  const closeWithTab = (event: ReactKeyboardEvent<HTMLElement>) => {
+    event.preventDefault();
+    const trigger = containerRef.current?.querySelector('button');
+    const scope = trigger?.closest('[data-dialog-surface]') ?? trigger?.closest('[data-modal-popover]') ?? document;
+    const targets = [...scope.querySelectorAll<HTMLElement>('a[href],button,input,select,textarea,[tabindex]')]
+      .filter(element => element.tabIndex >= 0 && !element.matches(':disabled') && !element.closest('[inert],[hidden],[data-modal-popover="select"]') && element.getClientRects().length > 0);
+    const index = trigger ? targets.indexOf(trigger) : -1;
+    const next = targets[index + (event.shiftKey ? -1 : 1)];
+    setIsOpen(false); setSearchTerm('');
+    (next ?? trigger)?.focus();
   };
 
   useEffect(() => { if (disabled) setIsOpen(false); }, [disabled]);
@@ -179,6 +202,7 @@ export function Select({
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && !containerRef.current?.closest('[inert]')) {
+        event.preventDefault();
         setIsOpen(false);
         setSearchTerm('');
         containerRef.current?.querySelector('button')?.focus();
@@ -198,8 +222,8 @@ export function Select({
 
   // Focus search input when dropdown opens
   useEffect(() => {
-    if (isOpen && showSearch) {
-      const timer = setTimeout(() => searchInputRef.current?.focus(), 60);
+    if (isOpen) {
+      const timer = setTimeout(() => showSearch ? searchInputRef.current?.focus() : focusOption('selected'), 0);
       return () => clearTimeout(timer);
     }
   }, [isOpen, showSearch]);
@@ -212,18 +236,26 @@ export function Select({
       {/* Trigger button */}
       <button
         type="button"
-        id={id ?? field?.id}
-        title={title}
+        id={controlId}
         disabled={disabled}
         aria-label={ariaLabel ?? field?.label}
         aria-invalid={field?.invalid}
-        aria-describedby={field?.descriptionId}
+        aria-describedby={[field?.descriptionId, title ? controlId + '-hint' : undefined].filter(Boolean).join(' ') || undefined}
         aria-haspopup="listbox"
+        aria-controls={isOpen ? controlId + '-options' : undefined}
         aria-expanded={isOpen}
         onClick={() => {
           if (!disabled) {
             setIsOpen((prev) => !prev);
             setSearchTerm('');
+          }
+        }}
+        onKeyDown={event => {
+          if (event.key === 'Tab' && isOpen) { closeWithTab(event); return; }
+          if (['ArrowDown', 'ArrowUp'].includes(event.key)) {
+            event.preventDefault();
+            if (isOpen) focusOption(event.key === 'ArrowUp' ? 'last' : 'first');
+            else { setSearchTerm(''); setIsOpen(true); }
           }
         }}
         className={cn(
@@ -254,15 +286,34 @@ export function Select({
           )}
         />
       </button>
+      {title ? <p id={controlId + '-hint'} className="mt-1 text-xs leading-relaxed text-ink-700">{title}</p> : null}
 
       {/* Dropdown Menu */}
       {isOpen && createPortal(
         <div
           ref={menuRef}
-          data-dialog-owner={containerRef.current?.closest<HTMLElement>('[data-dialog-surface]')?.dataset.dialogSurface}
+          id={controlId + '-options'}
+          data-dialog-owner={containerRef.current?.closest<HTMLElement>('[data-dialog-surface]')?.dataset.dialogSurface ??
+            containerRef.current?.closest<HTMLElement>('[data-dialog-owner]')?.dataset.dialogOwner}
           data-modal-popover="select"
+          data-popover-parent={containerRef.current?.closest<HTMLElement>('[data-modal-popover]')?.id}
           style={position}
           role="listbox"
+          onKeyDown={event => {
+            if (event.key === 'Tab') {
+              closeWithTab(event);
+              return;
+            }
+            if (!['ArrowDown','ArrowUp','Home','End'].includes(event.key)) return;
+            if (event.target === searchInputRef.current && ['Home','End'].includes(event.key)) return;
+            event.preventDefault();
+            const enabled = [...(menuRef.current?.querySelectorAll<HTMLButtonElement>('[role="option"]:not(:disabled)') ?? [])];
+            const current = enabled.indexOf(document.activeElement as HTMLButtonElement);
+            const index = event.key === 'Home' ? 0 : event.key === 'End' ? enabled.length - 1 :
+              current < 0 ? (event.key === 'ArrowUp' ? enabled.length - 1 : 0) :
+              (current + (event.key === 'ArrowDown' ? 1 : -1) + enabled.length) % enabled.length;
+            enabled[index]?.focus();
+          }}
           aria-label={ariaLabel ?? field?.label}
           className="flex flex-col rounded-2xl border border-ink-950/10 bg-white p-1.5 shadow-[0_16px_40px_rgba(15,23,42,0.18)]"
         >
@@ -275,6 +326,7 @@ export function Select({
                   ref={searchInputRef}
                   type="text"
                   placeholder="Buscar opción…"
+                  aria-label="Buscar opciones"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="h-9 w-full rounded-xl bg-cream-50 pl-9 pr-3 text-[13.5px] font-bold text-ink-950 placeholder:text-ink-400 focus:bg-white focus:outline-none focus:ring-1 focus:ring-brand-500"
@@ -297,11 +349,12 @@ export function Select({
                     key={option.value}
                     type="button"
                     role="option"
+                    tabIndex={-1}
                     aria-selected={isSelected}
                     disabled={option.disabled}
                     onClick={() => !option.disabled && handleSelect(option.value)}
                     className={cn(
-                      'flex w-full items-center justify-between gap-2.5 rounded-xl px-3.5 py-2.5 text-left text-[14px] transition active:scale-[0.99]',
+                      'flex min-h-11 w-full items-center justify-between gap-2.5 rounded-xl px-3.5 py-2.5 text-left text-[14px] transition active:scale-[0.99]',
                       isSelected
                         ? 'bg-brand-50 text-brand-700 font-black shadow-xs'
                         : 'text-ink-800 font-bold hover:bg-cream-100 hover:text-ink-950',

@@ -1,6 +1,7 @@
 import type { ReceivePurchaseResult } from '@/domain/types';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { OpeningReservations } from '@/features/inventory/OpeningReservations';
+import { ClearSearchButton } from '@/components/ui/ClearSearchButton';
 import { Link, useSearch, useBlocker } from '@tanstack/react-router';
 import {
   AlertTriangle,
@@ -1186,7 +1187,7 @@ export function ReceivePurchaseModal({
                                               target="_blank"
                                               rel="noreferrer"
                                               className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs transition"
-                                              title="Enviar mensaje por WhatsApp"
+                                                aria-label="Enviar mensaje por WhatsApp"
                                             >
                                               <MessageCircle className="size-3.5" /> WhatsApp
                                             </a>
@@ -1197,7 +1198,7 @@ export function ReceivePurchaseModal({
                                             target="_blank"
                                             rel="noopener noreferrer"
                                             className="text-[11px] font-bold text-ink-600 hover:text-ink-950 underline px-1"
-                                            title="Abrir este pedido en una nueva pestaña"
+                                            aria-label="Gestionar pedido en una nueva pestaña"
                                           >
                                             Gestionar pedido ↗
                                           </a>
@@ -2278,8 +2279,9 @@ export default function InventoryPage() {
                 placeholder="Buscar por producto o categoría…"
                 value={stockSearch}
                 onChange={(e) => setStockSearch(e.target.value)}
-                className="h-11 w-full rounded-full border border-ink-950/15 bg-white pl-10 pr-4 text-[14.5px] font-semibold text-ink-950 placeholder:text-ink-600/70 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+                className="h-11 w-full rounded-full border border-ink-950/15 bg-white pl-10 pr-12 text-[14.5px] font-semibold text-ink-950 placeholder:text-ink-600/70 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
               />
+              <ClearSearchButton value={stockSearch} onClear={()=>setStockSearch('')} />
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
@@ -2713,8 +2715,9 @@ export default function InventoryPage() {
                 placeholder="Buscar movimientos…"
                 value={movementSearch}
                 onChange={(e) => setMovementSearch(e.target.value)}
-                className="h-8 w-full rounded-full border border-ink-950/12 bg-white pl-9 pr-4 text-xs font-bold text-ink-950 placeholder:text-ink-600/70 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+                className="h-11 w-full rounded-full border border-ink-950/12 bg-white pl-9 pr-12 text-xs font-bold text-ink-950 placeholder:text-ink-600/70 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
               />
+              <ClearSearchButton value={movementSearch} onClear={()=>setMovementSearch('')} />
             </div>
           </div>
 

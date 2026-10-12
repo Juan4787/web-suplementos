@@ -50,6 +50,7 @@ import { useAuth } from '@/features/auth/AuthProvider';
 import { cleanSearchTerm } from '@/lib/search';
 import { AppError } from '@/domain/errors';
 import { useAppConfirmation } from '@/components/ui/AppConfirmation';
+import { ClearSearchButton } from '@/components/ui/ClearSearchButton';
 
 const normalizeOrderSearch = (value: unknown): string =>
   cleanSearchTerm(value).replace(/^(?:pedido\s*)?#\s*(\d+)$/i, '$1');
@@ -321,6 +322,7 @@ export default function OrdersPage() {
             }}
             className="h-11 w-full rounded-full border border-ink-950/15 bg-white pl-10 pr-10 text-[14.5px] font-semibold text-ink-950 placeholder:text-ink-600/70 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
           />
+          <ClearSearchButton value={search} disabled={hasShippingEdits} hidden={searchUnsettled} onClear={()=>setSearch('')} />
           {searchUnsettled ? <span role="status" className="absolute right-3.5 top-1/2 -translate-y-1/2">
             <span className="block size-4 animate-spin rounded-full border-2 border-ink-950/15 border-t-ink-700" aria-hidden="true" />
             <span className="sr-only">Buscando pedidos…</span>
@@ -724,7 +726,6 @@ export default function OrdersPage() {
                                       type="button"
                                       variant="secondary"
                                       size="sm"
-                                      title="Cobrar el costo de mercadería más el envío guardado"
                                       disabled={shippingEditing[order.id]?.editing || shippingFeeNeedsReview(order)}
                                       className="w-full justify-center text-amber-900 border-amber-200 bg-amber-50/70 hover:bg-amber-100 hover:text-amber-950 hover:border-amber-300 font-bold text-xs py-2 h-auto"
                                       onClick={() => setConfirmAction({ order, action: 'mark_at_cost' })}
@@ -738,7 +739,6 @@ export default function OrdersPage() {
                                       type="button"
                                       variant="secondary"
                                       size="sm"
-                                      title="Regalar el pedido completo: elimina el cargo de envío y registra cobro cero"
                                       disabled={shippingEditing[order.id]?.editing}
                                       className="w-full justify-center text-purple-900 border-purple-200 bg-purple-50/70 hover:bg-purple-100 hover:text-purple-950 hover:border-purple-300 font-bold text-xs py-2 h-auto"
                                       onClick={() => setConfirmAction({ order, action: 'mark_gifted' })}

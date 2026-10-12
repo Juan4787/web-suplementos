@@ -1,5 +1,5 @@
 import { useMutation } from '@tanstack/react-query';
-import { ArrowRight, ArrowUp, Bot, Database, LockKeyhole, Sparkles, User } from 'lucide-react';
+import { ArrowRight, ArrowUp, Bot, ChevronDown, Database, LockKeyhole, Sparkles, User } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
 import { appEnv } from '@/app/env';
 import { PageHeader } from '@/components/layout/AdminShell';
@@ -352,7 +352,7 @@ export default function AiPage() {
                   {message.role === 'assistant' ? <span className="grid size-9 shrink-0 place-items-center rounded-full bg-ink-950 text-brand-300"><Bot className="size-4" /></span> : null}
                   <div className={`max-w-[82%] rounded-[1.5rem] px-4 py-3 text-sm leading-6 sm:max-w-[72%] ${message.role === 'user' ? 'rounded-br-md bg-brand-600 text-white' : 'rounded-bl-md border border-ink-950/7 bg-white text-ink-800 shadow-sm'}`}>
                     {message.role === 'assistant' ? renderAssistantContent(message.content) : <p className="whitespace-pre-wrap">{message.content}</p>}
-                    {message.evidence?.length ? <details className="mt-3 border-t border-ink-950/8 pt-2"><summary className="cursor-pointer text-[11px] font-black text-ink-600">Datos exactos usados</summary><dl className="mt-2 space-y-1.5">{message.evidence.map((fact) => <div key={`${fact.label}-${fact.formatted}`} className="flex items-start justify-between gap-4 text-xs"><dt className="text-ink-600">{fact.label}</dt><dd className="shrink-0 font-black text-ink-950">{fact.formatted}</dd></div>)}</dl></details> : null}
+                    {message.evidence?.length ? <details className="mt-3 border-t border-ink-950/8 pt-2"><summary className="flex min-h-11 cursor-pointer items-center justify-between gap-2 text-[11px] font-black text-ink-600"><span>Datos exactos usados</span><ChevronDown className="disclosure-chevron size-3.5 shrink-0 transition-transform" aria-hidden="true" /></summary><dl className="mt-2 space-y-1.5">{message.evidence.map((fact) => <div key={`${fact.label}-${fact.formatted}`} className="flex items-start justify-between gap-4 text-xs"><dt className="text-ink-600">{fact.label}</dt><dd className="shrink-0 font-black text-ink-950">{fact.formatted}</dd></div>)}</dl></details> : null}
                     {message.consulted ? <p className="mt-3 flex items-center gap-1.5 border-t border-ink-950/8 pt-2 text-[10px] font-black uppercase tracking-wider text-brand-600"><Database className="size-3" /> Respuesta basada en datos reales de tu tienda</p> : null}
                   </div>
                   {message.role === 'user' ? <span className="grid size-9 shrink-0 place-items-center rounded-full bg-brand-100 text-brand-700"><User className="size-4" /></span> : null}

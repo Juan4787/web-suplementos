@@ -20,6 +20,7 @@ import { useField } from './field-context';
 import { createPortal } from 'react-dom';
 import { usePopoverPosition } from './use-popover-position';
 import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, X } from 'lucide-react';
+import { Select } from './Select';
 
 export interface DatePickerProps {
   value?: string | undefined; // Format: 'YYYY-MM-DD'
@@ -32,6 +33,7 @@ export interface DatePickerProps {
   maxDate?: string | undefined;
   showShortcuts?: boolean | undefined;
   align?: 'left' | 'right' | undefined;
+  showMonthYearControls?: boolean | undefined;
 }
 
 export function DatePicker({
@@ -44,7 +46,8 @@ export function DatePicker({
   minDate,
   maxDate,
   showShortcuts = true,
-  align = 'left'
+  align = 'left',
+  showMonthYearControls = false
 }: DatePickerProps) {
   const field = useField();
   const generatedId = useId();
@@ -52,6 +55,7 @@ export function DatePicker({
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const calendarRef = useRef<HTMLDivElement>(null);
+  const pendingDayFocus = useRef<string | null>(null);
   const position = usePopoverPosition(isOpen, containerRef, { align, minWidth: 312, maxHeight: 520, centerOnMobile: true });
 
   // Parse current selected date
@@ -60,6 +64,24 @@ export function DatePicker({
 
   // View state for month navigation
   const [viewDate, setViewDate] = useState<Date>(() => selectedDate || new Date());
+  const min = minDate && isValid(parseISO(minDate)) ? parseISO(minDate) : null;
+  const max = maxDate && isValid(parseISO(maxDate)) ? parseISO(maxDate) : null;
+  const allowed = (date: Date) => isValid(date) && (!min || format(date,'yyyy-MM-dd') >= format(min,'yyyy-MM-dd')) &&
+    (!max || format(date,'yyyy-MM-dd') <= format(max,'yyyy-MM-dd'));
+  const monthAllowed = (date: Date) => (!min || endOfMonth(date) >= min) && (!max || startOfMonth(date) <= max);
+  const clampView = (date: Date) => min && endOfMonth(date) < min ? min : max && startOfMonth(date) > max ? max : date;
+  useEffect(() => {
+    if (!isOpen) return;
+    const target = pendingDayFocus.current;
+    if (!target && calendarRef.current?.contains(document.activeElement)) return;
+    const selected = target ?? (selectedDate ? format(selectedDate,'yyyy-MM-dd') : null);
+    const timer=setTimeout(()=>{
+      const day=selected ? calendarRef.current?.querySelector<HTMLButtonElement>(`button[data-date="${selected}"]:not(:disabled)`) : null;
+      (day ?? calendarRef.current?.querySelector<HTMLButtonElement>('button:not(:disabled)'))?.focus();
+      pendingDayFocus.current=null;
+    },0);
+    return ()=>clearTimeout(timer);
+  },[isOpen,viewDate]);
 
   useEffect(() => { if (disabled) setIsOpen(false); }, [disabled]);
 
@@ -69,6 +91,7 @@ export function DatePicker({
 
     const handleClickOutside = (event: MouseEvent | TouchEvent) => {
       if (calendarRef.current?.contains(event.target as Node)) return;
+      if (event.target instanceof Element && event.target.closest<HTMLElement>('[data-popover-parent]')?.dataset.popoverParent === inputId + '-calendar') return;
       if (
         event.composedPath &&
         containerRef.current &&
@@ -83,6 +106,8 @@ export function DatePicker({
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && !containerRef.current?.closest('[inert]')) {
+        if (calendarRef.current?.querySelector('[aria-haspopup="listbox"][aria-expanded="true"]')) return;
+        event.preventDefault();
         setIsOpen(false);
         containerRef.current?.querySelector('button')?.focus();
       }
@@ -100,7 +125,7 @@ export function DatePicker({
   }, [isOpen]);
 
   const handleSelectDate = (date: Date) => {
-    if (disabled) return;
+    if (disabled || !allowed(date) || containerRef.current?.querySelector('button')?.matches(':disabled') || containerRef.current?.closest('[inert]')) return;
     const formatted = format(date, 'yyyy-MM-dd');
     onChange?.(formatted);
     setViewDate(date);
@@ -109,8 +134,9 @@ export function DatePicker({
   };
 
   const handleClear = (e: React.MouseEvent) => {
+    e.preventDefault();
     e.stopPropagation();
-    onChange?.('');
+    if (!disabled && !containerRef.current?.querySelector('button')?.matches(':disabled')) onChange?.('');
   };
 
   const handlePrevMonth = (e: React.MouseEvent) => {
@@ -152,7 +178,8 @@ export function DatePicker({
         onClick={() => {
           if (!disabled) {
             if (!isOpen) {
-              setViewDate(selectedDate || new Date());
+              pendingDayFocus.current = null;
+              setViewDate(clampView(selectedDate || new Date()));
             }
             setIsOpen((prev) => !prev);
           }
@@ -167,7 +194,7 @@ export function DatePicker({
       >
         <span
           className={`text-[15px] font-medium transition ${
-            formattedDisplay ? 'text-ink-950 font-bold' : 'text-ink-400'
+            formattedDisplay ? 'text-ink-950 font-bold' : 'text-ink-600'
           }`}
         >
           {formattedDisplay || placeholder}
@@ -180,7 +207,7 @@ export function DatePicker({
               tabIndex={0}
               data-testid="datepicker-clear"
               onClick={handleClear}
-              onKeyDown={(e) => e.key === 'Enter' && handleClear(e as unknown as React.MouseEvent)}
+              onKeyDown={(e) => ['Enter',' '].includes(e.key) && handleClear(e as unknown as React.MouseEvent)}
               className="grid size-6 place-items-center rounded-full hover:bg-cream-200 hover:text-ink-800 transition"
               aria-label="Borrar fecha seleccionada"
             >
@@ -189,7 +216,7 @@ export function DatePicker({
           )}
           <CalendarIcon
             className={`size-5 transition ${
-              isOpen ? 'text-brand-600 scale-110' : 'text-ink-400 group-hover:text-ink-700'
+              isOpen ? 'text-brand-600 scale-110' : 'text-ink-600 group-hover:text-ink-700'
             }`}
           />
         </div>
@@ -209,9 +236,21 @@ export function DatePicker({
 
           <div
             ref={calendarRef}
+            id={inputId + '-calendar'}
             data-dialog-owner={containerRef.current?.closest<HTMLElement>('[data-dialog-surface]')?.dataset.dialogSurface}
           data-modal-popover="date"
             role="dialog"
+            onKeyDown={event=>{
+              const steps:Record<string,number>={ArrowLeft:-1,ArrowRight:1,ArrowUp:-7,ArrowDown:7};
+              const day=(event.target as HTMLElement).dataset?.date;
+              if(!day||!steps[event.key])return;
+              event.preventDefault();
+              const next=addDays(parseISO(day),steps[event.key]!);
+              if(!allowed(next))return;
+              const nextValue=format(next,'yyyy-MM-dd');
+              const target=calendarRef.current?.querySelector<HTMLButtonElement>(`button[data-date="${nextValue}"]`);
+              if(target)target.focus();else {pendingDayFocus.current=nextValue;setViewDate(next);}
+            }}
             aria-label="Elegir fecha"
             className="overflow-y-auto rounded-[1.75rem] border border-ink-950/10 bg-white p-4 shadow-[0_20px_50px_rgba(15,23,42,0.25)] select-none"
             style={position}
@@ -221,41 +260,45 @@ export function DatePicker({
               <div className="mb-3.5 flex flex-wrap gap-1.5 border-b border-ink-950/6 pb-3">
                 <button
                   type="button"
+                  disabled={!allowed(new Date())}
                   onClick={(e) => {
                     e.stopPropagation();
                     handleSelectDate(new Date());
                   }}
-                  className="rounded-xl bg-cream-100 px-3 py-1.5 text-[12px] font-black text-ink-700 hover:bg-brand-50 hover:text-brand-700 transition active:scale-95"
+                  className="rounded-xl bg-cream-100 px-3 py-1.5 text-[12px] font-black text-ink-700 hover:bg-brand-50 hover:text-brand-700 transition active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed"
                 >
                   Hoy
                 </button>
                 <button
                   type="button"
+                  disabled={!allowed(addDays(new Date(), 1))}
                   onClick={(e) => {
                     e.stopPropagation();
                     handleSelectDate(addDays(new Date(), 1));
                   }}
-                  className="rounded-xl bg-cream-100 px-3 py-1.5 text-[12px] font-black text-ink-700 hover:bg-brand-50 hover:text-brand-700 transition active:scale-95"
+                  className="rounded-xl bg-cream-100 px-3 py-1.5 text-[12px] font-black text-ink-700 hover:bg-brand-50 hover:text-brand-700 transition active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed"
                 >
                   Mañana
                 </button>
                 <button
                   type="button"
+                  disabled={!allowed(addDays(new Date(), 3))}
                   onClick={(e) => {
                     e.stopPropagation();
                     handleSelectDate(addDays(new Date(), 3));
                   }}
-                  className="rounded-xl bg-cream-100 px-3 py-1.5 text-[12px] font-black text-ink-700 hover:bg-brand-50 hover:text-brand-700 transition active:scale-95"
+                  className="rounded-xl bg-cream-100 px-3 py-1.5 text-[12px] font-black text-ink-700 hover:bg-brand-50 hover:text-brand-700 transition active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed"
                 >
                   En 3 días
                 </button>
                 <button
                   type="button"
+                  disabled={!allowed(addDays(new Date(), 7))}
                   onClick={(e) => {
                     e.stopPropagation();
                     handleSelectDate(addDays(new Date(), 7));
                   }}
-                  className="rounded-xl bg-cream-100 px-3 py-1.5 text-[12px] font-black text-ink-700 hover:bg-brand-50 hover:text-brand-700 transition active:scale-95"
+                  className="rounded-xl bg-cream-100 px-3 py-1.5 text-[12px] font-black text-ink-700 hover:bg-brand-50 hover:text-brand-700 transition active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed"
                 >
                   En 1 sem.
                 </button>
@@ -270,16 +313,18 @@ export function DatePicker({
               <div className="flex items-center gap-1">
                 <button
                   type="button"
+                  disabled={!monthAllowed(subMonths(viewDate, 1))}
                   onClick={handlePrevMonth}
-                  className="grid size-8 place-items-center rounded-xl text-ink-600 hover:bg-cream-100 hover:text-ink-950 transition active:scale-90"
+                  className="grid size-8 place-items-center rounded-xl text-ink-600 hover:bg-cream-100 hover:text-ink-950 transition active:scale-90 disabled:opacity-30 disabled:cursor-not-allowed"
                   aria-label="Mes anterior"
                 >
                   <ChevronLeft className="size-4.5" />
                 </button>
                 <button
                   type="button"
+                  disabled={!monthAllowed(addMonths(viewDate, 1))}
                   onClick={handleNextMonth}
-                  className="grid size-8 place-items-center rounded-xl text-ink-600 hover:bg-cream-100 hover:text-ink-950 transition active:scale-90"
+                  className="grid size-8 place-items-center rounded-xl text-ink-600 hover:bg-cream-100 hover:text-ink-950 transition active:scale-90 disabled:opacity-30 disabled:cursor-not-allowed"
                   aria-label="Mes siguiente"
                 >
                   <ChevronRight className="size-4.5" />
@@ -287,10 +332,25 @@ export function DatePicker({
               </div>
             </div>
 
+            {showMonthYearControls ? <div className="mb-3 grid grid-cols-[minmax(0,1fr)_6rem] gap-2">
+              <Select id={inputId + '-month'} aria-label="Mes del calendario" size="sm" searchable={false}
+                value={String(viewDate.getMonth())}
+                onValueChange={month => setViewDate(clampView(new Date(viewDate.getFullYear(), Number(month), 1)))}
+                options={Array.from({length:12},(_,month)=>({value:String(month),label:format(new Date(2026,month,1),'MMMM',{locale:es}),
+                  disabled:!monthAllowed(new Date(viewDate.getFullYear(),month,1))}))} />
+              <Select id={inputId + '-year'} aria-label="Año del calendario" size="sm"
+                value={String(viewDate.getFullYear())}
+                onValueChange={year => setViewDate(clampView(new Date(Number(year),viewDate.getMonth(),1)))}
+                options={Array.from({length:(max?.getFullYear() ?? viewDate.getFullYear()+100)-(min?.getFullYear() ?? viewDate.getFullYear()-100)+1},(_,index)=>{
+                  const year=(min?.getFullYear() ?? viewDate.getFullYear()-100)+index;
+                  return {value:String(year),label:String(year)};
+                })} />
+            </div> : null}
+
             {/* Weekday headers */}
             <div className="mb-2 grid grid-cols-7 gap-1 text-center">
               {weekDayLabels.map((dayLabel, idx) => (
-                <span key={idx} className="text-[11px] font-black uppercase tracking-wider text-ink-400 py-0.5">
+                <span key={idx} className="text-[11px] font-black uppercase tracking-wider text-ink-600 py-0.5">
                   {dayLabel}
                 </span>
               ))}
@@ -307,18 +367,21 @@ export function DatePicker({
                   <button
                     key={idx}
                     type="button"
+                    aria-label={format(day,'EEEE d MMMM yyyy',{locale:es})}
+                    data-date={format(day,'yyyy-MM-dd')}
+                    disabled={!allowed(day)}
                     onClick={(e) => {
                       e.stopPropagation();
                       handleSelectDate(day);
                     }}
-                    className={`relative grid h-9.5 w-full place-items-center rounded-xl text-[13.5px] font-bold tabular-nums transition select-none ${
+                    className={`relative grid h-9.5 w-full place-items-center rounded-xl text-[13.5px] font-bold tabular-nums select-none disabled:opacity-30 disabled:cursor-not-allowed ${
                       isSelected
                         ? 'bg-ink-950 text-white font-black shadow-sm scale-105 z-10'
                         : isCurrentDay
                           ? 'border border-brand-500 font-black text-brand-600 hover:bg-brand-50'
                           : isCurrentMonth
-                            ? 'text-ink-900 hover:bg-cream-100 hover:text-ink-950 active:scale-95'
-                            : 'text-ink-300 hover:bg-cream-50 hover:text-ink-500'
+                            ? 'text-ink-950 hover:bg-cream-100 hover:text-ink-950 active:scale-95'
+                            : 'text-ink-600 hover:bg-cream-50 hover:text-ink-950'
                     }`}
                   >
                     {format(day, 'd')}

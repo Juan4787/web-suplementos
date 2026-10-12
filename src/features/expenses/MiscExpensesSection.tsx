@@ -21,7 +21,8 @@ import { queryKeys } from '@/app/query-keys';
 import { useBusinessQuery } from '@/app/use-business-query';
 import { Button } from '@/components/ui/Button';
 import { EmptyState, ErrorState, LoadingState } from '@/components/ui/DataState';
-import { CurrencyInput, Field, Input } from '@/components/ui/Field';
+import { CurrencyInput, Field, Input, DatePicker } from '@/components/ui/Field';
+import { MonthPicker } from '@/components/ui/MonthPicker';
 import { Modal } from '@/components/ui/Modal';
 import {
   MAX_MISC_EXPENSE_CENTS,
@@ -437,12 +438,12 @@ function ExpenseFormModal({
                 : 'El gasto se descontará únicamente en esta fecha.'
           }
         >
-          <Input
-            type="date"
-            min="2000-01-01"
-            max="2100-12-31"
+          <DatePicker
+            minDate="2000-01-01"
+            maxDate="2100-12-31"
+            showMonthYearControls
             value={draft.startsOn}
-            onChange={(event) => setDraft((current) => ({ ...current, startsOn: event.target.value }))}
+            onChange={(value) => setDraft((current) => ({ ...current, startsOn: value }))}
           />
         </Field>
 
@@ -495,13 +496,13 @@ function ExpenseFormModal({
                   error={attempted ? endsOnError : undefined}
                   hint="La fecha elegida también se incluye si coincide con una ocurrencia."
                 >
-                  <Input
-                    type="date"
-                    min={draft.startsOn || today}
-                    max="2100-12-31"
+                  <DatePicker
+                    minDate={draft.startsOn || today}
+                    maxDate="2100-12-31"
+                    showMonthYearControls
                     value={draft.endsOn}
-                    onChange={(event) =>
-                      setDraft((current) => ({ ...current, endsOn: event.target.value }))
+                    onChange={(value) =>
+                      setDraft((current) => ({ ...current, endsOn: value }))
                     }
                   />
                 </Field>
@@ -667,7 +668,7 @@ export function MiscExpensesSection({ onNotify }: { onNotify: Notify }) {
 
         <div className="mt-5 flex flex-col gap-4 rounded-2xl border border-ink-950/8 bg-cream-50/70 p-3 sm:flex-row sm:items-center sm:justify-between sm:p-4">
           <div className="flex flex-wrap items-center gap-2">
-            <div className="inline-flex items-center rounded-xl border border-ink-950/10 bg-white p-0.5 shadow-xs">
+            <div className="inline-flex w-full min-w-0 max-w-sm items-center gap-1 rounded-xl border border-ink-950/10 bg-white p-0.5 shadow-xs">
               <button
                 type="button"
                 onClick={() => moveMonth(-1)}
@@ -677,23 +678,7 @@ export function MiscExpensesSection({ onNotify }: { onNotify: Notify }) {
               >
                 <ChevronLeft className="size-4" />
               </button>
-              <div className="relative flex w-36 items-center justify-center gap-2 px-2 py-1.5 sm:w-44">
-                <CalendarRange className="size-4 shrink-0 text-ink-500" aria-hidden="true" />
-                <span className="truncate text-sm font-black capitalize text-ink-950">
-                  {monthName}
-                </span>
-                <input
-                  id="misc-expenses-month"
-                  type="month"
-                  min="2000-01"
-                  max="2100-12"
-                  value={selectedMonth}
-                  onChange={(event) => { if (event.target.value) setSelectedMonth(event.target.value); }}
-                  className="absolute inset-0 cursor-pointer opacity-0"
-                  title="Cambiar mes"
-                  aria-label="Mes a revisar"
-                />
-              </div>
+              <MonthPicker id="misc-expenses-month" value={selectedMonth} onChange={setSelectedMonth} />
               <button
                 type="button"
                 onClick={() => moveMonth(1)}

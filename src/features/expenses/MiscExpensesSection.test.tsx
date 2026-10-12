@@ -121,9 +121,13 @@ describe('Gastos varios en Configuración', () => {
     expect(amountInput).toHaveValue('250.000,50');
 
     fireEvent.click(within(dialog).getByRole('button', { name: 'Mensual' }));
-    fireEvent.change(within(dialog).getByLabelText('Primera fecha'), {
-      target: { value: '2026-09-15' }
-    });
+    fireEvent.click(within(dialog).getByRole('button',{name:'Primera fecha'}));
+    const calendar=screen.getByRole('dialog',{name:'Elegir fecha'});
+    fireEvent.click(within(calendar).getByRole('button',{name:'Año del calendario'}));
+    fireEvent.click(screen.getByRole('option',{name:'2026'}));
+    fireEvent.click(within(calendar).getByRole('button',{name:'Mes del calendario'}));
+    fireEvent.click(screen.getByRole('option',{name:'septiembre'}));
+    fireEvent.click(within(calendar).getByRole('button',{name:/15 septiembre 2026/}));
     fireEvent.click(within(dialog).getByRole('button', { name: 'Agregar gasto' }));
 
     await waitFor(() => expect(api.saveMiscExpense).toHaveBeenCalledWith(expect.objectContaining({

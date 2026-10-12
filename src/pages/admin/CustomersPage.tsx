@@ -10,6 +10,7 @@ import { queryKeys } from '@/app/query-keys';
 import { useBusinessQuery } from '@/app/use-business-query';
 import { PageHeader } from '@/components/layout/AdminShell';
 import { Button } from '@/components/ui/Button';
+import { ClearSearchButton } from '@/components/ui/ClearSearchButton';
 import { ErrorState, LoadingState } from '@/components/ui/DataState';
 import { Drawer } from '@/components/ui/Modal';
 import { StatusChip } from '@/components/ui/StatusChip';
@@ -66,8 +67,9 @@ export default function CustomersPage() {
               setSearch(e.target.value);
               setPage(1);
             }}
-            className="h-11 w-full rounded-full border border-ink-950/15 bg-white pl-10 pr-4 text-[14.5px] font-semibold text-ink-950 placeholder:text-ink-600/70 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+            className="h-11 w-full rounded-full border border-ink-950/15 bg-white pl-10 pr-12 text-[14.5px] font-semibold text-ink-950 placeholder:text-ink-600/70 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
           />
+          <ClearSearchButton value={search} onClear={()=>{setSearch('');setPage(1);}} />
         </div>
       </div>
 

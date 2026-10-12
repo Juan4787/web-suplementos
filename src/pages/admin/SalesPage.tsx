@@ -300,7 +300,7 @@ export default function SalesPage() {
             </section>
 
             <details className="mb-6 rounded-2xl border border-ink-950/8 bg-white p-4 text-sm text-ink-700">
-              <summary className="min-h-8 cursor-pointer font-bold text-ink-950">Cómo se calcula la ganancia neta</summary>
+              <summary className="flex min-h-11 cursor-pointer items-center justify-between gap-3 font-bold text-ink-950"><span>Cómo se calcula la ganancia neta</span><ChevronDown className="disclosure-chevron size-4 shrink-0 transition-transform" aria-hidden="true" /></summary>
               <dl className="mt-3 space-y-2">
                 <div className="flex justify-between gap-3"><dt>Ventas cobradas (incluye envíos)</dt><dd className="font-semibold">{formatMoney(analyticsQuery.data.revenueCents)}</dd></div>
                 <div className="flex justify-between gap-3"><dt>Envíos incluidos en esos cobros</dt><dd>{formatMoney(analyticsQuery.data.shippingRevenueCents ?? 0)}</dd></div>
