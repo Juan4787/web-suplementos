@@ -1,6 +1,6 @@
 import { AppConfirmationProvider } from '@/components/ui/AppConfirmation';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { PropsWithChildren } from 'react';
 import { afterEach, expect, it, vi } from 'vitest';
 import type { Order } from '@/domain/types';
@@ -181,7 +181,7 @@ it('permite marcar un pedido como listo para entregar desde las acciones operati
   expect(readyButton).toBeInTheDocument();
   fireEvent.click(readyButton);
 
-  await waitFor(() => expect(api.transitionOrder).toHaveBeenCalledWith(order.id, 'mark_ready'));
+  await waitFor(() => expect(api.transitionOrder).toHaveBeenCalledWith(order.id, 'mark_ready', { actionRevision: order.actionRevision ?? 0 }));
   expect(
     await screen.findByText(`Pedido #${order.number} marcado como listo para entrega.`)
   ).toBeInTheDocument();
@@ -212,7 +212,7 @@ it('pide revisar físicamente una bolsita histórica lista antes de descontar su
   expect(api.transitionOrder).not.toHaveBeenCalled();
   expect(screen.getByText(/La bolsita figura sin verificar en la app/)).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Sí, ya verifiqué y entregar' }));
-  await waitFor(() => expect(api.transitionOrder).toHaveBeenCalledWith(order.id, 'mark_delivered'));
+  await waitFor(() => expect(api.transitionOrder).toHaveBeenCalledWith(order.id, 'mark_delivered', { actionRevision: order.actionRevision ?? 0 }));
   client.clear();
 });
 
@@ -237,7 +237,7 @@ it('pide la misma verificación al enviar un pedido histórico listo', async () 
   expect(api.transitionOrder).not.toHaveBeenCalled();
   expect(screen.getByText(/La bolsita figura sin verificar en la app/)).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Sí, ya verifiqué y enviar' }));
-  await waitFor(() => expect(api.transitionOrder).toHaveBeenCalledWith(order.id, 'mark_shipped'));
+  await waitFor(() => expect(api.transitionOrder).toHaveBeenCalledWith(order.id, 'mark_shipped', { actionRevision: order.actionRevision ?? 0 }));
   client.clear();
 });
 
@@ -377,5 +377,80 @@ it('allows explicitly discarding a draft when another operator cancelled the ord
   fireEvent.click(screen.getByRole('button', { name: 'Descartar' }));
   await waitFor(() => expect(screen.queryByText(/Tenés armados sin guardar/)).not.toBeInTheDocument());
   expect(api.transitionOrder).not.toHaveBeenCalled();
+  client.clear();
+});
+
+
+it('keeps completed orders reachable while undoing delivery, payment and finally cancelling', async () => {
+  let order: Order = { ...demoOrders[0]!, orderState: 'confirmed', paymentState: 'paid', fulfillmentState: 'delivered',
+    actionRevision: 7, shippedAt: null, stockReadiness: 'ready', packingTracked: false,
+    items: demoOrders[0]!.items.map(i => ({ ...i, packedQuantity: null })) };
+  api.listOrders.mockImplementation(async (_page, _size, _search, filter) => ({
+    items: filter === 'completed' && order.fulfillmentState !== 'delivered' && order.orderState !== 'cancelled' ? [] : [order],
+    total: 1, page: 1, pageSize: 50, pendingTotal: 0, completedTotal: 1
+  }));
+  api.transitionOrder.mockImplementation(async (_id, action) => {
+    order = { ...order, actionRevision: (order.actionRevision ?? 0) + 1,
+      ...(action === 'reverse_delivery' ? { fulfillmentState: 'pending', fulfilledAt: null } : {}),
+      ...(action === 'reverse_payment' ? { paymentState: 'pending', paidAt: null } : {}),
+      ...(action === 'cancel' ? { orderState: 'cancelled', fulfillmentState: 'cancelled' } : {}) };
+    return order;
+  });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+  const invalidations = vi.spyOn(client, 'invalidateQueries');
+  render(<QueryClientProvider client={client}><AppConfirmationProvider><OrdersPage /></AppConfirmationProvider></QueryClientProvider>);
+  fireEvent.click(await screen.findByRole('button', { name: /Completados/ }));
+  fireEvent.click(await screen.findByRole('button', { name: /Ver pedido y acciones/ }));
+  const more = screen.getByRole('button', { name: 'Más opciones' });
+  expect(more).toHaveAttribute('aria-expanded', 'false');
+  fireEvent.click(more);
+  expect(screen.getByRole('button', { name: 'Cancelar pedido' })).toBeDisabled();
+  expect(screen.getByText(/Primero deshacé el cobro/)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Deshacer entrega' }));
+  let dialog = screen.getByRole('dialog');
+  expect(dialog.querySelector('#confirm-order-action-description')).toHaveTextContent('reservadas para este mismo pedido');
+  expect(dialog).toHaveTextContent('mercadería está en el local');
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Sí, deshacer entrega' }));
+  await waitFor(() => expect(api.transitionOrder).toHaveBeenLastCalledWith(order.id, 'reverse_delivery', { operationId: expect.any(String), actionRevision: 7 }));
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  expect(await screen.findByText(/entrega deshecha/)).toBeInTheDocument();
+  expect(screen.getByText('Productos pedidos')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Deshacer cobro' }));
+  dialog = screen.getByRole('dialog');
+  expect(dialog).toHaveTextContent('pendiente de cobro');
+  expect(dialog).toHaveTextContent('Esta acción corrige el registro');
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Sí, deshacer cobro' }));
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  expect(screen.getByRole('button', { name: 'Cancelar pedido' })).toBeEnabled();
+  fireEvent.click(screen.getByRole('button', { name: 'Cancelar pedido' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Sí, cancelar pedido' }));
+  await waitFor(() => expect(order.orderState).toBe('cancelled'));
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  for (const key of [['orders'], ['dashboard'], ['inventory'], ['product-reservations'], ['admin-products'],
+    ['storefront-products'], ['storefront-product'], ['purchases'], ['paid-orders'], ['analytics'], ['customers'], ['movements']]) {
+    expect(invalidations).toHaveBeenCalledWith({ queryKey: key });
+  }
+  client.clear();
+});
+
+it('shipment delivery correction explains sent status and preserves the operation key after a failed request', async () => {
+  const order: Order = { ...demoOrders[0]!, orderState: 'confirmed', paymentState: 'paid', fulfillmentState: 'delivered',
+    actionRevision: 3, shippedAt: '2026-10-12T12:00:00Z' };
+  api.listOrders.mockResolvedValue({ items: [order], total: 1, page: 1, pageSize: 50, pendingTotal: 0, completedTotal: 1 });
+  api.transitionOrder.mockRejectedValueOnce(new Error('Sin conexión')).mockResolvedValueOnce({ ...order, fulfillmentState: 'shipped', fulfilledAt: null, actionRevision: 4 });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+  render(<QueryClientProvider client={client}><AppConfirmationProvider><OrdersPage /></AppConfirmationProvider></QueryClientProvider>);
+  fireEvent.click(await screen.findByRole('button', { name: /Ver pedido y acciones/ }));
+  fireEvent.click(screen.getByRole('button', { name: 'Más opciones' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Deshacer entrega' }));
+  const dialog = screen.getByRole('dialog');
+  expect(dialog.querySelector('#confirm-order-action-description')).toHaveTextContent('volverá a enviado');
+  expect(dialog).toHaveTextContent('stock no cambiará');
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Sí, deshacer entrega' }));
+  await waitFor(() => expect(within(dialog).getByRole('button', { name: 'Sí, deshacer entrega' })).toBeEnabled());
+  const first = api.transitionOrder.mock.lastCall;
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Sí, deshacer entrega' }));
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  expect(api.transitionOrder.mock.lastCall).toEqual(first);
   client.clear();
 });

@@ -52,3 +52,23 @@ describe('errores de operación y archivo de productos', () => {
       p_items: [{ purchaseItemId: 'item', quantity: 5 }], p_operation_id: 'batch-attempt' });
   });
 });
+
+
+it('sends a reviewed reversal through the atomic RPC with its stable operation and revision', async () => {
+  mockRpc.mockResolvedValue({ data: { id: 'order', items: [], paymentState: 'pending' }, error: null });
+  await supabaseBusinessApi.transitionOrder('order', 'reverse_payment', { operationId: 'operation', actionRevision: 9 });
+  expect(mockRpc).toHaveBeenLastCalledWith('reverse_order_action', {
+    p_order_id: 'order', p_action: 'reverse_payment', p_operation_id: 'operation', p_expected_revision: 9
+  });
+  await supabaseBusinessApi.transitionOrder('order', 'cancel', { actionRevision: 10 });
+  expect(mockRpc).toHaveBeenLastCalledWith('transition_order_reviewed', { p_order_id: 'order', p_action: 'cancel', p_expected_revision: 10 });
+});
+
+it.each(['ORDER_ACTION_CHANGED', 'ORDER_REVERSAL_RESERVATIONS_MISMATCH', 'CANNOT_CANCEL_PAID_ORDER', 'CANNOT_CANCEL_FULFILLED_ORDER'])(
+  'translates %s into a problem and human next action', code => {
+    const error = translateDatabaseError({ message: code });
+    expect(error.kind).toBe('business');
+    expect(error.message).not.toContain(code);
+    expect(error.nextAction).toBeTruthy();
+  }
+);

@@ -152,7 +152,9 @@ select set_config('request.jwt.claim.sub','00000000-0000-4000-8000-000000101001'
 insert into fixture values('before_cancel',public.get_sales_analytics(current_date,current_date));
 insert into fixture values('before_cancel_list',public.search_paid_orders(1,1,current_date,current_date));
 insert into fixture values('before_cancel_dashboard',public.get_dashboard_summary());
-select is(public.transition_order(pg_temp.id('tax_order'),'cancel')->>'paymentState','refunded','Cancelling a paid order marks its existing payment refunded');
+select throws_ok($$select public.transition_order(pg_temp.id('tax_order'),'cancel')$$,'P0001','CANNOT_CANCEL_PAID_ORDER','Cancellation requires an explicit collection reversal');
+select is(public.reverse_order_action(pg_temp.id('tax_order'),'reverse_payment',gen_random_uuid(),(select action_revision from public.orders where id=pg_temp.id('tax_order')))->>'paymentState','pending','Collection correction is recorded before cancellation');
+select is(public.transition_order(pg_temp.id('tax_order'),'cancel')->>'paymentState','pending','Cancellation preserves the explicitly corrected payment state');
 select is(public.get_sales_analytics(current_date,current_date)->>'revenueCents',((select (value->>'revenueCents')::bigint from fixture where name='before_cancel')-(select total_cents from public.orders where id=pg_temp.id('tax_order')))::text,'Cancelled refunded payment leaves no active revenue');
 select is((public.search_paid_orders(1,1,current_date,current_date)->>'total')::bigint,(select (value->>'total')::bigint-1 from fixture where name='before_cancel_list'),'Paid-order list removes that same refunded order');
 select is((public.get_dashboard_summary()->>'paidRevenueMonthCents')::bigint,(select (value->>'paidRevenueMonthCents')::bigint from fixture where name='before_cancel_dashboard')-(select total_cents from public.orders where id=pg_temp.id('tax_order')),'Dashboard removes the same paid amount');

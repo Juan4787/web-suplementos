@@ -90,7 +90,7 @@ describe('order actions state machine', () => {
       fulfillmentState: 'delivered'
     };
     const actions = availableOrderActions(order);
-    expect(actions).toEqual(['mark_paid', 'mark_at_cost', 'mark_gifted']);
+    expect(actions).toEqual(['reverse_delivery', 'mark_paid', 'mark_at_cost', 'mark_gifted']);
   });
 
   it('allows mark_delivered when shipping order has been shipped', () => {
@@ -108,17 +108,17 @@ describe('order actions state machine', () => {
     expect(actions).not.toContain('mark_shipped');
   });
 
-  it('returns no actions when order is both paid and delivered', () => {
+  it('allows correcting both collection and delivery on a completed order', () => {
     const order: Order = {
       ...baseOrder,
       paymentState: 'paid',
       preparationState: 'ready',
       fulfillmentState: 'delivered'
     };
-    expect(availableOrderActions(order)).toEqual([]);
+    expect(availableOrderActions(order)).toEqual(['reverse_payment', 'reverse_delivery']);
   });
 
-  it('returns no actions when order has been gifted and delivered', () => {
+  it('allows correcting delivery of a gifted order', () => {
     const order: Order = {
       ...baseOrder,
       paymentState: 'gifted',
@@ -126,7 +126,7 @@ describe('order actions state machine', () => {
       fulfillmentState: 'delivered',
       orderState: 'confirmed'
     };
-    expect(availableOrderActions(order)).toEqual([]);
+    expect(availableOrderActions(order)).toEqual(['reverse_delivery']);
   });
 
   it('allows mark_gifted whenever payment is pending', () => {

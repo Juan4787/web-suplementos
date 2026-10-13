@@ -18,6 +18,7 @@ import {
   Store,
   Tag,
   Truck,
+  Undo2,
   X
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -36,9 +37,11 @@ import { parseShippingAddress } from '@/domain/checkout';
 import { formatMoney } from '@/domain/money';
 import {
   availableOrderActions,
+  isOrderReversal,
+  orderCancellationBlock,
   ORDER_ACTION_LABELS
 } from '@/domain/order-actions';
-import type { Order, OrderAction, OrderPaymentExpectation } from '@/domain/types';
+import type { Order, OrderAction, OrderTransitionExpectation } from '@/domain/types';
 import type { OrderListFilter } from '@/services/business-api';
 import { cn } from '@/lib/cn';
 import { buildWhatsAppUrl } from '@/lib/whatsapp-url';
@@ -133,11 +136,14 @@ export default function OrdersPage() {
   const [mutationError, setMutationError] = useState<Error | null>(null);
   const [successNotice, setSuccessNotice] = useState<{ order: Order; completed: boolean; message: string } | null>(null);
   const noticeRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (successNotice?.completed) noticeRef.current?.focus();
-  }, [successNotice]);
+  const focusedNotice = useRef<typeof successNotice>(null);
   const [showSecondaryActions, setShowSecondaryActions] = useState<Record<string, boolean>>({});
-  const [confirmAction, setConfirmAction] = useState<{ order: Order; action: OrderAction } | null>(null);
+  const [confirmAction, setConfirmAction] = useState<{ order: Order; action: OrderAction; operationId: string } | null>(null);
+
+  const openConfirmation = (order: Order, action: OrderAction) => {
+    setMutationError(null);
+    setConfirmAction({ order: structuredClone(order), action, operationId: crypto.randomUUID() });
+  };
 
   const [debouncedSearch, setDebouncedSearch] = useState(search);
   useEffect(() => {
@@ -157,7 +163,7 @@ export default function OrdersPage() {
   const orderLookupPending = searchUnsettled || ordersQuery.isPending;
 
   const transition = useMutation({
-    mutationFn: async (variables: { orderId: string; action: OrderAction; expected?: OrderPaymentExpectation }) =>
+    mutationFn: async (variables: { orderId: string; action: OrderAction; expected?: OrderTransitionExpectation }) =>
       {
         if (shippingEditing[variables.orderId]?.editing) throw new AppError('business', 'Hay una edición de envío sin guardar.', { nextAction: 'Guardá o cancelá la edición antes de cambiar el estado del pedido.' });
         const draft = draftStore.get(variables.orderId);
@@ -184,10 +190,20 @@ export default function OrdersPage() {
                 : variables.action === 'mark_delivered'
                   ? 'entregado'
                   : 'actualizado';
+      const reversed = isOrderReversal(variables.action);
+      if (reversed && filter === 'completed') {
+        setPage(1); setFilter('all'); setSearch(String(order.number));
+        setDebouncedSearch(String(order.number)); setExpanded(order.id);
+      }
+      const reversalMessage = variables.action === 'reverse_payment'
+        ? `Pedido #${order.number}: cobro deshecho. Quedó pendiente de cobro.`
+        : variables.action === 'reverse_delivery' && order.fulfillmentState === 'shipped'
+          ? `Pedido #${order.number}: entrega deshecha. Sigue enviado; el stock no cambió.`
+          : `Pedido #${order.number}: ${variables.action === 'reverse_shipment' ? 'envío deshecho' : 'entrega deshecha'}. La mercadería volvió a quedar reservada.`;
       setSuccessNotice({
         order,
         completed,
-        message: completed
+        message: reversed ? reversalMessage : completed
           ? `Pedido #${order.number} ${cancelled ? 'cancelado' : isGift ? 'registrado como regalo / cortesía' : 'completado'}. Lo encontrás en Completados.`
           : `Pedido #${order.number} ${state}.`
       });
@@ -198,14 +214,26 @@ export default function OrdersPage() {
         queryClient.invalidateQueries({ queryKey: queryKeys.productReservationsRoot }),
         queryClient.invalidateQueries({ queryKey: queryKeys.products }),
         queryClient.invalidateQueries({ queryKey: queryKeys.storefrontProducts }),
+        queryClient.invalidateQueries({ queryKey: ['storefront-product'] }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.purchasesRoot }),
         queryClient.invalidateQueries({ queryKey: ['paid-orders'] }),
         queryClient.invalidateQueries({ queryKey: ['analytics'] }),
         queryClient.invalidateQueries({ queryKey: ['customers'] }),
         queryClient.invalidateQueries({ queryKey: ['movements'] })
       ]);
     },
-    onError: error => { setSuccessNotice(null); setMutationError(error); }
+    onError: async error => {
+      setSuccessNotice(null); setMutationError(error);
+      await queryClient.invalidateQueries({ queryKey: queryKeys.ordersRoot });
+    }
   });
+
+  useEffect(() => {
+    if (successNotice && successNotice !== focusedNotice.current && !confirmAction && !transition.isPending) {
+      focusedNotice.current = successNotice;
+      noticeRef.current?.focus();
+    }
+  }, [successNotice, confirmAction, transition.isPending]);
 
   const items = ordersQuery.data?.items ?? [];
 
@@ -383,6 +411,9 @@ export default function OrdersPage() {
                 order.orderState === 'cancelled' ||
                 (order.fulfillmentState === 'delivered' && (order.paymentState === 'paid' || order.paymentState === 'gifted'));
               const actions = availableOrderActions(order);
+              const cancellationBlock = orderCancellationBlock(order);
+              const packingDraft = draftStore.get(order.id);
+              const actionEditsPending = shippingEditing[order.id]?.editing || Boolean(packingDraft && (packingDraft.saving || packingDraftDirty(packingDraft)));
               const hasPhysicalUnitsToPack = order.items.some(item =>
                 (item.physicalReservedQuantity ?? item.quantity) > 0 || (item.packedQuantity ?? 0) > 0
               );
@@ -401,7 +432,7 @@ export default function OrdersPage() {
                   )}
                 >
                   {/* Prevent actions on the previous results while the next search resolves. */}
-                  <fieldset disabled={orderLookupPending} className="contents">
+                  <fieldset disabled={orderLookupPending || transition.isPending} className="contents">
                   <button
                     type="button"
                     className={cn(
@@ -636,7 +667,7 @@ export default function OrdersPage() {
                         </div>
 
                         {/* Una sola guía operativa: los estados permanecen en la cabecera. */}
-                        <div className="flex h-fit flex-col gap-3 rounded-2xl border border-ink-950/8 bg-white p-5 shadow-sm sm:p-6">
+                        <div role="region" aria-label={`${order.orderState === 'cancelled' ? 'Estado' : 'Qué sigue'} del pedido #${order.number}`} className="flex h-fit flex-col gap-3 rounded-2xl border border-ink-950/8 bg-white p-5 shadow-sm sm:p-6">
                           <div className="border-b border-ink-950/6 pb-2">
                             <p className="text-[12.5px] font-black uppercase tracking-wider text-ink-700">
                               {order.orderState === 'cancelled' ? 'Estado del pedido' : 'Qué sigue'}
@@ -680,7 +711,7 @@ export default function OrdersPage() {
                                 transition.variables?.action === 'mark_ready'
                               }
                               onClick={() =>
-                                transition.mutate({ orderId: order.id, action: 'mark_ready' })
+                                transition.mutate({ orderId: order.id, action: 'mark_ready', expected: { actionRevision: order.actionRevision ?? 0 } })
                               }
                             >
                               <PackageCheck className="size-4 mr-1.5 shrink-0" />
@@ -708,7 +739,7 @@ export default function OrdersPage() {
                                   transition.variables?.action === 'mark_paid'
                                 }
                                 disabled={shippingEditing[order.id]?.editing || shippingFeeNeedsReview(order)}
-                                onClick={() => setConfirmAction({ order, action: 'mark_paid' })}
+                                onClick={() => openConfirmation(order, 'mark_paid')}
                               >
                                 Marcar como cobrado
                               </Button>
@@ -728,7 +759,7 @@ export default function OrdersPage() {
                                       size="sm"
                                       disabled={shippingEditing[order.id]?.editing || shippingFeeNeedsReview(order)}
                                       className="w-full justify-center text-amber-900 border-amber-200 bg-amber-50/70 hover:bg-amber-100 hover:text-amber-950 hover:border-amber-300 font-bold text-xs py-2 h-auto"
-                                      onClick={() => setConfirmAction({ order, action: 'mark_at_cost' })}
+                                      onClick={() => openConfirmation(order, 'mark_at_cost')}
                                     >
                                       <Tag className="size-3.5 mr-1 text-amber-600 shrink-0" />
                                       <span>Al costo</span>
@@ -741,7 +772,7 @@ export default function OrdersPage() {
                                       size="sm"
                                       disabled={shippingEditing[order.id]?.editing}
                                       className="w-full justify-center text-purple-900 border-purple-200 bg-purple-50/70 hover:bg-purple-100 hover:text-purple-950 hover:border-purple-300 font-bold text-xs py-2 h-auto"
-                                      onClick={() => setConfirmAction({ order, action: 'mark_gifted' })}
+                                      onClick={() => openConfirmation(order, 'mark_gifted')}
                                     >
                                       <Gift className="size-3.5 mr-1 text-purple-600 shrink-0" />
                                       <span>Regalar</span>
@@ -764,22 +795,22 @@ export default function OrdersPage() {
                               }
                               onClick={() => {
                                 if (needsUnverifiedBagConfirmation(order, 'mark_delivered')) {
-                                  setConfirmAction({ order, action: 'mark_delivered' });
+                                  openConfirmation(order, 'mark_delivered');
                                 } else {
-                                  transition.mutate({ orderId: order.id, action: 'mark_delivered' });
+                                  transition.mutate({ orderId: order.id, action: 'mark_delivered', expected: { actionRevision: order.actionRevision ?? 0 } });
                                 }
                               }}
                             >
                               Marcar como entregado
                             </Button>
                           ) : order.fulfillmentState === 'delivered' ? (
-                            <p className="text-[13px] font-semibold text-ink-700">Sin pasos operativos pendientes.</p>
+                            <p className="text-[13px] font-semibold text-ink-700">{order.paymentState === 'pending' ? 'Entregado. Falta registrar el cobro.' : 'Pedido entregado. Podés corregir sus registros en Más opciones.'}</p>
                           ) : null}
                         </>
                       )}
 
                           {/* Acciones secundarias (cancelar, envío intermedio, reintegro) */}
-                          {actions.filter((a) => a !== 'mark_ready' && a !== 'mark_paid' && a !== 'mark_delivered' && a !== 'mark_gifted' && a !== 'mark_at_cost').length > 0 ? (
+                          {order.orderState !== 'cancelled' && (cancellationBlock || actions.filter((a) => a !== 'mark_ready' && a !== 'mark_paid' && a !== 'mark_delivered' && a !== 'mark_gifted' && a !== 'mark_at_cost').length > 0) ? (
                             <div>
                               <button
                                 type="button"
@@ -789,25 +820,29 @@ export default function OrdersPage() {
                                     [order.id]: !prev[order.id]
                                   }))
                                 }
-                                className="mt-1 flex min-h-10 items-center justify-center gap-1 text-[13.5px] font-bold text-ink-700 hover:text-ink-950 w-full py-1"
+                                aria-expanded={showMore}
+                                aria-controls={`order-options-${order.id}`}
+                                className="mt-1 flex min-h-11 items-center justify-center gap-1 text-[13.5px] font-bold text-ink-700 hover:text-ink-950 w-full py-1"
                               >
                                 <MoreHorizontal className="size-4" />
                                 {showMore ? 'Menos opciones' : 'Más opciones'}
                               </button>
 
                               {showMore ? (
-                                <div className="mt-2 space-y-2 border-t border-ink-950/8 pt-2">
+                                <div id={`order-options-${order.id}`} className="mt-2 space-y-2 border-t border-ink-950/8 pt-2">
+                                  {actionEditsPending ? <p className="text-sm text-ink-700">Guardá o descartá la edición del envío o el conteo de la bolsita antes de cambiar el pedido.</p> : null}
                                   {actions
                                     .filter((a) => a !== 'mark_ready' && a !== 'mark_paid' && a !== 'mark_delivered' && a !== 'mark_gifted' && a !== 'mark_at_cost')
                                     .map((secAction) => {
-                                      const isDestructive = secAction === 'cancel' || secAction === 'mark_refunded';
+                                      const isDestructive = secAction === 'cancel' || secAction === 'mark_refunded' || isOrderReversal(secAction);
                                       return (
                                         <Button
                                           key={secAction}
+                                          disabled={actionEditsPending}
                                           variant="ghost"
                                           size="sm"
                                           className={cn(
-                                            'w-full text-[13.5px] font-bold',
+                                            'min-h-11 w-full justify-start whitespace-normal text-left text-sm font-bold',
                                             secAction === 'cancel'
                                               ? 'text-rose-700 hover:bg-rose-50 hover:text-rose-800'
                                               : 'text-ink-800 hover:text-ink-950'
@@ -818,19 +853,25 @@ export default function OrdersPage() {
                                           }
                                           onClick={() => {
                                             if (isDestructive || needsUnverifiedBagConfirmation(order, secAction)) {
-                                              setConfirmAction({ order, action: secAction });
+                                              openConfirmation(order, secAction);
                                             } else {
                                               transition.mutate({
                                                 orderId: order.id,
-                                                action: secAction
+                                                action: secAction,
+                                                expected: { actionRevision: order.actionRevision ?? 0 }
                                               });
                                             }
                                           }}
                                         >
+                                          {isOrderReversal(secAction) ? <Undo2 className="size-4 shrink-0" aria-hidden="true" /> : null}
                                           {ORDER_ACTION_LABELS[secAction]}
                                         </Button>
                                       );
                                     })}
+                                  {cancellationBlock ? <div className="border-t border-ink-950/8 pt-3">
+                                    <Button variant="ghost" size="sm" disabled aria-describedby={`cancel-help-${order.id}`} className="min-h-11 w-full justify-start text-sm">Cancelar pedido</Button>
+                                    <p id={`cancel-help-${order.id}`} className="mt-1 text-sm leading-relaxed text-ink-700">{cancellationBlock}</p>
+                                  </div> : null}
                                 </div>
                               ) : null}
                             </div>
@@ -851,6 +892,7 @@ export default function OrdersPage() {
               onClose={() => { if (!transition.isPending) setConfirmAction(null); }}
               maxWidth="md"
               ariaLabelledBy="confirm-order-action-title"
+              ariaDescribedBy="confirm-order-action-description"
             >
               <div className="flex items-start gap-4">
                 <div
@@ -865,7 +907,7 @@ export default function OrdersPage() {
                           : 'bg-amber-100 text-amber-800'
                   )}
                 >
-                  {confirmAction.action === 'mark_gifted' ? (
+                  {isOrderReversal(confirmAction.action) ? <Undo2 className="size-6" aria-hidden="true" /> : confirmAction.action === 'mark_gifted' ? (
                     <Gift className="size-6" />
                   ) : confirmAction.action === 'mark_at_cost' ? (
                     <Tag className="size-6 text-amber-700" />
@@ -873,9 +915,11 @@ export default function OrdersPage() {
                     <AlertTriangle className="size-6" />
                   )}
                 </div>
-                <div className="space-y-1">
+                <div className="min-w-0 space-y-1 break-words">
                   <h3 id="confirm-order-action-title" className="font-display text-xl font-black text-ink-950">
-                    {confirmAction.action === 'mark_gifted'
+                    {isOrderReversal(confirmAction.action)
+                      ? `¿${ORDER_ACTION_LABELS[confirmAction.action]} del pedido #${confirmAction.order.number}?`
+                      : confirmAction.action === 'mark_gifted'
                       ? `¿Registrar pedido #${confirmAction.order.number} como regalo / cortesía?`
                       : confirmAction.action === 'mark_at_cost'
                         ? `¿Cobrar pedido #${confirmAction.order.number} a precio de costo?`
@@ -900,13 +944,30 @@ export default function OrdersPage() {
                 </div>
               </div>
 
-              <div className="mt-4 rounded-2xl bg-cream-50 p-4 text-sm text-ink-700 space-y-2">
+              <div id="confirm-order-action-description" className="mt-4 rounded-2xl bg-cream-50 p-4 text-sm text-ink-700 space-y-2">
                 {needsUnverifiedBagConfirmation(confirmAction.order, confirmAction.action) ? (
                   <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 font-semibold text-amber-950">
                     La bolsita figura sin verificar en la app. Comprobá físicamente que contiene todas las unidades de este pedido. Si falta algo, volvé y registrá el armado antes de continuar.
                   </p>
                 ) : null}
-                {confirmAction.action === 'mark_gifted' ? (
+                {confirmAction.action === 'reverse_payment' ? (
+                  <>
+                    <p>El pedido volverá a <strong>pendiente de cobro</strong>. Se quitarán {formatMoney(confirmAction.order.totalCents)} de las ventas y se actualizarán el margen y el saldo del cliente.</p>
+                    <p>Se conservarán los precios acordados, el envío y los costos registrados{confirmAction.order.saleType === 'cost' ? ', incluido el precio al costo' : ''}. La entrega y el stock conservarán su estado.</p>
+                    <p className="font-semibold text-ink-950">Esta acción corrige el registro. Si ya recibiste el dinero, acordá y realizá la devolución antes de cancelar el pedido.</p>
+                  </>
+                ) : confirmAction.action === 'reverse_delivery' && confirmAction.order.shippedAt ? (
+                  <>
+                    <p>El pedido volverá a <strong>enviado</strong>. La mercadería seguirá fuera del local y el stock no cambiará.</p>
+                    <p>Para cancelarlo, después deshacé el envío cuando los productos estén de regreso en el local.</p>
+                  </>
+                ) : confirmAction.action === 'reverse_delivery' || confirmAction.action === 'reverse_shipment' ? (
+                  <>
+                    <p>El pedido volverá a <strong>pendiente de entrega</strong>. Sus unidades volverán al stock físico y quedarán <strong>reservadas para este mismo pedido</strong>.</p>
+                    <p>Se conservarán el cobro, los costos y el armado guardado. La corrección quedará registrada en los movimientos de inventario.</p>
+                    <p className="font-semibold text-ink-950">Confirmá solo si la mercadería está en el local: porque la salida se marcó por error o porque los productos ya volvieron.</p>
+                  </>
+                ) : confirmAction.action === 'mark_gifted' ? (
                   <>
                     <p>
                       Este pedido se registrará como <strong>regalo / atención de cortesía</strong>:
@@ -994,14 +1055,19 @@ export default function OrdersPage() {
                   )}
                   loading={transition.isPending}
                   onClick={async () => {
+                    if (transition.isPending) return;
                     transition.mutate({
                       orderId: confirmAction.order.id,
                       action: confirmAction.action,
-                      ...(['mark_paid','mark_at_cost','mark_gifted'].includes(confirmAction.action) ? {expected: {shippingFeeRevision:confirmAction.order.shippingFeeRevision ?? 0,totalCents:confirmAction.order.totalCents,costTotalCents:confirmAction.order.costTotalCents}} : {})
+                      expected: { actionRevision: confirmAction.order.actionRevision ?? 0 },
+                      ...(isOrderReversal(confirmAction.action) ? { expected: { operationId: confirmAction.operationId, actionRevision: confirmAction.order.actionRevision ?? 0 } } : {}),
+                      ...(['mark_paid','mark_at_cost','mark_gifted'].includes(confirmAction.action) ? {expected: {actionRevision:confirmAction.order.actionRevision ?? 0,shippingFeeRevision:confirmAction.order.shippingFeeRevision ?? 0,totalCents:confirmAction.order.totalCents,costTotalCents:confirmAction.order.costTotalCents}} : {})
                     }, { onSuccess: () => setConfirmAction(null) });
                   }}
                 >
-                  {confirmAction.action === 'mark_gifted'
+                  {isOrderReversal(confirmAction.action)
+                    ? `Sí, ${ORDER_ACTION_LABELS[confirmAction.action].toLowerCase()}`
+                    : confirmAction.action === 'mark_gifted'
                     ? 'Sí, registrar como regalo'
                     : confirmAction.action === 'mark_at_cost'
                       ? 'Sí, cobrar al costo'

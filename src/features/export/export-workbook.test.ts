@@ -22,7 +22,7 @@ describe('business XLSX contract', () => {
     const dataset = await demoBusinessApi.getExportDataset();
     const workbook = buildBusinessWorkbook(dataset);
     expect(workbook.sheets.map((sheet) => sheet.name)).toEqual([
-      'Resumen', 'Productos', 'Stock', 'Pedidos', 'Detalle pedidos', 'Ventas', 'Compras', 'Detalle compras', 'Movimientos', 'Reservas', 'Clientes', 'Gastos varios', 'Historial gastos', 'Recepciones', 'Historial envíos clientes', 'IPC', 'Usuarios'
+      'Resumen', 'Productos', 'Stock', 'Pedidos', 'Detalle pedidos', 'Ventas', 'Compras', 'Detalle compras', 'Movimientos', 'Reservas', 'Clientes', 'Gastos varios', 'Historial gastos', 'Recepciones', 'Historial envíos clientes', 'Correcciones pedidos', 'IPC', 'Usuarios'
     ]);
     expect(workbook.filename).toMatch(/^respaldo-impulso-\d{8}-\d{4}\.xlsx$/);
   });
@@ -50,7 +50,7 @@ describe('business XLSX contract', () => {
     expect(files['xl/styles.xml']).toBeDefined();
 
     const workbookXml = strFromU8(files['xl/workbook.xml']!);
-    expect(workbookXml.match(/<sheet\b/gu)).toHaveLength(17);
+    expect(workbookXml.match(/<sheet\b/gu)).toHaveLength(18);
 
     const xmlEntries = Object.entries(files)
       .filter(([path]) => path.endsWith('.xml'))
@@ -118,7 +118,7 @@ describe('business XLSX contract', () => {
       expect((await stat(reopenedPath)).size).toBeGreaterThan(0);
       const reopenedFiles = unzipSync(await readFile(reopenedPath));
       const reopenedWorkbookXml = strFromU8(reopenedFiles['xl/workbook.xml']!);
-      expect(reopenedWorkbookXml.match(/<sheet\b/gu)).toHaveLength(17);
+      expect(reopenedWorkbookXml.match(/<sheet\b/gu)).toHaveLength(18);
     } finally {
       await rm(temporaryRoot, { recursive: true, force: true });
     }

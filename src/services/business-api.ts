@@ -18,7 +18,7 @@ import type {
   Order,
   OrderAction,
   OrderShippingFeeInput,
-  OrderPaymentExpectation,
+  OrderTransitionExpectation,
   ProductReservation,
   Purchase,
   PurchaseImpactItem,
@@ -146,7 +146,7 @@ export interface BusinessApi {
   listOrders(page?: number, pageSize?: number, search?: string, state?: OrderListFilter): Promise<OrdersPage>;
   listPaidOrders(page?: number, pageSize?: number, from?: string, to?: string): Promise<Page<Order>>;
   confirmImportedOrder(input: ImportOrderInput): Promise<Order>;
-  transitionOrder(orderId: string, action: OrderAction, expected?: OrderPaymentExpectation): Promise<Order>;
+  transitionOrder(orderId: string, action: OrderAction, expected?: OrderTransitionExpectation): Promise<Order>;
   saveOrderShippingFee(input: OrderShippingFeeInput): Promise<Order>;
   saveOrderPacking(orderId: string, items: Array<{ orderItemId: string; packedQuantity: number }>, expectedRevision: number): Promise<Order>;
   listPurchases(page?: number, pageSize?: number, state?: 'ordered' | 'received' | 'all'): Promise<PurchasesPage>;

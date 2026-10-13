@@ -121,6 +121,9 @@ export const buildBusinessWorkbook = (data: ExportDataset): BusinessWorkbook => 
     sheet('Historial envíos clientes', ['ID', 'Operación ID', 'Pedido ID', 'Antes', 'Después', 'Fecha', 'Realizado por', 'Datos de la operación'], [38,38,38,60,60,25,24,60], (data.orderShippingFeeHistory ?? []).map(event => [
       text(event.id), text(event.operationId), text(event.orderId), text(JSON.stringify(event.previous)), text(JSON.stringify(event.current)), text(event.createdAt), text(event.createdByName), text(event.input ? JSON.stringify(event.input) : null)
     ])),
+    sheet('Correcciones pedidos', ['Operación', 'Pedido', 'Acción', 'Antes', 'Después', 'Fecha', 'Realizado por'], [38,38,24,60,60,25,24], (data.orderActionHistory ?? []).map(event => [
+      text(event.operationId), text(event.orderId), text(event.action), text(JSON.stringify(event.previous)), text(JSON.stringify(event.current)), text(event.createdAt), text(event.createdByName)
+    ])),
     sheet('IPC', ['Período', 'Índice oficial', 'Fuente', 'Publicado'], [16, 18, 55, 25], data.inflation.map((index) => [
       text(index.period), number(index.indexValue), text(index.sourceUrl), text(index.publishedAt)
     ])),

@@ -26,6 +26,16 @@ Los estados son ortogonales:
 
 `confirmed` reserva. `paid` reconoce facturación para métricas comerciales. `shipped` o `delivered`, según modalidad, descarga stock. Ninguno de estos eventos se infiere silenciosamente de otro.
 
+## Correcciones de pedidos
+
+- Deshacer un cobro es una corrección explícita: vuelve a `pending`, borra la fecha actual de cobro y lo excluye de ventas, impuestos, costos de ventas y margen reconocido. Actualiza el saldo del cliente. No ejecuta una devolución de dinero ni modifica stock o entrega.
+- Una venta al costo conserva su clasificación, los precios acordados, el envío y los costos históricos después de deshacer su cobro. Cobrar nuevamente registra una nueva fecha de cobro.
+- Deshacer una entrega directa devuelve las unidades físicas y reactiva sus reservas originales en una sola transacción. La mercadería debe estar en el local. El disponible no aumenta mientras el pedido conserve sus reservas.
+- Si una entrega tuvo un envío previo, deshacerla devuelve el estado a `shipped` y conserva la salida de stock. Deshacer el envío, una vez que la mercadería regresó, devuelve las unidades físicas y sus reservas.
+- Cancelar exige que el pedido no figure cobrado ni con mercadería fuera del local. Si hay unidades en una bolsita, hay que devolverlas al estante y guardar el armado en cero. Cancelar libera reservas físicas, entrantes y sin cobertura, sin volver a sumar unidades físicas.
+- Cada corrección conserva un evento con autor y estado anterior/posterior, incluido en el respaldo. Una operación repetida con la misma clave no duplica sus efectos. Las confirmaciones sobre una revisión anterior del pedido se rechazan.
+- El ritmo de ventas, cobertura y sugerencias de compra cuentan una sola salida vigente por pedido/producto; los movimientos deshechos y las salidas repetidas durante una corrección no inflan la demanda.
+
 ## Compra
 
 - compra: `draft | ordered | received | cancelled`;

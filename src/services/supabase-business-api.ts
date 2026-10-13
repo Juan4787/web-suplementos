@@ -1,4 +1,5 @@
 import { appEnv } from '@/app/env';
+import { isOrderReversal } from '@/domain/order-actions';
 import { AppError } from '@/domain/errors';
 import type {
   AdminProduct,
@@ -32,6 +33,11 @@ const configurationError = (): AppError =>
 export const translateDatabaseError = (error: { message?: string; code?: string }): AppError => {
   const diagnostic = `${error.code ?? ''} ${error.message ?? ''}`;
   const businessMessages: Record<string, [string, string]> = {
+    ORDER_ACTION_CHANGED: ['El pedido cambió desde que abriste la confirmación.', 'Cerrá la confirmación y revisá el estado actualizado antes de continuar.'],
+    ORDER_REVERSAL_RESERVATIONS_MISMATCH: ['Las reservas de este pedido necesitan una revisión.', 'Revisá sus movimientos y reservas en Inventario antes de deshacer la salida.'],
+    ORDER_REVERSAL_CONFIRMATION_REQUIRED: ['Falta revisar el estado del pedido.', 'Volvé a abrir la acción desde Pedidos para confirmar sus efectos.'],
+    CANNOT_CANCEL_PAID_ORDER: ['Este pedido todavía figura cobrado.', 'Deshacé el cobro y resolvé la devolución del dinero antes de cancelarlo.'],
+    CANNOT_CANCEL_FULFILLED_ORDER: ['La mercadería todavía figura fuera del local.', 'Deshacé la entrega o el envío cuando los productos estén de regreso antes de cancelar.'],
     SHIPPING_FEE_LOCKED: ['El envío solo puede cambiarse antes del cobro.', 'Actualizá el pedido para ver el importe que quedó registrado.'],
     SHIPPING_FEE_CHANGED: ['El envío cambió mientras lo estabas editando.', 'Cancelá la edición y revisá el importe actualizado antes de guardar.'],
     ORDER_PAYMENT_AMOUNT_CHANGED: ['El importe del pedido cambió desde que abriste la confirmación.', 'Cerrá la confirmación y revisá el total actualizado antes de cobrar o regalar.'],
@@ -350,7 +356,20 @@ export const supabaseBusinessApi: BusinessApi = {
   },
   saveOrderShippingFee: (input) => rpc<Order>('save_order_shipping_fee', { p_fee: input }),
   transitionOrder: async (orderId, action, expected) => {
-    const order = expected
+    if (isOrderReversal(action)) {
+      if (!expected || !('operationId' in expected)) throw new AppError('business', 'Volvé a abrir la acción desde Pedidos para confirmar sus efectos.');
+      return rpc<Order>('reverse_order_action', { p_order_id: orderId, p_action: action,
+        p_operation_id: expected.operationId, p_expected_revision: expected.actionRevision });
+    }
+    if (expected && 'actionRevision' in expected && expected.actionRevision !== undefined) {
+      return rpc<Order>('transition_order_reviewed', { p_order_id: orderId, p_action: action,
+        p_expected_revision: expected.actionRevision,
+        ...('shippingFeeRevision' in expected ? {
+          p_expected_fee_revision: expected.shippingFeeRevision, p_expected_total_cents: expected.totalCents,
+          p_expected_cost_cents: expected.costTotalCents
+        } : {}) });
+    }
+    const order = expected && 'shippingFeeRevision' in expected
       ? await rpc<Order>('transition_order_checked', { p_order_id: orderId, p_action: action,
         p_expected_fee_revision: expected.shippingFeeRevision, p_expected_total_cents: expected.totalCents, p_expected_cost_cents: expected.costTotalCents })
       : await rpc<Order>('transition_order', { p_order_id: orderId, p_action: action });

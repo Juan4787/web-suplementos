@@ -12,7 +12,7 @@ import {
   toDemoInventory
 } from '@/data/demo-data';
 import { AppError } from '@/domain/errors';
-import { availabilityFromQuantity } from '@/domain/inventory';
+import { suggestedPurchase, availabilityFromQuantity } from '@/domain/inventory';
 import { orderLineRevenue, percentageShippingCents, shippingFeeNeedsReview, validateShippingCents } from '@/domain/order-shipping';
 import { calculateBasisPoints } from '@/domain/money';
 import { salesDateAt } from '@/domain/sales-date';
@@ -21,7 +21,7 @@ import {
   listMiscExpenseOccurrenceDates,
   validateMiscExpense
 } from '@/domain/misc-expenses';
-import { availableOrderActions } from '@/domain/order-actions';
+import { isOrderReversal, availableOrderActions } from '@/domain/order-actions';
 import type {
   AdminProduct,
   AnalyticsSummary,
@@ -71,6 +71,8 @@ const state: {
     shippingCostCents: number;
     result: { purchase: Purchase; unblockedOrders: Array<{ id: string; number: number }> };
   }>;
+  reversalHistory: NonNullable<ExportDataset['orderActionHistory']>;
+  reversalOperations: Map<string, { orderId: string; action: string; revision: number }>;
   shippingFeeOperations: Map<string, { input: string; orderId: string }>;
   shippingFeeHistory: OrderShippingFeeEvent[];
   receiptHistory: PurchaseReceipt[];
@@ -102,6 +104,8 @@ const state: {
   expenseHistory: [],
   importedProtocols: new Map(),
   purchaseReceipts: new Map(),
+  reversalHistory: [],
+  reversalOperations: new Map(),
   shippingFeeOperations: new Map(),
   shippingFeeHistory: [],
   receiptHistory: [],
@@ -129,6 +133,29 @@ const refreshProductAvailability = (product: AdminProduct): void => {
   product.availability = available > 0 ? availabilityFromQuantity(available, product.reorderPoint) : incomingAvailable > 0 ? 'incoming' : 'out_of_stock';
   product.maxOrderQuantity = Math.max(0, Math.min(20, available + incomingAvailable));
   product.updatedAt = new Date().toISOString();
+};
+
+const currentDemoInventory = () => {
+  const units = new Map<string, number>();
+  const counted = new Set<string>();
+  const ordersById = new Map(state.orders.map(order => [order.id, order]));
+  const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+  for (const movement of [...state.movements].sort((a, b) => b.createdAt.localeCompare(a.createdAt))) {
+    if (movement.kind !== 'sale') continue;
+    const order = movement.orderId ? ordersById.get(movement.orderId) : undefined;
+    if (movement.orderId && (!order || order.orderState === 'cancelled' ||
+      !['shipped','delivered'].includes(order.fulfillmentState) || order.paymentState === 'gifted' || order.saleType === 'gift')) continue;
+    const key = `${movement.productId}:${movement.orderId ?? movement.id}`;
+    if (counted.has(key)) continue;
+    counted.add(key);
+    if (new Date(movement.createdAt).getTime() >= cutoff) units.set(movement.productId, (units.get(movement.productId) ?? 0) - movement.physicalDelta);
+  }
+  return toDemoInventory(state.products).map(item => {
+    const average = (units.get(item.id) ?? 0) / 30;
+    return { ...item, averageDailySales: Math.round(average * 100) / 100,
+      coverageDays: average > 0 ? Math.round(item.available / average * 10) / 10 : null,
+      suggestedPurchase: suggestedPurchase(item.available, item.incoming - (item.incomingReserved ?? 0), average, item.leadTimeDays, item.safetyStock) };
+  });
 };
 
 const nextUuid = (): string => crypto.randomUUID();
@@ -311,7 +338,7 @@ const recordShortage = (purchase: Purchase, item: Purchase['items'][number], qua
       line.uncoveredQuantity = (line.uncoveredQuantity ?? 0) + take;
       product.incomingReserved = Math.max(0, (product.incomingReserved ?? 0) - take);
       toUncover -= take;
-      if (take > 0) order.stockReadiness = 'uncovered';
+      if (take > 0) { order.stockReadiness = 'uncovered'; order.actionRevision = (order.actionRevision ?? 0) + 1; }
     }
   }
   if (purchase.items.every(line => (line.receivedQuantity ?? 0) + (line.shortageQuantity ?? 0) === line.quantity)) {
@@ -569,7 +596,7 @@ export const demoBusinessApi: BusinessApi = {
   },
 
   async getDashboard() {
-    const inventory = toDemoInventory(state.products);
+    const inventory = currentDemoInventory();
     const expenseTo = salesDateAt(new Date().toISOString());
     const expenseFrom = `${expenseTo.slice(0, 7)}-01`;
     const activeThisMonth = state.orders.filter(
@@ -707,7 +734,7 @@ export const demoBusinessApi: BusinessApi = {
   },
 
   async listInventory() {
-    return latency(toDemoInventory(state.products));
+    return latency(currentDemoInventory());
   },
 
   async adjustStock(productId, delta, reason, expectedOnHand) {
@@ -1063,6 +1090,7 @@ export const demoBusinessApi: BusinessApi = {
     order.shippingFeeBasisPoints = input.method === 'percentage' ? input.basisPoints! : null;
     order.shippingFeeCostBaseCents = input.method === 'percentage' ? input.expectedCostCents! : null;
     order.shippingFeeRevision = (order.shippingFeeRevision ?? 0) + 1;
+    order.actionRevision = (order.actionRevision ?? 0) + 1;
     order.totalCents = order.subtotalCents + amount;
     order.taxAmountCents = order.saleType === 'cost' ? 0 : calculateBasisPoints(order.totalCents, order.taxRateBasisPoints ?? 0);
     state.shippingFeeHistory.push({id: nextUuid(), operationId: input.operationId, orderId: order.id, input: {...input}, previous: before, current: snapshot(), createdAt: new Date().toISOString(), createdByName: 'Dueña demo'});
@@ -1074,7 +1102,63 @@ export const demoBusinessApi: BusinessApi = {
   async transitionOrder(orderId, action, expected) {
     const order = state.orders.find((candidate) => candidate.id === orderId);
     if (!order) throw new AppError('business', 'No encontramos el pedido.');
+    if (isOrderReversal(action)) {
+      if (!expected || !('operationId' in expected)) throw new AppError('business', 'Volvé a abrir la acción desde Pedidos para confirmar sus efectos.');
+      const previous = state.reversalOperations.get(expected.operationId);
+      if (previous) {
+        if (previous.orderId !== orderId || previous.action !== action || previous.revision !== expected.actionRevision) {
+          throw new AppError('business', 'Los datos cambiaron respecto del intento anterior.');
+        }
+        return latency(order);
+      }
+      if ((order.actionRevision ?? 0) !== expected.actionRevision) throw new AppError('business', 'El pedido cambió desde que abriste la confirmación.', { nextAction: 'Cerrá la confirmación y revisá el estado actualizado antes de continuar.' });
+      if (!availableOrderActions(order).includes(action)) throw new AppError('business', 'Ese paso ya no está disponible para el pedido.');
+      const before = structuredClone(order);
+      const returnsStock = action === 'reverse_shipment' || (action === 'reverse_delivery' && !order.shippedAt);
+      const products = returnsStock ? order.items.map(item => {
+        const product = state.products.find(candidate => candidate.id === item.productId);
+        if (!product) throw new AppError('business', 'Las reservas de este pedido necesitan una revisión.');
+        return { item, product };
+      }) : [];
+      const now = new Date().toISOString();
+      if (action === 'reverse_payment') {
+        order.paymentState = 'pending';
+        order.paidAt = null;
+        const customer = state.customers.find(candidate => candidate.id === order.customerId);
+        if (customer && customer.totalPaidCents !== null) customer.totalPaidCents = Math.max(0, customer.totalPaidCents - order.totalCents);
+      } else {
+        for (const { item, product } of products) {
+          product.onHand += item.quantity;
+          product.reserved += item.quantity;
+          item.physicalReservedQuantity = item.quantity;
+          item.incomingQuantity = 0;
+          item.uncoveredQuantity = 0;
+          refreshProductAvailability(product);
+          state.movements.unshift({ id: nextUuid(), productId: product.id, productName: product.name,
+            kind: 'return', physicalDelta: item.quantity, reservedDelta: item.quantity,
+            reason: `Pedido #${order.number}: ${action === 'reverse_shipment' ? 'envío' : 'entrega'} deshecho; mercadería de regreso y reservada`,
+            orderId: order.id, purchaseId: null, createdAt: now, createdByName: demoStaff.displayName });
+        }
+        order.fulfillmentState = returnsStock ? 'pending' : 'shipped';
+        order.fulfilledAt = null;
+        if (returnsStock) { order.shippedAt = null; order.stockReadiness = 'ready'; }
+      }
+      order.actionRevision = (order.actionRevision ?? 0) + 1;
+      state.reversalHistory.push({ operationId: expected.operationId, orderId, action, previous: before,
+        current: structuredClone(order), createdAt: now, createdByName: demoStaff.displayName });
+      state.reversalOperations.set(expected.operationId, { orderId, action, revision: expected.actionRevision });
+      state.revision += 1;
+      return latency(order);
+    }
+    if (expected && 'actionRevision' in expected && expected.actionRevision !== undefined &&
+      expected.actionRevision !== (order.actionRevision ?? 0)) {
+      throw new AppError('business', 'El pedido cambió desde que abriste la confirmación.', {
+        nextAction: 'Cerrá la confirmación y revisá el estado actualizado antes de continuar.'
+      });
+    }
+
     if (action === 'mark_gifted' && order.paymentState === 'gifted') return latency(order);
+    if (action === 'cancel' && order.orderState === 'cancelled') return latency(order);
 
     const lacksPhysicalReservation = order.items.some(item =>
       (item.incomingQuantity ?? 0) > 0 || (item.uncoveredQuantity ?? 0) > 0
@@ -1127,7 +1211,7 @@ export const demoBusinessApi: BusinessApi = {
       });
     }
 
-    if (expected && ['mark_paid','mark_at_cost','mark_gifted'].includes(action) && ((order.shippingFeeRevision ?? 0) !== expected.shippingFeeRevision || (order.paymentState === 'pending' && order.totalCents !== expected.totalCents) || (['mark_at_cost','mark_gifted'].includes(action) && order.costTotalCents !== expected.costTotalCents))) throw new AppError('business', 'El importe del pedido cambió desde que abriste la confirmación.', {nextAction:'Cerrá la confirmación y revisá el total actualizado antes de cobrar o regalar.'});
+    if (expected && 'shippingFeeRevision' in expected && ['mark_paid','mark_at_cost','mark_gifted'].includes(action) && ((order.shippingFeeRevision ?? 0) !== expected.shippingFeeRevision || (order.paymentState === 'pending' && order.totalCents !== expected.totalCents) || (['mark_at_cost','mark_gifted'].includes(action) && order.costTotalCents !== expected.costTotalCents))) throw new AppError('business', 'El importe del pedido cambió desde que abriste la confirmación.', {nextAction:'Cerrá la confirmación y revisá el total actualizado antes de cobrar o regalar.'});
     const now = new Date().toISOString();
     if (['mark_paid', 'mark_at_cost'].includes(action) && shippingFeeNeedsReview(order)) throw new AppError('business', 'El costo de los productos cambió. Revisá el porcentaje antes de cobrar.');
     if (action === 'mark_paid') {
@@ -1266,6 +1350,7 @@ export const demoBusinessApi: BusinessApi = {
       }
       order.fulfillmentState = action === 'mark_shipped' ? 'shipped' : 'delivered';
       if (action === 'mark_delivered') order.fulfilledAt = now;
+      if (action === 'mark_shipped') order.shippedAt = now;
     }
     if (action === 'cancel') {
       for (const item of order.items) for (const allocation of state.incomingAllocations.get(item.id) ?? []) allocation.quantity = 0;
@@ -1293,6 +1378,7 @@ export const demoBusinessApi: BusinessApi = {
         });
       }
     }
+    order.actionRevision = (order.actionRevision ?? 0) + 1;
     state.revision += 1;
     return latency(order);
   },
@@ -1322,6 +1408,7 @@ export const demoBusinessApi: BusinessApi = {
     }
     order.packingTracked = true;
     order.packingRevision = (order.packingRevision ?? 0) + 1;
+    order.actionRevision = (order.actionRevision ?? 0) + 1;
     const allFull = order.items.every(item => item.packedQuantity === item.quantity);
     const anyPacked = order.items.some(item => (item.packedQuantity ?? 0) > 0);
     order.preparationState = order.preparationState === 'ready' && allFull
@@ -1513,6 +1600,7 @@ export const demoBusinessApi: BusinessApi = {
             if (allocations && !linked) continue;
             const assigned = Math.min(remainingToAssign, linked?.quantity ?? line.incomingQuantity ?? 0);
             if (linked) linked.quantity -= assigned;
+            if (assigned > 0) order.actionRevision = (order.actionRevision ?? 0) + 1;
             line.incomingQuantity = (line.incomingQuantity ?? 0) - assigned;
             line.physicalReservedQuantity = (line.physicalReservedQuantity ?? 0) + assigned;
             product.incomingReserved = Math.max(0, (product.incomingReserved ?? 0) - assigned);
@@ -1718,6 +1806,7 @@ export const demoBusinessApi: BusinessApi = {
       product.incomingReserved = (product.incomingReserved ?? 0) + take;
       order.stockReadiness = order.items.some(i => (i.uncoveredQuantity ?? 0)>0) ? 'uncovered' : 'waiting_incoming';
       order.expectedArrivalAt = replacement.expectedAt;
+      order.actionRevision = (order.actionRevision ?? 0) + 1;
       capacity -= take; transferred++;
     }
     refreshProductAvailability(product);
@@ -1929,14 +2018,14 @@ export const demoBusinessApi: BusinessApi = {
       revision,
       settings: state.settings,
       products: state.products.map((product) => ({ ...product, createdAt: product.updatedAt })),
-      inventory: toDemoInventory(state.products),
+      inventory: currentDemoInventory(),
       orders: state.orders.map((order, index) => ({
         ...order,
         source: 'whatsapp_import',
         protocolOrderId: order.id,
         protocolChecksum: index.toString(16).toUpperCase().padStart(8, '0'),
         refundedAt: order.paymentState === 'refunded' ? order.createdAt : null,
-        shippedAt: order.fulfillmentState === 'shipped' ? order.fulfilledAt ?? order.createdAt : null,
+        shippedAt: order.shippedAt ?? null,
         cancelledAt: order.orderState === 'cancelled' ? order.fulfilledAt ?? order.createdAt : null
       })),
       purchases: state.purchases.map((purchase) => ({
@@ -1951,6 +2040,7 @@ export const demoBusinessApi: BusinessApi = {
       inflation: state.inflation,
       expenses: state.expenses,
       expenseHistory: state.expenseHistory,
+      orderActionHistory: structuredClone(state.reversalHistory),
       orderShippingFeeHistory: state.shippingFeeHistory,
       purchaseReceipts: state.receiptHistory,
       reservations: state.orders.flatMap((order) => order.items.map((item) => ({
@@ -2009,7 +2099,7 @@ export const demoBusinessApi: BusinessApi = {
   },
 
   async askBusinessAi(message) {
-    const inventory = toDemoInventory(state.products);
+    const inventory = currentDemoInventory();
     const urgent = inventory
       .filter((item) => item.status !== 'ok')
       .sort((left, right) => left.available - right.available)[0];

@@ -137,6 +137,8 @@ export type Order = {
   paymentState: PaymentState;
   preparationState: PreparationState;
   fulfillmentState: FulfillmentState;
+  actionRevision?: number;
+  shippedAt?: string | null;
   packingRevision?: number;
   packingTracked?: boolean;
   alreadyImported?: boolean;
@@ -173,6 +175,9 @@ export type ProductReservation = {
 };
 
 export type OrderAction =
+  | 'reverse_payment'
+  | 'reverse_delivery'
+  | 'reverse_shipment'
   | 'mark_paid'
   | 'mark_at_cost'
   | 'mark_refunded'
@@ -457,7 +462,15 @@ export type OrderShippingFeeEvent = {
   createdByName: string;
 };
 
+export type OrderReversalExpectation = {
+  operationId: string;
+  actionRevision: number;
+};
+
+export type OrderTransitionExpectation = OrderPaymentExpectation | OrderReversalExpectation | { actionRevision: number };
+
 export type OrderPaymentExpectation = {
+  actionRevision?: number;
   shippingFeeRevision: number;
   totalCents: number;
   costTotalCents: number | null;
@@ -502,6 +515,10 @@ export type ExportDataset = {
   inflation: InflationIndex[];
   expenses: MiscExpense[];
   expenseHistory: MiscExpenseAuditEntry[];
+  orderActionHistory?: Array<{
+    operationId: string; orderId: string; action: string;
+    previous: Order; current: Order; createdAt: string; createdByName: string;
+  }>;
   orderShippingFeeHistory?: OrderShippingFeeEvent[];
   purchaseReceipts?: PurchaseReceipt[];
   reservations: Array<{
