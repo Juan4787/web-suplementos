@@ -113,3 +113,17 @@ Se ejecutó la suite formal [audit-argon-control-suite.mjs](file:///home/usuario
    - 12 asientos de reconciliación en `stock_movements` con `reserved_delta` positivo y `created_by` intacto.
    - Compra #2054: `cant_comprada = 15, reservado_en_camino = 0, cupo_entrante_libre = 15`. Exactitud contable absoluta.
 
+---
+
+## 6. Comprobación Estricta de Pedidos Bloqueados vs. Stock Disponible
+
+Se ejecutó [audit-blocked-orders-check.mjs](file:///home/usuario/CascadeProjects/APP%20DE%20SUPLEMENTOS/scripts/audit-blocked-orders-check.mjs) sobre todos los pedidos pendientes de la tienda:
+
+- **Total de pedidos pendientes en tienda:** 15 pedidos.
+- **Pedidos 100% listos para armar/entregar con stock físico:** 12 pedidos.
+- **Pedidos en espera de mercadería:** Exactamente 3 pedidos (#2608, #2613, #2624).
+- **Único producto bloqueante:** **SLEEP SUPPORT**.
+- **Balance de SLEEP SUPPORT:** `en_mano = 0, reservado = 0, disponible_en_local = 0`.
+- **Certificación:** El 100% de los pedidos en espera están retenidos **única y estrictamente porque el stock físico libre es CERO**. No existe ningún pedido bloqueado por fallo del sistema ni retención indebida.
+
+
