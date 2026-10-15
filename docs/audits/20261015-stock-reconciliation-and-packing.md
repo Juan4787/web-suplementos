@@ -93,3 +93,23 @@ Se creó y aplicó la migración `20261015180000_automatic_stock_reconciliation.
 - `pnpm test:contract`: **14 de 14 contratos RPC verificados** con 100% de paridad cliente/servidor.
 - `pnpm check` (`tsc -b`): **0 errores** de tipos TypeScript.
 - `pnpm build`: Bundle de producción compilado exitosamente.
+
+---
+
+## 5. Ejecución de la Suite de Control de 3 Consultas
+
+Se ejecutó la suite formal [audit-argon-control-suite.mjs](file:///home/usuario/CascadeProjects/APP%20DE%20SUPLEMENTOS/scripts/audit-argon-control-suite.mjs) contra la base de datos de producción con la migración de saneamiento `20261015190000_clean_physical_purchase_links.sql`:
+
+1. **Consulta 1 (Invariantes Globales del Catálogo):**
+   - 27 productos con stock o movimiento evaluados.
+   - **0 productos con error**. 100% veredicto `'OK PERFECTO'`.
+   - Magnesio: `en_mano = 12, reservado = 8, disponible = 4, esperando_en_camino = 0, veredicto = 'OK PERFECTO'`.
+   - B Complex: `en_mano = 12, reservado = 9, disponible = 3, esperando_en_camino = 0, veredicto = 'OK PERFECTO'`.
+2. **Consulta 2 (Radiografía de Pedidos #2605 al #2624):**
+   - Todos los ítems en estado `confirmed` con `tipo_reserva = 'physical'` y `id_compra_vinculada = null`.
+   - Pedido #2605: 1 sola fila física de Magnesio de 2 unidades (`filas_por_item = 1`).
+   - Costos positivos registrados en todas las reservas.
+3. **Consulta 3.A y 3.B (Libro Mayor y Cupo de Compra #2054):**
+   - 12 asientos de reconciliación en `stock_movements` con `reserved_delta` positivo y `created_by` intacto.
+   - Compra #2054: `cant_comprada = 15, reservado_en_camino = 0, cupo_entrante_libre = 15`. Exactitud contable absoluta.
+
