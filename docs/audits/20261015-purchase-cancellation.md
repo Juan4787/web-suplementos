@@ -54,4 +54,18 @@ Resultados previos a publicación:
 
 Los ejemplos visibles utilizan nombres cotidianos. Las comprobaciones remotas confirman que esta tarea no creó productos, compras ni clientes de prueba en producción. Las primeras pasadas de navegador se invalidaron cuando la recarga de desarrollo coincidió con una edición; la pasada completa final se ejecutó sin editar la aplicación y pasó.
 
-El registro de publicación se añade al finalizar. No se realizan cancelaciones ni pedidos ficticios en producción para certificar el despliegue.
+## Publicación y comprobación remota
+
+Publicado el 15 de octubre de 2026 en https://tienda.desuplementos.workers.dev. Código: `60d379d`, rama `codex/purchase-cancellation-20261015`. Versión activa del alojamiento: `d1531fed-1231-4f1d-8ee3-204427ccd85c`, con el 100 % del tráfico.
+
+Las dos migraciones nuevas quedaron aplicadas. Once definiciones de funciones, incluidos los accesos, coinciden con las auditadas localmente. La revisión real de una compra se consulta correctamente. Después de publicar se comprueba:
+
+- Cero diferencias entre balance y reservas físicas, cero disponibilidad negativa y cero reservas entrantes activas en compras cerradas.
+- Cero diferencias entre costos de líneas y sus reservas; cero reservas activas en pedidos cancelados.
+- Los 14 contratos remotos existentes siguen pasando.
+- Apertura y cierre del diálogo real a 1280 y 320 píxeles, sin errores de consola, controles nativos, desbordes ni nombres técnicos de pruebas. Las comprobaciones del navegador bloquean escrituras de negocio y registran cero intentos.
+- Los 279 recursos servidos comprobables coinciden byte por byte con el paquete publicado. Se conservaron los recursos anteriores para las pestañas abiertas. Tres lecturas iniciales no coincidieron; se comprobaron de nuevo individualmente y se repitió la comparación completa, que terminó sin diferencias ni reintentos.
+
+El respaldo inmediato anterior a la publicación se restauró íntegramente en `backup_restore_cancel_release_20261015`. Su archivo privado tiene 958.346 bytes y SHA-256 `a850f9dbcaff0fde9d9f806533945315cf8de45a82ee854bfd716e0a3f367f93`. Los recibos, capturas y resultados detallados quedan fuera del repositorio en las carpetas privadas de respaldo y de verificación.
+
+No se realizaron cancelaciones ni pedidos ficticios en producción para certificar el despliegue. El recorrido completo con recepción se prueba localmente; en producción se comprueban las funciones publicadas, los datos existentes y la revisión visible sin modificar compras ni pedidos.
