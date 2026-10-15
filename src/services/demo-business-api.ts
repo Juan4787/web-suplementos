@@ -12,6 +12,7 @@ import {
   toDemoInventory
 } from '@/data/demo-data';
 import { AppError } from '@/domain/errors';
+import { countCharacters } from '@/domain/text';
 import { suggestedPurchase, availabilityFromQuantity } from '@/domain/inventory';
 import { orderLineRevenue, percentageShippingCents, shippingFeeNeedsReview, validateShippingCents } from '@/domain/order-shipping';
 import { calculateBasisPoints } from '@/domain/money';
@@ -1509,7 +1510,7 @@ export const demoBusinessApi: BusinessApi = {
       if (existing.request !== request) throw new AppError('business', 'Esta confirmación ya se usó con otros datos.');
       return latency(structuredClone(existing.result as PurchaseCancellationResult));
     }
-    if (!input.operationId || input.reason.trim().length < 3 || input.reason.trim().length > 500) {
+    if (!input.operationId || countCharacters(input.reason.trim()) < 3 || countCharacters(input.reason.trim()) > 500) {
       throw new AppError('validation', 'Escribí un motivo de entre 3 y 500 caracteres.');
     }
     const preview = purchaseCancellationPreview(input.purchaseId);
@@ -1518,7 +1519,7 @@ export const demoBusinessApi: BusinessApi = {
         nextAction: 'Actualizá la revisión antes de confirmar otra vez.'
       });
     }
-    if (input.replacement && (input.replacement.supplierName.trim().length < 2 || input.replacement.supplierName.trim().length > 120)) {
+    if (input.replacement && (countCharacters(input.replacement.supplierName.trim()) < 2 || countCharacters(input.replacement.supplierName.trim()) > 120)) {
       throw new AppError('validation', 'Escribí el nombre del nuevo proveedor.');
     }
     if (!(input.replacement ? preview.canReplace : preview.canCancel)) throw new AppError('business', 'Esta compra todavía no se puede cancelar.', {
@@ -1884,7 +1885,7 @@ export const demoBusinessApi: BusinessApi = {
     if (!purchase || !item || !Number.isSafeInteger(input.expectedPending) || input.expectedPending !== item.quantity-(item.receivedQuantity??0)-(item.shortageQuantity??0) || input.expectedPending <= 0) {
       throw new AppError('business', 'Las unidades pendientes cambiaron.', { nextAction: 'Cerrá y volvé a abrir la recepción.' });
     }
-    if (input.supplierName.trim().length < 2 || input.supplierName.trim().length > 120) throw new AppError('validation', 'Ingresá el nombre del proveedor (entre 2 y 120 caracteres).');
+    if (countCharacters(input.supplierName.trim()) < 2 || countCharacters(input.supplierName.trim()) > 120) throw new AppError('validation', 'Ingresá el nombre del proveedor (entre 2 y 120 caracteres).');
     const replacement = createPurchaseRecord({ supplierName:input.supplierName, expectedAt:input.expectedAt,
       notes:`Reposición de compra #${purchase.number}`, items:[{productId:item.productId,quantity:input.expectedPending,unitCostCents:item.unitCostCents}] });
     recordShortage(purchase, item, input.expectedPending);

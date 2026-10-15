@@ -53,6 +53,29 @@ describe('Carga de compras', () => {
   });
   afterEach(cleanup);
 
+  it.each([
+    { received: 0, shortage: 5, status: 'Cerrado con faltantes', detail: 'Sin mercadería recibida' },
+    { received: 2, shortage: 3, status: 'Cerrado con faltantes', detail: '2 unidades recibidas' },
+    { received: 5, shortage: 0, status: 'Recibido', detail: 'Stock actualizado' }
+  ])('describes a closed receipt accurately: $received received and $shortage missing', async ({ received, shortage, status, detail }) => {
+    auth.tab = 'compras';
+    const purchase: Purchase = { id: 'closed-purchase', number: 2099, supplierName: 'Proveedor de prueba', state: 'received',
+      orderedAt: null, expectedAt: null, receivedAt: null, totalCostCents: 500000, notes: null,
+      items: [{ id: 'closed-line', productId: demoProducts[0]!.id, productName: 'Producto de prueba', quantity: 5, receivedQuantity: received, shortageQuantity: shortage, unitCostCents: 100000 }] };
+    api.listInventory.mockResolvedValue([]);
+    api.listMovements.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 25 });
+    api.listPurchases.mockResolvedValue({ items: [purchase], total: 1, pendingTotal: 0, receivedTotal: 1, filteredTotal: 1, page: 1, pageSize: 15 });
+    render(<InventoryPage />, { wrapper: Wrapper });
+    fireEvent.click(screen.getByRole('button', { name: /^(Recepciones cerradas|Recibidos)/ }));
+    const heading = await screen.findByRole('heading', { name: 'Pedido #2099' });
+    const article = within(heading.closest('article')!);
+    expect(article.getByText(status, { exact: true })).toBeInTheDocument();
+    expect(article.getByText(detail, { exact: true })).toBeInTheDocument();
+    if (shortage) expect(article.queryByText('Stock actualizado')).not.toBeInTheDocument();
+    expect(article.queryByRole('button', { name: 'Recibir mercadería' })).not.toBeInTheDocument();
+    expect(api.receivePurchase).not.toHaveBeenCalled();
+  });
+
   it('daily purchase: protects edited data from Escape, close and Cancel without saving implicitly', async () => {
     const onClose = vi.fn();
     const native = vi.spyOn(window, 'confirm');

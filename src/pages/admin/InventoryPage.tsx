@@ -2,6 +2,7 @@ import type { ReceivePurchaseResult } from '@/domain/types';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { OpeningReservations } from '@/features/inventory/OpeningReservations';
 import { CancelPurchaseModal } from '@/components/admin/CancelPurchaseModal';
+import { countCharacters } from '@/domain/text';
 import { ClearSearchButton } from '@/components/ui/ClearSearchButton';
 import { Link, useSearch, useBlocker } from '@tanstack/react-router';
 import {
@@ -204,8 +205,8 @@ export function PurchaseFormModal({
   const purchaseIssue = productsQuery.isPending ? 'Esperá a que se carguen los productos.'
     : productsQuery.isError ? 'No pudimos cargar los productos. Usá “Intentar de nuevo”.'
     : !productsQuery.data?.some(p => p.active) ? 'Primero creá un producto activo desde Productos.'
-    : supplier.trim().length === 1 || supplier.trim().length > 120 ? 'El proveedor debe tener entre 2 y 120 caracteres; también podés dejarlo vacío.'
-    : notes.trim().length > 2000 ? 'Acortá las notas a un máximo de 2000 caracteres.'
+    : countCharacters(supplier.trim()) === 1 || countCharacters(supplier.trim()) > 120 ? 'El proveedor debe tener entre 2 y 120 caracteres; también podés dejarlo vacío.'
+    : countCharacters(notes.trim()) > 2000 ? 'Acortá las notas a un máximo de 2000 caracteres.'
     : lines.length > 100 ? 'La compra admite hasta 100 productos. Dividila en dos compras.'
     : incomplete >= 0 ? (!lines[incomplete]?.productId ? `Elegí el producto de la fila ${incomplete + 1}.` : `Ingresá una cantidad entera entre 1 y 100.000 en la fila ${incomplete + 1}.`)
     : lines.some(line => !Number.isFinite(Number(line.unitCostPesos.replace(',', '.'))) || Number(line.unitCostPesos.replace(',', '.')) < 0) ? 'Revisá el costo por unidad: debe ser cero o un importe positivo.'
@@ -499,6 +500,7 @@ export function ReceivePurchaseModal({
     missingQty: number;
   } | null>(null);
   const [newSupplierName, setNewSupplierName] = useState('');
+  const newSupplierLength = countCharacters(newSupplierName.trim());
   const [newExpectedAt, setNewExpectedAt] = useState('');
   const [reorderLoading, setReorderLoading] = useState(false);
   const replacementInFlight = useRef(false);
@@ -558,7 +560,7 @@ export function ReceivePurchaseModal({
 
   // Acción: Crear pedido de reposición a otro proveedor y transferir reservas
   const handleCreateReplacement = async () => {
-    if (!reorderingItem || replacementInFlight.current || newSupplierName.trim().length < 2 || newSupplierName.trim().length > 120) return;
+    if (!reorderingItem || replacementInFlight.current || newSupplierLength < 2 || newSupplierLength > 120) return;
     replacementInFlight.current = true;
     setReorderLoading(true);
     setError(null);
@@ -1350,7 +1352,7 @@ export function ReceivePurchaseModal({
             </div>
 
             <div className="space-y-3">
-              <Field label="Nombre del nuevo proveedor / distribuidor" hint="Ej: SupleAr, Natulab, etc.">
+              <Field label="Nombre del nuevo proveedor / distribuidor" hint="Ej: SupleAr, Natulab, etc." error={newSupplierName && (newSupplierLength < 2 || newSupplierLength > 120) ? 'Escribí entre 2 y 120 caracteres para el proveedor.' : undefined}>
                 <Input
                   placeholder="Distribuidor..."
                   value={newSupplierName}
@@ -1385,7 +1387,7 @@ export function ReceivePurchaseModal({
                 variant="primary"
                 size="sm"
                 loading={reorderLoading}
-                disabled={newSupplierName.trim().length < 2 || newSupplierName.trim().length > 120 || reorderLoading}
+                disabled={newSupplierLength < 2 || newSupplierLength > 120 || reorderLoading}
                 onClick={handleCreateReplacement}
                 className="font-black"
               >
@@ -2424,7 +2426,7 @@ export default function InventoryPage() {
                     setPurchasesPage(1);
                   }}
                 >
-                  Recibidos ({receivedPurchasesCount})
+                  Recepciones cerradas ({receivedPurchasesCount})
                 </button>
                 <button type="button" aria-pressed={purchaseFilter === 'cancelled'}
                   className={cn('min-h-9 rounded-full px-3.5 text-xs font-black transition select-none', purchaseFilter === 'cancelled' ? 'bg-brand-600 text-white shadow-sm' : 'border border-ink-950/12 bg-white text-ink-700 hover:border-ink-950/25')}
@@ -2481,6 +2483,8 @@ export default function InventoryPage() {
                 <div className="divide-y divide-ink-950/6">
                   {filteredPurchases.map((purchase) => {
                     const totalUnits = (purchase.items ?? []).reduce((sum, line) => sum + line.quantity, 0);
+                    const receivedUnits = purchase.items.reduce((sum, line) => sum + line.receivedQuantity, 0);
+                    const hasShortage = purchase.items.some(line => line.shortageQuantity > 0);
                     const isOpen = expandedPurchases[purchase.id] ?? false;
 
                     let deliveryLabel: ReactNode = <span className="text-ink-500 font-medium">Sin fecha estimada</span>;
@@ -2516,13 +2520,13 @@ export default function InventoryPage() {
                     return (
                       <article key={purchase.id} className="p-5 sm:p-6 transition hover:bg-cream-50/40">
                         {/* Fila 1: Pedido #N + Estado */}
-                        <div className="flex items-center justify-between gap-3">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
                           <h3 className="font-display text-lg sm:text-xl font-black text-ink-950">
                             Pedido #{purchase.number}
                           </h3>
                           <div>
                             {purchase.state === 'received' ? (
-                              <StatusChip label="Recibido" tone="success" />
+                              <StatusChip label={hasShortage ? 'Cerrado con faltantes' : 'Recibido'} tone={hasShortage ? 'warning' : 'success'} />
                             ) : purchase.state === 'cancelled' ? (
                               <StatusChip label={purchase.items.some(i => i.receivedQuantity > 0) ? 'Saldo cancelado' : 'Cancelado'} tone="neutral" />
                             ) : (
@@ -2586,8 +2590,9 @@ export default function InventoryPage() {
                                 </Button>
                               </>
                             ) : purchase.state === 'cancelled' ? <span className="text-xs font-bold text-ink-700">Conservado en el historial</span> : (
-                              <span className="inline-flex items-center gap-1.5 text-xs font-black text-emerald-700 bg-emerald-50 border border-emerald-200/60 px-3 py-1.5 rounded-xl">
-                                <Check className="size-3.5" /> Stock actualizado
+                              <span className={cn('inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-black', hasShortage ? 'border-amber-200 bg-amber-50 text-amber-950' : 'border-emerald-200/60 bg-emerald-50 text-emerald-700')}>
+                                {hasShortage ? <AlertTriangle className="size-3.5 shrink-0" aria-hidden="true" /> : <Check className="size-3.5 shrink-0" aria-hidden="true" />}
+                                {hasShortage ? receivedUnits === 0 ? 'Sin mercadería recibida' : `${receivedUnits} ${receivedUnits === 1 ? 'unidad recibida' : 'unidades recibidas'}` : 'Stock actualizado'}
                               </span>
                             )}
                           </div>
@@ -2963,6 +2968,7 @@ export default function InventoryPage() {
       ) : null}
       {cancellingPurchase ? <CancelPurchaseModal purchase={cancellingPurchase} onClose={() => setCancellingPurchase(null)}
         onResolve={purchase => { setCancellingPurchase(null); setReceivingPurchase(purchase); }}
+        onOpenReplacement={purchase => { setCancellingPurchase(null); setPurchaseFilter('pending'); setPurchasesPage(1); setEditingPurchase(purchase); }}
         onDone={() => { setCancellingPurchase(null); setPurchaseFilter('cancelled'); setPurchasesPage(1); }} /> : null}
     </div>
   );

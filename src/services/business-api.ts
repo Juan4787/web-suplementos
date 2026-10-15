@@ -163,6 +163,7 @@ export interface BusinessApi {
   receivePurchase(purchaseId: string, items?: ReceivePurchaseItemInput[], operationId?: string, shippingCostCents?: number): Promise<ReceivePurchaseResult>;
   closePurchaseWithShortage(purchaseId: string, notes?: string): Promise<ReceivePurchaseResult>;
   getPurchaseImpact(purchaseId: string): Promise<PurchaseImpactItem[]>;
+  /** @deprecated Client calls are disabled. Use declarePurchaseShortages or replacePurchaseShortage. */
   declareItemShortage(purchaseItemId: string, quantity: number, notes?: string): Promise<Purchase>;
   declarePurchaseShortages(purchaseId: string, items: Array<{ purchaseItemId: string; quantity: number }>, operationId: string): Promise<Purchase>;
   replacePurchaseShortage(input: { purchaseItemId: string; expectedPending: number; supplierName: string; expectedAt: string | null; operationId: string }): Promise<{ oldPurchase: Purchase; newPurchase: Purchase; transferredReservations: number }>;

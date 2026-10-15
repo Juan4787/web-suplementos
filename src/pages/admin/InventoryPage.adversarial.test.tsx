@@ -282,8 +282,15 @@ describe('Auditoría Adversarial: ReceivePurchaseModal', () => {
     fireEvent.click(confirmBtn);
     expect(api.createPurchase).not.toHaveBeenCalled();
 
-    // Solo al tipear un proveedor válido se habilita
-    fireEvent.change(screen.getByLabelText(/Nombre del nuevo proveedor/), { target: { value: 'Distribuidora Premium' } });
+    const supplier = screen.getByLabelText(/Nombre del nuevo proveedor/);
+    fireEvent.change(supplier, { target: { value: '😀' } });
+    expect(confirmBtn).toBeDisabled();
+    fireEvent.change(supplier, { target: { value: '😀'.repeat(120) } });
+    expect(confirmBtn).toBeEnabled();
+    fireEvent.change(supplier, { target: { value: '😀'.repeat(121) } });
+    expect(confirmBtn).toBeDisabled();
+    expect(supplier).toHaveAttribute('aria-invalid', 'true');
+    fireEvent.change(supplier, { target: { value: 'Distribuidora Premium' } });
     expect(confirmBtn).toBeEnabled();
   });
 

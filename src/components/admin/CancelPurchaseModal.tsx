@@ -10,13 +10,16 @@ import { DatePicker, Field, Input, Textarea } from '@/components/ui/Field';
 import { Modal } from '@/components/ui/Modal';
 import type { Purchase, PurchaseCancellationInput, PurchaseCancellationResult } from '@/domain/types';
 import { formatMoney } from '@/domain/money';
+import { unknownToAppError } from '@/domain/errors';
+import { countCharacters } from '@/domain/text';
 import { getBusinessApi } from '@/services/business-api';
 
-export function CancelPurchaseModal({ purchase, onClose, onResolve, onDone }: {
+export function CancelPurchaseModal({ purchase, onClose, onResolve, onDone, onOpenReplacement }: {
   purchase: Purchase;
   onClose: () => void;
   onResolve: (purchase: Purchase) => void;
   onDone: () => void;
+  onOpenReplacement: (purchase: Purchase) => void;
 }) {
   const client = useQueryClient();
   const [operationId, setOperationId] = useState(() => crypto.randomUUID());
@@ -61,11 +64,15 @@ export function CancelPurchaseModal({ purchase, onClose, onResolve, onDone }: {
   const selectedMode = mode ?? (review && !review.canCancel && review.canReplace ? 'replace' : 'cancel');
   const replacing = selectedMode === 'replace';
   const allowed = Boolean(review && (replacing ? review.canReplace : review.canCancel));
-  const supplierValid = !replacing || (supplierName.trim().length >= 2 && supplierName.trim().length <= 120);
+  const supplierLength = countCharacters(supplierName.trim());
+  const reasonLength = countCharacters(reason.trim());
+  const supplierValid = !replacing || (supplierLength >= 2 && supplierLength <= 120);
   const replacementUnits = review?.replacementItems.reduce((sum, i) => sum + i.quantity, 0) ?? 0;
   const replacementCost = review?.replacementItems.reduce((sum, i) => sum + i.quantity * i.unitCostCents, 0) ?? 0;
   const frozen = mutation.isPending || submitted.current !== null;
-  const reasonValid = reason.trim().length >= 3 && reason.trim().length <= 500;
+  const reasonValid = reasonLength >= 3 && reasonLength <= 500;
+  const retryableError = mutation.isError && unknownToAppError(mutation.error).retryable;
+  const needsReview = mutation.isError && !retryableError;
   const close = () => { if (!busy.current) onClose(); };
   const refresh = () => {
     if (busy.current) return;
@@ -98,12 +105,15 @@ export function CancelPurchaseModal({ purchase, onClose, onResolve, onDone }: {
     {result ? <div className="mt-6 space-y-5">
       <div role="status" className="flex gap-3 rounded-2xl bg-emerald-50 p-4 text-emerald-950">
         <CheckCircle2 className="mt-0.5 size-5 shrink-0" aria-hidden="true" />
-        <p className="text-sm leading-6"><strong>{result.purchase.cancellation?.pendingUnits} unidades canceladas con el proveedor anterior.</strong> {result.replacementPurchase ? `Se creó la compra #${result.replacementPurchase.number} con ${result.replacementPurchase.supplierName}. Se trasladaron ${result.transferredUnits} unidades reservadas. Los clientes siguen esperando esa mercadería de la nueva compra.` : 'Salieron de la mercadería en camino. Los pedidos de clientes conservaron sus reservas.'}</p>
+        <p className="min-w-0 break-words text-sm leading-6"><strong>{result.purchase.cancellation?.pendingUnits} unidades canceladas con el proveedor anterior.</strong> {result.replacementPurchase ? `Se creó la compra #${result.replacementPurchase.number} con ${result.replacementPurchase.supplierName}. Se trasladaron ${result.transferredUnits} unidades reservadas. Los clientes siguen esperando esa mercadería de la nueva compra.` : 'Salieron de la mercadería en camino. Los pedidos de clientes conservaron sus reservas.'}</p>
       </div>
       <p className="text-sm leading-6 text-ink-700">Lo recibido y los gastos registrados se conservan. Si pagaste un adelanto al proveedor, coordiná su devolución por separado: esta acción no registra una devolución de dinero.</p>
       {result.replacementPurchase ? <p className="break-words text-sm leading-6 text-ink-700">Reposición: {result.replacementPurchase.items.reduce((sum, i) => sum + i.quantity, 0)} unidades · {formatMoney(result.replacementPurchase.totalCostCents)}. {result.replacementPurchase.expectedAt ? 'La nueva fecha estimada quedó guardada en los pedidos vinculados.' : 'Sin fecha estimada: acordala con el proveedor y actualizá la compra.'} Avisales a los clientes si cambia la fecha acordada.</p> : null}
       <div className="rounded-2xl bg-cream-100 p-4 text-sm leading-6 text-ink-800"><strong>Motivo registrado</strong><p className="mt-1 whitespace-pre-wrap break-words">{result.purchase.cancellation?.reason}</p></div>
-      <Button className="w-full sm:w-auto" disabled={mutation.isPending} onClick={onDone}>Ver compras canceladas</Button>
+      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+        {result.replacementPurchase ? <Button className="w-full sm:w-auto" disabled={mutation.isPending} onClick={() => onOpenReplacement(result.replacementPurchase!)}>Revisar reposición #{result.replacementPurchase.number}</Button> : null}
+        <Button variant={result.replacementPurchase ? 'secondary' : 'primary'} className="w-full sm:w-auto" disabled={mutation.isPending} onClick={onDone}>Ver compras canceladas</Button>
+      </div>
     </div> : <>
       {preview.isPending ? <LoadingState label="Revisando compra y reservas de clientes…" /> : null}
       {preview.isError ? <div className="mt-5"><ErrorState error={preview.error} /><Button variant="secondary" className="mt-3" onClick={refresh}><RefreshCw className="size-4" aria-hidden="true" />Volver a revisar</Button></div> : null}
@@ -153,7 +163,7 @@ export function CancelPurchaseModal({ purchase, onClose, onResolve, onDone }: {
         </div> : null}
         {replacing && review.canReplace ? <div className="space-y-4">
           <h3 className="font-extrabold text-ink-950">Nueva compra de reposición</h3>
-          <Field label="Nuevo proveedor" hint="Las cantidades y los costos unitarios se copian del pedido original. Podés revisar el costo de la compra nueva antes de recibirla."><Input value={supplierName} maxLength={120} disabled={frozen} onChange={e => setSupplierName(e.target.value)} placeholder="Nombre del proveedor que enviará lo pendiente" /></Field>
+          <Field label="Nuevo proveedor" hint="Las cantidades y los costos unitarios se copian del pedido original. Podés revisar el costo de la compra nueva antes de recibirla." error={supplierName && !supplierValid ? 'Escribí entre 2 y 120 caracteres para el proveedor.' : undefined}><Input value={supplierName} disabled={frozen} onChange={e => setSupplierName(e.target.value)} placeholder="Nombre del proveedor que enviará lo pendiente" /></Field>
           <Field label="Nueva fecha estimada · opcional" hint="Si no la conocés, los pedidos quedarán sin fecha confirmada."><DatePicker value={expectedAt} onChange={setExpectedAt} disabled={frozen} /></Field>
           <ul className="divide-y divide-ink-950/10">{review.replacementItems.map(i => <li key={i.productId} className="flex justify-between gap-3 py-2 text-sm"><span className="min-w-0 break-words text-ink-800">{i.productName}</span><span className="shrink-0 font-bold tabular-nums">{i.quantity} u.</span></li>)}</ul>
           <p className="text-sm font-bold text-ink-950">Se pedirán {replacementUnits} unidades · {formatMoney(replacementCost)}</p>
@@ -162,20 +172,20 @@ export function CancelPurchaseModal({ purchase, onClose, onResolve, onDone }: {
         </div> : null}
         {allowed ? <>
           <p className="rounded-2xl bg-brand-50 p-4 text-sm leading-6 text-brand-950">{replacing ? 'La cancelación y el traslado se guardan juntos. Si algo falla, se conserva la compra original con sus reservas.' : 'No hay reservas pendientes de clientes ni reservas previas que dependan de este saldo.'} {review.receivedUnits > 0 ? `Lo recibido (${review.receivedUnits} u.) conserva su stock y sus reservas.` : 'No se descontará stock físico.'} Los gastos registrados se conservan. La cancelación queda en el historial y no se puede deshacer.</p>
-          <Field label="Motivo de cancelación" hint={`${reason.length}/500 caracteres. Quedará guardado en el historial.`}>
-            <Textarea value={reason} onChange={e => setReason(e.target.value)} maxLength={500} disabled={mutation.isPending || submitted.current !== null} placeholder="Por ejemplo: el proveedor confirmó que no enviará lo pendiente." />
+          <Field label="Motivo de cancelación" hint={`${reasonLength}/500 caracteres. Quedará guardado en el historial.`} error={reason && !reasonValid ? 'Escribí un motivo de entre 3 y 500 caracteres.' : undefined}>
+            <Textarea value={reason} onChange={e => setReason(e.target.value)} disabled={frozen} placeholder="Por ejemplo: el proveedor confirmó que no enviará lo pendiente." />
           </Field>
-          <button type="button" role="checkbox" aria-checked={acknowledged} disabled={mutation.isPending} onClick={() => setAcknowledged(v => !v)} className="flex w-full items-start gap-3 rounded-2xl border border-ink-950/15 p-4 text-left text-sm leading-6 text-ink-800 transition hover:bg-cream-50 disabled:opacity-60">
+          <button type="button" role="checkbox" aria-checked={acknowledged} disabled={frozen} onClick={() => setAcknowledged(v => !v)} className="flex w-full items-start gap-3 rounded-2xl border border-ink-950/15 p-4 text-left text-sm leading-6 text-ink-800 transition hover:bg-cream-50 disabled:opacity-60">
             <span aria-hidden="true" className={`mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-md border ${acknowledged ? 'border-brand-600 bg-brand-600 text-white' : 'border-ink-400 bg-white'}`}>{acknowledged ? <Check className="size-4" /> : null}</span>
-            {replacing ? `Confirmo el traslado de lo pendiente a ${supplierName.trim() || 'otro proveedor'}.` : 'Confirmo que no se espera este saldo del proveedor.'} La cancelación no devuelve dinero ni anula gastos.
+            <span className="min-w-0 break-words">{replacing ? `Confirmo el traslado de lo pendiente a ${supplierName.trim() || 'otro proveedor'}.` : 'Confirmo que no se espera este saldo del proveedor.'} La cancelación no devuelve dinero ni anula gastos.</span>
           </button>
           <p className="text-sm leading-6 text-ink-700">Si ya pagaste al proveedor, coordiná la devolución del adelanto por separado.</p>
         </> : null}
-        {mutation.isError ? <div className="space-y-3"><ErrorState error={mutation.error} /><p className="text-sm leading-6 text-ink-700">Si se cortó la conexión, volvé a intentar el guardado. Antes de cambiar los datos, usá «Volver a revisar».</p></div> : null}
+        {mutation.isError ? <div className="space-y-3"><ErrorState error={mutation.error} /><p className="text-sm leading-6 text-ink-700">{retryableError ? 'Si se cortó la conexión, reintentá para comprobar el mismo guardado sin duplicarlo. Antes de cambiar los datos, usá «Volver a revisar».' : 'Volvé a revisar para cargar el estado actual antes de continuar. Se conservarán el motivo y los datos del proveedor; comprobá las cantidades y confirmá de nuevo.'}</p></div> : null}
         <div className="flex flex-col-reverse gap-3 border-t border-ink-950/10 pt-5 sm:flex-row sm:justify-end">
           <Button variant="ghost" disabled={mutation.isPending} onClick={close}>Volver</Button>
-          <Button variant="secondary" disabled={mutation.isPending} onClick={refresh}><RefreshCw className="size-4" aria-hidden="true" />Volver a revisar</Button>
-          <Button variant="danger" loading={mutation.isPending} disabled={!allowed || !supplierValid || !acknowledged || !reasonValid || preview.isFetching} onClick={confirm}>{mutation.isPending ? 'Guardando…' : mutation.isError ? 'Reintentar guardado' : replacing ? 'Cancelar y crear reposición' : 'Confirmar cancelación'}</Button>
+          <Button variant={needsReview ? 'primary' : 'secondary'} disabled={mutation.isPending} onClick={refresh}><RefreshCw className="size-4" aria-hidden="true" />Volver a revisar</Button>
+          {!needsReview ? <Button variant="danger" loading={mutation.isPending} disabled={!allowed || !supplierValid || !acknowledged || !reasonValid || preview.isFetching} onClick={confirm}>{mutation.isPending ? 'Guardando…' : retryableError ? 'Reintentar guardado' : replacing ? 'Cancelar y crear reposición' : 'Confirmar cancelación'}</Button> : null}
         </div>
         {mutation.isPending ? <p role="status" className="text-sm font-semibold text-ink-700">Guardando la cancelación. Esperá a que termine antes de salir.</p> : null}
       </div> : null}

@@ -48,6 +48,8 @@ test('replace supplier atomically, preserve paid/packed customer order, and rece
   await expect(dialog.getByRole('button', { name: 'Confirmar cancelación' })).toBeDisabled();
   await page.keyboard.press('ArrowLeft');
   await expect(replace).toBeChecked();
+  await dialog.getByLabel('Nuevo proveedor', { exact: true }).fill('X'.repeat(120));
+  await styled(page);
   await dialog.getByLabel('Nuevo proveedor', { exact: true }).fill('Nuevo proveedor');
   await dialog.getByLabel('Nueva fecha estimada · opcional').click();
   await expect(page.getByRole('dialog').last()).toBeVisible();
@@ -57,7 +59,7 @@ test('replace supplier atomically, preserve paid/packed customer order, and rece
   await dialog.getByRole('checkbox').click();
   await styled(page);
   await dialog.evaluate(el => { el.scrollTop = 0; });
-  await dialog.screenshot({ path: `/tmp/impulso-cancel-audit/replacement-${info.project.name}.png` });
+  await dialog.screenshot({ path: `/tmp/impulso-cancel-audit/fixed-review-${info.project.name}.png` });
   await dialog.getByRole('button', { name: 'Cancelar y crear reposición' }).click();
   await expect(dialog.getByRole('heading', { name: `Compra #${data.purchaseNumber} cancelada` })).toBeFocused();
   await expect(dialog).toContainText('Se trasladaron 2 unidades reservadas');
@@ -72,12 +74,17 @@ test('replace supplier atomically, preserve paid/packed customer order, and rece
   expect(state.replacement.items[0].quantity).toBe(4);
   expect(state.order.paymentState).toBe('paid'); expect(state.order.items[0].packedQuantity).toBe(1);
   expect(state.order.stockReadiness).toBe('waiting_incoming'); expect(state.order.totalCents).toBe(450000);
-  await dialog.getByRole('button', { name: 'Ver compras canceladas' }).click();
-  const cancelled = page.locator('article').filter({ has: page.getByRole('heading', { name: `Pedido #${data.purchaseNumber}`, exact: true }) });
-  await expect(cancelled).toContainText('Saldo cancelado');
-  await expect(cancelled.getByRole('button', { name: 'Recibir mercadería' })).toHaveCount(0);
-  await page.getByRole('button', { name: /^Pendientes \(/ }).click();
+  await styled(page);
+  await dialog.screenshot({ path: `/tmp/impulso-cancel-audit/fixed-success-${info.project.name}.png` });
+  await dialog.getByRole('button', { name: `Revisar reposición #${state.replacement.number}` }).click();
+  dialog = page.getByRole('dialog');
+  await expect(dialog.getByRole('heading', { name: `Editar pedido #${state.replacement.number}` })).toBeVisible();
+  await expect(dialog.getByLabel('Proveedor · opcional')).toHaveValue('Nuevo proveedor');
+  await dialog.getByLabel('Notas · opcional').fill('Reposición revisada antes de recibir.');
+  await dialog.getByRole('button', { name: 'Guardar cambios' }).click();
+  await expect(dialog).toHaveCount(0);
   const replacement = page.locator('article').filter({ has: page.getByRole('heading', { name: `Pedido #${state.replacement.number}`, exact: true }) });
+  await expect(replacement).toContainText('Reposición revisada antes de recibir.');
   await replacement.getByRole('button', { name: 'Recibir mercadería' }).click();
   dialog = page.getByRole('dialog');
   await dialog.getByRole('button', { name: /Llegó TODO completo/ }).click();
@@ -101,10 +108,65 @@ test('cancel uncommitted balance with custom confirmation and find it in history
   await dialog.getByLabel('Motivo de cancelación').fill('No necesitamos las unidades pendientes.');
   await dialog.getByRole('checkbox').click();
   await styled(page);
-  await dialog.screenshot({ path: `/tmp/impulso-cancel-audit/plain-${info.project.name}.png` });
+  await dialog.screenshot({ path: `/tmp/impulso-cancel-audit/fixed-plain-${info.project.name}.png` });
   await dialog.getByRole('button', { name: 'Confirmar cancelación' }).click();
   await expect(dialog).toContainText('4 unidades canceladas');
   await dialog.getByRole('button', { name: 'Ver compras canceladas' }).click();
   await expect(page.getByRole('button', { name: /^Cancelados \(/ })).toHaveAttribute('aria-pressed', 'true');
+  expect(errors).toEqual([]);
+});
+
+test('a closed purchase with no received units does not claim that physical stock arrived', async ({ page }, info) => {
+  if (info.project.name === 'mobile-chrome') await page.setViewportSize({ width: 320, height: 740 });
+  const errors = health(page);
+  await fixture(page, false);
+  const number = await page.evaluate(async () => {
+    const api = await (window as any).__getBusinessApi();
+    const key = crypto.randomUUID();
+    const product = await api.saveProduct({ sku: key, slug: key, name: 'Producto que no llegó', presentation: '1 unidad', description: 'Prueba aislada', category: 'Pruebas', priceCents: 100000, currentCostCents: 60000, reorderPoint: 0, safetyStock: 0, leadTimeDays: 1, imageUrl: '/demo/creatina.svg', imageAlt: 'Prueba', featured: false, published: true, active: true });
+    const purchase = await api.createPurchase({ supplierName: 'Proveedor sin entrega', items: [{ productId: product.id, quantity: 5, unitCostCents: 60000 }] });
+    await api.declarePurchaseShortages(purchase.id, [{ purchaseItemId: purchase.items[0].id, quantity: 5 }], crypto.randomUUID());
+    return purchase.number;
+  });
+  await page.getByRole('button', { name: /^Recepciones cerradas/ }).click();
+  const purchase = page.locator('article').filter({ has: page.getByRole('heading', { name: `Pedido #${number}`, exact: true }) });
+  await expect(purchase).toContainText('Cerrado con faltantes');
+  await expect(purchase).toContainText('Sin mercadería recibida');
+  await expect(purchase.getByText('Stock actualizado')).toHaveCount(0);
+  await expect(purchase.getByRole('button', { name: 'Recibir mercadería' })).toHaveCount(0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await purchase.screenshot({ path: `/tmp/impulso-cancel-audit/fixed-zero-receipt-${info.project.name}.png` });
+  expect(errors).toEqual([]);
+});
+
+test('a new customer reservation invalidates the review and guides recovery without repeating the rejected save', async ({ page }, info) => {
+  if (info.project.name === 'mobile-chrome') await page.setViewportSize({ width: 320, height: 740 });
+  const errors = health(page), data = await fixture(page, false);
+  await page.getByRole('button', { name: `Cancelar compra #${data.purchaseNumber}`, exact: true }).click();
+  const dialog = page.getByRole('dialog');
+  await dialog.getByLabel('Motivo de cancelación').fill('Cambio confirmado por el proveedor.');
+  await dialog.getByRole('checkbox').click();
+  await page.evaluate(async productId => {
+    const api = await (window as any).__getBusinessApi();
+    await api.confirmImportedOrder({ customerName: 'Cliente que reservó después', paymentMethod: 'cash', deliveryMethod: 'pickup', shippingType: null, shippingFeeCents: 0, quotedSubtotalCents: 450000, quotedTotalCents: 450000, protocolOrderId: crypto.randomUUID(), protocolChecksum: '1234ABCD', lines: [{ productId, quantity: 3, unitPriceCents: 150000 }] });
+  }, data.productId);
+  await dialog.getByRole('button', { name: 'Confirmar cancelación' }).click();
+  await expect(dialog).toContainText('La compra o sus reservas cambiaron desde que las revisaste.');
+  await expect(dialog.getByRole('button', { name: 'Reintentar guardado' })).toHaveCount(0);
+  await expect(dialog.getByLabel('Motivo de cancelación')).toBeDisabled();
+  await styled(page);
+  await dialog.screenshot({ path: `/tmp/impulso-cancel-audit/fixed-changed-review-${info.project.name}.png` });
+  await dialog.getByRole('button', { name: 'Volver a revisar' }).click();
+  await expect(dialog.getByRole('heading', { name: 'Reservas que se trasladarán' })).toBeVisible();
+  await expect(dialog).toContainText('Cliente que reservó después');
+  await expect(dialog.getByLabel('Motivo de cancelación')).toHaveValue('Cambio confirmado por el proveedor.');
+  await expect(dialog.getByRole('checkbox')).not.toBeChecked();
+  await expect(dialog.getByRole('button', { name: 'Cancelar y crear reposición' })).toBeDisabled();
+  const current = await page.evaluate(async id => {
+    const api = await (window as any).__getBusinessApi();
+    return (await api.listPurchases(1, 100, 'all')).items.find((p: any) => p.id === id);
+  }, data.purchaseId);
+  expect(current.state).toBe('ordered');
+  expect(current.cancellation).toBeUndefined();
   expect(errors).toEqual([]);
 });

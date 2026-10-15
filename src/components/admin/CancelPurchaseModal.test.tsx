@@ -14,10 +14,10 @@ const purchase: Purchase = { id: 'purchase', number: 2054, supplierName: 'Provee
 const preview: PurchaseCancellationPreview = { purchase, pendingUnits: 3, pendingCostCents: 300000, receivedUnits: 2, openingReservedQuantity: 0,
   canCancel: true, canReplace: true, reviewToken: 'review-1', orders: [], replacementItems: [{ productId: 'product', productName: 'Magnesio', quantity: 3, unitCostCents: 100000 }] };
 function mount() {
-  const onClose = vi.fn(), onResolve = vi.fn(), onDone = vi.fn();
+  const onClose = vi.fn(), onResolve = vi.fn(), onDone = vi.fn(), onOpenReplacement = vi.fn();
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } } });
-  render(<QueryClientProvider client={client}><CancelPurchaseModal purchase={purchase} onClose={onClose} onResolve={onResolve} onDone={onDone} /></QueryClientProvider>);
-  return { onClose, onResolve, onDone };
+  render(<QueryClientProvider client={client}><CancelPurchaseModal purchase={purchase} onClose={onClose} onResolve={onResolve} onDone={onDone} onOpenReplacement={onOpenReplacement} /></QueryClientProvider>);
+  return { onClose, onResolve, onDone, onOpenReplacement };
 }
 async function authorize() {
   fireEvent.change(await screen.findByLabelText('Motivo de cancelación'), { target: { value: 'El proveedor no envía lo pendiente' } });
@@ -60,7 +60,7 @@ describe('Purchase cancellation review', () => {
 
   it('submits a single atomic replacement with exact supplier, review and operation identity', async () => {
     api.cancelPurchase.mockResolvedValue({ purchase: { ...purchase, state: 'cancelled', cancellation: { pendingUnits: 3, reason: 'El proveedor no envía lo pendiente' } }, replacementPurchase: { ...purchase, number: 2055, supplierName: 'Proveedor nuevo' }, transferredUnits: 2 });
-    mount();
+    const { onOpenReplacement, onDone } = mount();
     await screen.findByRole('button', { name: 'Confirmar cancelación' });
     fireEvent.click(screen.getByRole('radio', { name: /Pedir a otro proveedor/ }));
     await authorize();
@@ -73,6 +73,11 @@ describe('Purchase cancellation review', () => {
       replacement: { supplierName: 'Proveedor nuevo', expectedAt: null }, operationId: expect.any(String) }));
     expect(await screen.findByRole('heading', { name: 'Compra #2054 cancelada' })).toHaveFocus();
     expect(screen.getByText(/Se trasladaron 2 unidades reservadas/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Revisar reposición #2055' }));
+    expect(onOpenReplacement).toHaveBeenCalledWith(expect.objectContaining({ number: 2055, supplierName: 'Proveedor nuevo' }));
+    expect(onDone).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Ver compras canceladas' }));
+    expect(onDone).toHaveBeenCalledTimes(1);
   });
 
   it('prevents double submission and cannot close while saving', async () => {
@@ -91,11 +96,12 @@ describe('Purchase cancellation review', () => {
   });
 
   it('a lost response retries exactly the same request and a new review clears consent', async () => {
-    api.cancelPurchase.mockRejectedValue(new AppError('temporary', 'No pudimos confirmar la conexión.'));
+    api.cancelPurchase.mockRejectedValue(new AppError('temporary', 'No pudimos confirmar la conexión.', { retryable: true }));
     mount(); await authorize();
     fireEvent.click(screen.getByRole('button', { name: 'Confirmar cancelación' }));
     await screen.findByRole('button', { name: 'Reintentar guardado' });
     expect(screen.getByLabelText('Motivo de cancelación')).toBeDisabled();
+    expect(screen.getByRole('checkbox')).toBeDisabled();
     fireEvent.click(screen.getByRole('button', { name: 'Reintentar guardado' }));
     await waitFor(() => expect(api.cancelPurchase).toHaveBeenCalledTimes(2));
     expect(api.cancelPurchase.mock.calls[0]).toEqual(api.cancelPurchase.mock.calls[1]);
@@ -105,6 +111,55 @@ describe('Purchase cancellation review', () => {
     await waitFor(() => expect(screen.getByRole('checkbox')).toHaveAttribute('aria-checked', 'false'));
     expect(screen.getByRole('button', { name: 'Confirmar cancelación' })).toBeDisabled();
     expect(screen.getByLabelText('Motivo de cancelación')).toBeEnabled();
+  });
+
+  it.each(['business', 'validation'] as const)('a definitive %s rejection requires a fresh review, retains input and renews consent and operation identity', async kind => {
+    api.cancelPurchase.mockRejectedValue(new AppError(kind, 'La compra cambió. Revisá sus datos.'));
+    mount(); await authorize();
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar cancelación' }));
+    await screen.findByText('La compra cambió. Revisá sus datos.');
+    expect(screen.queryByRole('button', { name: 'Reintentar guardado' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Confirmar cancelación' })).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Motivo de cancelación')).toBeDisabled();
+    api.getPurchaseCancellationPreview.mockResolvedValue({ ...preview, reviewToken: 'review-new' });
+    fireEvent.click(screen.getByRole('button', { name: 'Volver a revisar' }));
+    const confirm = await screen.findByRole('button', { name: 'Confirmar cancelación' });
+    await waitFor(() => expect(api.getPurchaseCancellationPreview).toHaveBeenCalledTimes(2));
+    expect(screen.getByLabelText('Motivo de cancelación')).toHaveValue('El proveedor no envía lo pendiente');
+    expect(confirm).toBeDisabled();
+    fireEvent.click(screen.getByRole('checkbox'));
+    fireEvent.click(confirm);
+    await waitFor(() => expect(api.cancelPurchase).toHaveBeenCalledTimes(2));
+    expect(api.cancelPurchase.mock.calls[1]![0].expectedToken).toBe('review-new');
+    expect(api.cancelPurchase.mock.calls[1]![0].operationId).not.toBe(api.cancelPurchase.mock.calls[0]![0].operationId);
+  });
+
+  it('uses the server character limits for emoji and preserves overlong text for correction', async () => {
+    mount(); await authorize();
+    const reason = screen.getByLabelText('Motivo de cancelación');
+    const confirm = screen.getByRole('button', { name: 'Confirmar cancelación' });
+    fireEvent.change(reason, { target: { value: 'a😀' } });
+    expect(confirm).toBeDisabled();
+    expect(reason).toHaveAttribute('aria-invalid', 'true');
+    fireEvent.change(reason, { target: { value: '😀'.repeat(500) } });
+    expect(confirm).toBeEnabled();
+    expect(screen.getByText('500/500 caracteres. Quedará guardado en el historial.')).toBeInTheDocument();
+    fireEvent.change(reason, { target: { value: '😀'.repeat(501) } });
+    expect(reason).toHaveValue('😀'.repeat(501));
+    expect(confirm).toBeDisabled();
+    fireEvent.change(reason, { target: { value: 'a😀b' } });
+    fireEvent.click(screen.getByRole('radio', { name: /Pedir a otro proveedor/ }));
+    fireEvent.click(screen.getByRole('checkbox'));
+    const supplier = screen.getByLabelText('Nuevo proveedor');
+    const replace = screen.getByRole('button', { name: 'Cancelar y crear reposición' });
+    fireEvent.change(supplier, { target: { value: '😀' } });
+    expect(replace).toBeDisabled();
+    fireEvent.change(supplier, { target: { value: '😀'.repeat(120) } });
+    expect(replace).toBeEnabled();
+    fireEvent.change(supplier, { target: { value: '😀'.repeat(121) } });
+    expect(replace).toBeDisabled();
+    expect(supplier).toHaveAttribute('aria-invalid', 'true');
+    expect(api.cancelPurchase).not.toHaveBeenCalled();
   });
 
   it('uses application controls, never native confirmation, prompt or alert', async () => {

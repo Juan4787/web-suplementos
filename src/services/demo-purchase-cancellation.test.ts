@@ -9,6 +9,15 @@ beforeEach(async () => {
 });
 const order = () => api.confirmImportedOrder({ customerName: 'Cliente que espera', paymentMethod: 'cash', deliveryMethod: 'pickup', shippingType: null, shippingFeeCents: 0, quotedSubtotalCents: 450000, quotedTotalCents: 450000, protocolOrderId: crypto.randomUUID(), protocolChecksum: '1234ABCD', lines: [{ productId: product.id, sku: product.sku, slug: product.slug, name: product.name, presentation: product.presentation, imageUrl: product.imageUrl, quantity: 3, unitPriceCents: 150000 }] });
 describe('demo purchase cancellation parity', () => {
+  it('counts supplier and reason emoji by characters like the database', async () => {
+    const preview = await api.getPurchaseCancellationPreview(purchase.id);
+    const input = { purchaseId: purchase.id, reason: 'a😀', operationId: crypto.randomUUID(), expectedToken: preview.reviewToken };
+    await expect(api.cancelPurchase(input)).rejects.toThrow(/entre 3 y 500/);
+    await expect(api.cancelPurchase({ ...input, reason: 'a😀b', replacement: { supplierName: '😀', expectedAt: null } })).rejects.toThrow(/nombre del nuevo proveedor/);
+    const result = await api.cancelPurchase({ ...input, reason: '😀'.repeat(500), replacement: { supplierName: '😀'.repeat(120), expectedAt: null } });
+    expect(result.purchase.cancellation?.reason).toBe('😀'.repeat(500));
+    expect(result.replacementPurchase?.supplierName).toBe('😀'.repeat(120));
+  });
   it('cancels only unreceived balance and retries preserve stock, supplier expense and audit', async () => {
     await api.receivePurchase(purchase.id, [{ purchaseItemId: purchase.items[0]!.id, receivedQuantity: 2 }], crypto.randomUUID(), 50000);
     const preview = await api.getPurchaseCancellationPreview(purchase.id);
