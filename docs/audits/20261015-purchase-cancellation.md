@@ -43,9 +43,9 @@ El respaldo completo verificado está fuera del repositorio, con acceso privado.
 
 Comandos principales: `pnpm test`, `pnpm check`, `pnpm build`, `pnpm test:contract`, los SQL de `supabase/tests/database` mediante PostgreSQL local y `SAFE_AUDIT_DATABASE=... node scripts/test-purchase-cancellation-concurrency.mjs`. La prueba de navegador `16-purchase-cancellation.spec.ts` cubre cancelación y reposición seguidas de recepción; se comprueban también los controles existentes y las reversiones de pedidos. Se usan Playwright y navegadores instalados porque esta sesión no expone control de navegador administrado por el host.
 
-Resultados previos a publicación:
+Resultados de las comprobaciones, incluida la revisión de cierre:
 
-- 635 pruebas unitarias cubiertas en 72 archivos. En la corrida completa pasan 634; se actualiza la única expectativa pendiente del texto de reintegro y se revalidan las 16 pruebas de ese archivo. Las seis pruebas del diálogo también vuelven a pasar después de simplificar su lenguaje.
+- 635 pruebas unitarias en 72 archivos pasan en la última corrida completa, con el texto final de la interfaz. La primera corrida había señalado una expectativa del texto anterior de reintegro; se corrigió, se revalidó su archivo y la pasada completa de cierre confirma que no quedan fallos. Incluye las seis pruebas del diálogo después de simplificar su lenguaje.
 - 551 comprobaciones SQL existentes y 55 nuevas: 606 sin fallos. Las nuevas se repiten sobre la secuencia final de migraciones.
 - Siete carreras con conexiones PostgreSQL realmente superpuestas: todas pasan, sin bloqueos mutuos ni efectos duplicados.
 - 18 recorridos de navegador en escritorio y móvil pasan con los controles, reversiones y nuevas compras. Los cuatro recorridos de la nueva función se repiten después de la revisión de lenguaje, también sin fallos.
@@ -69,3 +69,5 @@ Las dos migraciones nuevas quedaron aplicadas. Once definiciones de funciones, i
 El respaldo inmediato anterior a la publicación se restauró íntegramente en `backup_restore_cancel_release_20261015`. Su archivo privado tiene 958.346 bytes y SHA-256 `a850f9dbcaff0fde9d9f806533945315cf8de45a82ee854bfd716e0a3f367f93`. Los recibos, capturas y resultados detallados quedan fuera del repositorio en las carpetas privadas de respaldo y de verificación.
 
 No se realizaron cancelaciones ni pedidos ficticios en producción para certificar el despliegue. El recorrido completo con recepción se prueba localmente; en producción se comprueban las funciones publicadas, los datos existentes y la revisión visible sin modificar compras ni pedidos.
+
+La revisión de cierre vuelve a comprobar producción a las 20:10 UTC: las 93 definiciones de funciones comparadas coinciden con las locales, las dos migraciones siguen aplicadas y las cinco medidas de consistencia anteriores vuelven a dar cero diferencias. La revisión de cancelación se consulta correctamente; se confirma que no hay acceso anónimo a la cancelación ni lectura directa del registro privado desde la aplicación. Son consultas de sólo lectura, con cero escrituras de negocio. A las 20:11 UTC se vuelven a comparar la página inicial y los seis archivos de Inventario y servicios conservados en el despliegue: los siete coinciden con sus huellas verificadas. La versión activa conserva el 100 % del tráfico y la rama remota coincide con el código revisado.
