@@ -47,7 +47,7 @@ test('corrige un pedido completado, conserva sus reservas y guía la cancelació
   const panel = article.getByRole('region', { name: `Qué sigue del pedido #${data.number}` });
   await article.getByRole('button', { name: 'Más opciones' }).click();
   await expect(panel.getByRole('button', { name: 'Cancelar pedido', exact: true })).toBeDisabled();
-  await expect(panel).toContainText('Primero deshacé el cobro');
+  await expect(panel).toContainText('Primero resolvé el cobro');
   await panel.screenshot({ path: `/tmp/order-reversals-options-${info.project.name}.png` });
 
   await panel.getByRole('button', { name: 'Deshacer cobro', exact: true }).click();

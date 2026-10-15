@@ -36,7 +36,7 @@ export const translateDatabaseError = (error: { message?: string; code?: string 
     ORDER_ACTION_CHANGED: ['El pedido cambió desde que abriste la confirmación.', 'Cerrá la confirmación y revisá el estado actualizado antes de continuar.'],
     ORDER_REVERSAL_RESERVATIONS_MISMATCH: ['Las reservas de este pedido necesitan una revisión.', 'Revisá sus movimientos y reservas en Inventario antes de deshacer la salida.'],
     ORDER_REVERSAL_CONFIRMATION_REQUIRED: ['Falta revisar el estado del pedido.', 'Volvé a abrir la acción desde Pedidos para confirmar sus efectos.'],
-    CANNOT_CANCEL_PAID_ORDER: ['Este pedido todavía figura cobrado.', 'Deshacé el cobro y resolvé la devolución del dinero antes de cancelarlo.'],
+    CANNOT_CANCEL_PAID_ORDER: ['Este pedido todavía figura cobrado.', 'Si registraste el cobro por error, deshacelo. Si devolviste el dinero al cliente, marcá el reintegro realizado antes de cancelar.'],
     CANNOT_CANCEL_FULFILLED_ORDER: ['La mercadería todavía figura fuera del local.', 'Deshacé la entrega o el envío cuando los productos estén de regreso antes de cancelar.'],
     SHIPPING_FEE_LOCKED: ['El envío solo puede cambiarse antes del cobro.', 'Actualizá el pedido para ver el importe que quedó registrado.'],
     SHIPPING_FEE_CHANGED: ['El envío cambió mientras lo estabas editando.', 'Cancelá la edición y revisá el importe actualizado antes de guardar.'],
@@ -58,7 +58,11 @@ export const translateDatabaseError = (error: { message?: string; code?: string 
     OVER_RECEIVING_NOT_ALLOWED: ['La cantidad recibida supera lo que falta de esta compra.', 'Actualizá la compra y anotá solamente las unidades que siguen pendientes.'],
     INVALID_RECEIVED_QUANTITY: ['La cantidad recibida no es válida.', 'Ingresá unidades enteras, entre cero y la cantidad pendiente.'],
     RECEIVED_EXCEEDS_ORDERED_QUANTITY: ['La cantidad recibida supera la cantidad pedida.', 'Revisá las unidades pendientes de cada producto.'],
-    CANNOT_CANCEL_PURCHASE_WITH_ACTIVE_RESERVATIONS: ['Esta compra tiene unidades comprometidas en pedidos de clientes.', 'Revisá esos pedidos antes de cancelar la compra.'],
+    CANNOT_CANCEL_PURCHASE_WITH_ACTIVE_RESERVATIONS: ['Esta compra todavía sostiene reservas pendientes.', 'Volvé a revisar los pedidos afectados. Resolvé la reposición o la cancelación de esos pedidos antes de cancelar la compra.'],
+    PURCHASE_CANCELLATION_CHANGED: ['La compra o sus reservas cambiaron desde que las revisaste.', 'Actualizá la revisión y comprobá las cantidades y los pedidos antes de confirmar otra vez.'],
+    INVALID_PURCHASE_STATE: ['La compra ya no admite esta acción.', 'Actualizá Compras y revisá si ya se recibió o se canceló. No vuelvas a ingresar esa mercadería sin comprobar su estado.'],
+    CANNOT_EDIT_COMPLETED_PURCHASE: ['Esta compra ya está cerrada.', 'Actualizá Compras y revisá su recepción o cancelación.'],
+    INVALID_PURCHASE_CANCELLATION: ['Falta completar el motivo de cancelación.', 'Escribí entre 3 y 500 caracteres y revisá la compra antes de confirmar.'],
     CANNOT_CHANGE_PRODUCT_WITH_ACTIVE_RESERVATIONS: ['Este producto tiene unidades reservadas en pedidos.', 'Completá o cancelá esos pedidos antes de cambiar el producto de la compra.'],
     QUANTITY_BELOW_RESERVED_AND_FULFILLED_CAPACITY: ['La cantidad no puede ser menor que las unidades ya recibidas o reservadas.', 'Revisá los pedidos vinculados y las recepciones de esta compra.'],
     INVALID_QUANTITY: ['La cantidad del producto no es válida.', 'Ingresá una cantidad entera mayor que cero.'],
@@ -395,10 +399,19 @@ export const supabaseBusinessApi: BusinessApi = {
       total: res?.total ?? 0,
       pendingTotal: res?.pendingTotal ?? 0,
       receivedTotal: res?.receivedTotal ?? 0,
+      cancelledTotal: res?.cancelledTotal ?? 0,
       filteredTotal: res?.filteredTotal ?? 0,
       items: (res?.items ?? []).map((p) => ({ ...p, items: p.items ?? [] }))
     };
   },
+  getPurchaseCancellationPreview: (purchaseId) => rpc('get_purchase_cancellation_preview', { p_purchase_id: purchaseId }),
+  cancelPurchase: (input) => rpc('cancel_purchase', {
+    p_purchase_id: input.purchaseId,
+    p_reason: input.reason,
+    p_operation_id: input.operationId,
+    p_expected_token: input.expectedToken,
+    p_replacement: input.replacement ?? null
+  }),
   createPurchase: async (input) => {
     const purchase = await rpc<Purchase>('create_purchase', { p_purchase: input });
     return { ...purchase, items: purchase?.items ?? [] };

@@ -1,5 +1,7 @@
 # Auditoría Forense: Reconciliación Automática de Stock Libre y Desbloqueo de Bolsitas
 
+> Revisión posterior: [cancelación de compras y auditoría de regresiones](20261015-purchase-cancellation.md). El informe siguiente conserva el registro original; la revisión detectó limitaciones del FIFO, pérdida de costos al fusionar reservas y una regresión de recepción de reservas previas, entre otros hallazgos. Sus afirmaciones de corrección absoluta quedan reemplazadas por la evidencia de esa revisión.
+
 **Fecha:** 15 de Octubre de 2026  
 **Entorno:** Producción (Supabase `jualrtbwyadijovhhjfs`)  
 **Migración:** `supabase/migrations/20261015180000_automatic_stock_reconciliation.sql`  
@@ -125,5 +127,4 @@ Se ejecutó [audit-blocked-orders-check.mjs](file:///home/usuario/CascadeProject
 - **Único producto bloqueante:** **SLEEP SUPPORT**.
 - **Balance de SLEEP SUPPORT:** `en_mano = 0, reservado = 0, disponible_en_local = 0`.
 - **Certificación:** El 100% de los pedidos en espera están retenidos **única y estrictamente porque el stock físico libre es CERO**. No existe ningún pedido bloqueado por fallo del sistema ni retención indebida.
-
 

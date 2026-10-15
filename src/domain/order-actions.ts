@@ -67,7 +67,7 @@ export const isOrderReversal = (action: OrderAction): boolean =>
 
 export const orderCancellationBlock = (order: Order): string | null => {
   if (order.orderState === 'cancelled') return null;
-  if (order.paymentState === 'paid') return 'Primero deshacé el cobro. Si recibiste dinero, devolvelo al cliente antes de cancelar.';
+  if (order.paymentState === 'paid') return 'Primero resolvé el cobro. Si fue un registro por error, usá «Deshacer cobro». Si devolviste dinero al cliente, usá «Marcar reintegro realizado» antes de cancelar.';
   if (order.fulfillmentState === 'delivered') return 'Primero deshacé la entrega. La mercadería debe volver al local antes de liberar sus reservas.';
   if (order.fulfillmentState === 'shipped') return 'Primero deshacé el envío cuando la mercadería esté de regreso en el local.';
   if (order.items.some(item => (item.packedQuantity ?? 0) > 0)) return 'Devolvé los productos de la bolsita al estante y guardá el armado en cero para cancelar.';

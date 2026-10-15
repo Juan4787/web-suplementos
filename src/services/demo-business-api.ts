@@ -37,6 +37,8 @@ import type {
   PurchaseReceipt,
   ProductPerformance,
   Purchase,
+  PurchaseCancellationPreview,
+  PurchaseCancellationResult,
   PurchaseImpactItem,
   QuoteCartEtaResult,
   ReceivePurchaseItemInput,
@@ -346,6 +348,67 @@ const recordShortage = (purchase: Purchase, item: Purchase['items'][number], qua
   }
   refreshProductAvailability(product);
 };
+
+function reconcileDemoProduct(product: AdminProduct): Array<{ id: string; number: number }> {
+  let available = Math.max(0, product.onHand - product.reserved);
+  const unblocked: Array<{ id: string; number: number }> = [];
+  const waiting = state.orders.filter(o => o.orderState === 'confirmed' && o.fulfillmentState === 'pending')
+    .sort((a, b) => (a.confirmedAt || a.createdAt).localeCompare(b.confirmedAt || b.createdAt) || a.number - b.number);
+  for (const order of waiting) {
+    for (const line of order.items) {
+      if (available <= 0 || line.productId !== product.id) continue;
+      const take = Math.min(available, (line.incomingQuantity ?? 0) + (line.uncoveredQuantity ?? 0));
+      if (take === 0) continue;
+      let toRemove = take;
+      for (const allocation of state.incomingAllocations.get(line.id) ?? []) {
+        const amount = Math.min(toRemove, allocation.quantity);
+        allocation.quantity -= amount; toRemove -= amount;
+      }
+      const incoming = Math.min(take, line.incomingQuantity ?? 0);
+      line.incomingQuantity = (line.incomingQuantity ?? 0) - incoming;
+      line.uncoveredQuantity = (line.uncoveredQuantity ?? 0) - (take - incoming);
+      line.physicalReservedQuantity = (line.physicalReservedQuantity ?? 0) + take;
+      product.incomingReserved = Math.max(0, (product.incomingReserved ?? 0) - incoming);
+      product.reserved += take; available -= take;
+      state.movements.unshift({ id: nextUuid(), productId: product.id, productName: product.name, kind: 'reservation',
+        physicalDelta: 0, reservedDelta: take, reason: `Asignación física por reconciliación (Pedido #${order.number})`,
+        orderId: order.id, purchaseId: null, createdAt: new Date().toISOString(), createdByName: demoOwner.displayName });
+      if (order.items.every(i => (i.incomingQuantity ?? 0) + (i.uncoveredQuantity ?? 0) === 0)) {
+        order.stockReadiness = 'ready'; order.expectedArrivalAt = null;
+        if (!unblocked.some(o => o.id === order.id)) unblocked.push({ id: order.id, number: order.number });
+      }
+    }
+  }
+  refreshProductAvailability(product);
+  return unblocked;
+}
+
+function purchaseCancellationPreview(purchaseId: string): PurchaseCancellationPreview {
+  const purchase = state.purchases.find(p => p.id === purchaseId);
+  if (!purchase) throw new AppError('business', 'No encontramos la compra.');
+  const orders = state.orders.filter(o => o.orderState !== 'cancelled' && o.fulfillmentState === 'pending').flatMap(o => {
+    const quantity = o.items.reduce((sum, line) => {
+      const allocations = state.incomingAllocations.get(line.id);
+      if (allocations) return sum + allocations.filter(a => purchase.items.some(i => i.id === a.purchaseItemId)).reduce((n, a) => n + a.quantity, 0);
+      return sum + (purchase.items.some(i => i.productId === line.productId) ? (line.incomingQuantity ?? 0) + (line.uncoveredQuantity ?? 0) : 0);
+    }, 0);
+    return quantity > 0 ? [{ id: o.id, number: o.number, customerName: o.customerName, quantity, products: o.items.flatMap(line => {
+      const allocations = state.incomingAllocations.get(line.id);
+      const amount = allocations ? allocations.filter(a => purchase.items.some(i => i.id === a.purchaseItemId)).reduce((n, a) => n + a.quantity, 0) : purchase.items.some(i => i.productId === line.productId) ? (line.incomingQuantity ?? 0) + (line.uncoveredQuantity ?? 0) : 0;
+      return amount > 0 ? [{ name: line.productName, quantity: amount }] : [];
+    }) }] : [];
+  });
+  const pendingUnits = purchase.items.reduce((sum, i) => sum + Math.max(0, i.quantity - i.receivedQuantity - i.shortageQuantity), 0);
+  const replacementItems = purchase.items.map(i => ({ productId: i.productId, productName: i.productName, unitCostCents: i.unitCostCents,
+    quantity: Math.max(i.quantity - i.receivedQuantity - i.shortageQuantity, state.orders.filter(o => o.orderState !== 'cancelled' && o.fulfillmentState === 'pending').reduce((sum, o) => sum + o.items.reduce((n, line) => n + (state.incomingAllocations.get(line.id) ?? []).filter(a => a.purchaseItemId === i.id).reduce((q, a) => q + a.quantity, 0), 0), 0))
+  })).filter(i => i.quantity > 0);
+  return structuredClone({ purchase, pendingUnits, replacementItems,
+    pendingCostCents: purchase.items.reduce((sum, i) => sum + Math.max(0, i.quantity - i.receivedQuantity - i.shortageQuantity) * i.unitCostCents, 0),
+    receivedUnits: purchase.items.reduce((sum, i) => sum + i.receivedQuantity, 0), openingReservedQuantity: 0,
+    canCancel: purchase.state === 'ordered' && pendingUnits > 0 && orders.length === 0,
+    canReplace: purchase.state === 'ordered' && pendingUnits > 0,
+    reviewToken: JSON.stringify({ purchase, orders }), orders });
+}
 
 export const demoBusinessApi: BusinessApi = {
   async getSettings() {
@@ -749,6 +812,7 @@ export const demoBusinessApi: BusinessApi = {
       throw new AppError('validation', 'Ingresá una cantidad y un motivo para el ajuste.');
     }
     product.onHand += delta;
+    if (delta > 0) reconcileDemoProduct(product);
     refreshProductAvailability(product);
     state.movements.unshift({
       id: nextUuid(),
@@ -1379,6 +1443,7 @@ export const demoBusinessApi: BusinessApi = {
       }
     }
     order.actionRevision = (order.actionRevision ?? 0) + 1;
+    if (action === 'cancel') for (const item of order.items) reconcileDemoProduct(state.products.find(p => p.id === item.productId)!);
     state.revision += 1;
     return latency(order);
   },
@@ -1428,8 +1493,71 @@ export const demoBusinessApi: BusinessApi = {
       total: all.length,
       pendingTotal: all.filter((p) => p.state === 'ordered').length,
       receivedTotal: all.filter((p) => p.state === 'received').length,
+      cancelledTotal: all.filter((p) => p.state === 'cancelled').length,
       filteredTotal: filtered.length
     });
+  },
+
+  async getPurchaseCancellationPreview(purchaseId) {
+    return latency(purchaseCancellationPreview(purchaseId));
+  },
+
+  async cancelPurchase(input) {
+    const request = JSON.stringify({ ...input, reason: input.reason.trim() });
+    const existing = state.shortageOperations.get(input.operationId);
+    if (existing) {
+      if (existing.request !== request) throw new AppError('business', 'Esta confirmación ya se usó con otros datos.');
+      return latency(structuredClone(existing.result as PurchaseCancellationResult));
+    }
+    if (!input.operationId || input.reason.trim().length < 3 || input.reason.trim().length > 500) {
+      throw new AppError('validation', 'Escribí un motivo de entre 3 y 500 caracteres.');
+    }
+    const preview = purchaseCancellationPreview(input.purchaseId);
+    if (preview.reviewToken !== input.expectedToken) {
+      throw new AppError('business', 'La compra o sus reservas cambiaron desde que las revisaste.', {
+        nextAction: 'Actualizá la revisión antes de confirmar otra vez.'
+      });
+    }
+    if (input.replacement && (input.replacement.supplierName.trim().length < 2 || input.replacement.supplierName.trim().length > 120)) {
+      throw new AppError('validation', 'Escribí el nombre del nuevo proveedor.');
+    }
+    if (!(input.replacement ? preview.canReplace : preview.canCancel)) throw new AppError('business', 'Esta compra todavía no se puede cancelar.', {
+      nextAction: 'Resolvé las reservas pendientes de los clientes y volvé a revisar.'
+    });
+    const purchase = state.purchases.find(p => p.id === input.purchaseId)!;
+    const replacementPurchase = input.replacement ? createPurchaseRecord({ ...input.replacement, notes: `Reposición del saldo de compra #${purchase.number} · ${input.reason.trim()}`, items: preview.replacementItems }) : null;
+    let transferredReservations = 0;
+    let transferredUnits = 0;
+    if (replacementPurchase) for (const order of state.orders.filter(o => o.orderState !== 'cancelled' && o.fulfillmentState === 'pending')) {
+      for (const line of order.items) {
+        for (const allocation of state.incomingAllocations.get(line.id) ?? []) {
+          if (allocation.quantity <= 0 || !purchase.items.some(i => i.id === allocation.purchaseItemId)) continue;
+          allocation.purchaseItemId = replacementPurchase.items.find(i => i.productId === line.productId)!.id;
+          transferredReservations += 1;
+          transferredUnits += allocation.quantity;
+          const recovered = Math.min(line.uncoveredQuantity ?? 0, allocation.quantity);
+          line.uncoveredQuantity = (line.uncoveredQuantity ?? 0) - recovered;
+          line.incomingQuantity = (line.incomingQuantity ?? 0) + recovered;
+          const product = state.products.find(p => p.id === line.productId)!;
+          product.incomingReserved = (product.incomingReserved ?? 0) + recovered;
+        }
+      }
+      if (order.items.some(i => (i.uncoveredQuantity ?? 0) > 0)) order.stockReadiness = 'uncovered';
+      else if (order.items.some(i => (i.incomingQuantity ?? 0) > 0)) { order.stockReadiness = 'waiting_incoming'; order.expectedArrivalAt = input.replacement?.expectedAt ?? null; }
+    }
+    for (const item of purchase.items) {
+      const product = state.products.find(p => p.id === item.productId)!;
+      product.incoming -= Math.max(0, item.quantity - item.receivedQuantity - item.shortageQuantity);
+      refreshProductAvailability(product);
+    }
+    purchase.state = 'cancelled';
+    purchase.cancellation = { reason: input.reason.trim(), cancelledAt: new Date().toISOString(),
+      cancelledByName: demoOwner.displayName, pendingUnits: preview.pendingUnits, pendingCostCents: preview.pendingCostCents,
+      replacementPurchaseId: replacementPurchase?.id ?? null, replacementPurchaseNumber: replacementPurchase?.number ?? null };
+    const result = structuredClone({ purchase, replacementPurchase, transferredReservations, transferredUnits });
+    state.shortageOperations.set(input.operationId, { request, result });
+    state.revision += 1;
+    return latency(result);
   },
 
   async createPurchase(input: PurchaseCreateInput) {
@@ -1586,36 +1714,8 @@ export const demoBusinessApi: BusinessApi = {
         const product = state.products.find((candidate) => candidate.id === item.productId)!;
         product.incoming = Math.max(0, product.incoming - qtyToReceive);
         product.onHand += qtyToReceive;
-        let remainingToAssign = qtyToReceive;
-        let newlyReserved = 0;
-        // Las unidades que estaban en camino pasan a reserva física al recibirlas.
-        // Se atienden primero los pedidos más antiguos, como en la base real.
-        for (const order of [...state.orders].reverse()) {
-          if (remainingToAssign === 0) break;
-          if (order.orderState !== 'confirmed' || order.fulfillmentState !== 'pending') continue;
-          for (const line of order.items) {
-            if (line.productId !== product.id || (line.incomingQuantity ?? 0) <= 0) continue;
-            const allocations = state.incomingAllocations.get(line.id);
-            const linked = allocations?.find(a => a.purchaseItemId === item.id && a.quantity > 0);
-            if (allocations && !linked) continue;
-            const assigned = Math.min(remainingToAssign, linked?.quantity ?? line.incomingQuantity ?? 0);
-            if (linked) linked.quantity -= assigned;
-            if (assigned > 0) order.actionRevision = (order.actionRevision ?? 0) + 1;
-            line.incomingQuantity = (line.incomingQuantity ?? 0) - assigned;
-            line.physicalReservedQuantity = (line.physicalReservedQuantity ?? 0) + assigned;
-            product.incomingReserved = Math.max(0, (product.incomingReserved ?? 0) - assigned);
-            product.reserved += assigned;
-            newlyReserved += assigned;
-            remainingToAssign -= assigned;
-            if (order.items.every((candidate) => (candidate.incomingQuantity ?? 0) === 0 && (candidate.uncoveredQuantity ?? 0) === 0)) {
-              order.stockReadiness = 'ready';
-              order.expectedArrivalAt = null;
-              if (!unblockedOrders.some((candidate) => candidate.id === order.id)) {
-                unblockedOrders.push({ id: order.id, number: order.number });
-              }
-            }
-            if (remainingToAssign === 0) break;
-          }
+        for (const unblocked of reconcileDemoProduct(product)) {
+          if (!unblockedOrders.some(o => o.id === unblocked.id)) unblockedOrders.push(unblocked);
         }
         product.currentCostCents = item.unitCostCents;
         refreshProductAvailability(product);
@@ -1625,7 +1725,7 @@ export const demoBusinessApi: BusinessApi = {
           productName: product.name,
           kind: 'purchase_received',
           physicalDelta: qtyToReceive,
-          reservedDelta: newlyReserved,
+          reservedDelta: 0,
           reason: `Compra #${purchase.number} recibida (${qtyToReceive} un.)`,
           orderId: null,
           purchaseId: purchase.id,

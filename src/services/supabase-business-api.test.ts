@@ -72,3 +72,19 @@ it.each(['ORDER_ACTION_CHANGED', 'ORDER_REVERSAL_RESERVATIONS_MISMATCH', 'CANNOT
     expect(error.nextAction).toBeTruthy();
   }
 );
+
+it('sends cancellation and replacement as one reviewed operation, never as separate writes', async () => {
+  mockRpc.mockResolvedValue({ data: { purchase: { id: 'original' }, replacementPurchase: { id: 'replacement' }, transferredUnits: 2 }, error: null });
+  const replacement = { supplierName: 'Nuevo proveedor', expectedAt: null };
+  await supabaseBusinessApi.cancelPurchase({ purchaseId: 'original', reason: 'No enviará', expectedToken: 'review', operationId: 'operation', replacement });
+  expect(mockRpc).toHaveBeenLastCalledWith('cancel_purchase', { p_purchase_id: 'original', p_reason: 'No enviará', p_expected_token: 'review', p_operation_id: 'operation', p_replacement: replacement });
+  await supabaseBusinessApi.getPurchaseCancellationPreview('original');
+  expect(mockRpc).toHaveBeenLastCalledWith('get_purchase_cancellation_preview', { p_purchase_id: 'original' });
+});
+
+it.each(['PURCHASE_CANCELLATION_CHANGED', 'INVALID_PURCHASE_CANCELLATION', 'INVALID_PURCHASE_STATE', 'CANNOT_CANCEL_PURCHASE_WITH_ACTIVE_RESERVATIONS'])(
+  'explains %s with a recovery action and no database identifiers', code => {
+    const error = translateDatabaseError({ message: code, code: 'P0001' });
+    expect(error.message).not.toContain(code); expect(error.nextAction).toBeTruthy();
+  }
+);

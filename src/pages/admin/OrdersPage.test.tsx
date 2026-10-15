@@ -405,7 +405,7 @@ it('keeps completed orders reachable while undoing delivery, payment and finally
   expect(more).toHaveAttribute('aria-expanded', 'false');
   fireEvent.click(more);
   expect(screen.getByRole('button', { name: 'Cancelar pedido' })).toBeDisabled();
-  expect(screen.getByText(/Primero deshacé el cobro/)).toBeInTheDocument();
+  expect(screen.getByText(/Primero resolvé el cobro/)).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Deshacer entrega' }));
   let dialog = screen.getByRole('dialog');
   expect(dialog.querySelector('#confirm-order-action-description')).toHaveTextContent('reservadas para este mismo pedido');

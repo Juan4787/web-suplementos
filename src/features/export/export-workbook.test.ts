@@ -18,6 +18,17 @@ const libreOfficePath = ['/usr/bin/libreoffice', '/usr/local/bin/libreoffice']
 const libreOfficeIt = libreOfficePath ? it : it.skip;
 
 describe('business XLSX contract', () => {
+  it('retains cancellation reason, actor, pending value and replacement provenance', async () => {
+    const dataset = await demoBusinessApi.getExportDataset();
+    dataset.purchases[0]!.state = 'cancelled';
+    dataset.purchases[0]!.cancellation = { reason: '=Motivo literal', cancelledAt: '2026-10-15T15:00:00Z', cancelledByName: 'Dueña', pendingUnits: 4, pendingCostCents: 400000, replacementPurchaseId: 'new-purchase', replacementPurchaseNumber: 2055 };
+    const sheet = buildBusinessWorkbook(dataset).sheets.find(s => s.name === 'Compras')!;
+    const row = sheet.rows[0]!;
+    expect(row).toHaveLength(sheet.headers.length);
+    expect(row[sheet.headers.indexOf('Motivo cancelación')]).toEqual({ kind: 'text', value: '=Motivo literal' });
+    expect(row[sheet.headers.indexOf('Saldo cancelado ARS')]?.value).toBe(4000);
+    expect(row[sheet.headers.indexOf('Reposición número')]?.value).toBe(2055);
+  });
   it('keeps every recovery sheet even when a section is empty', async () => {
     const dataset = await demoBusinessApi.getExportDataset();
     const workbook = buildBusinessWorkbook(dataset);

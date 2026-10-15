@@ -21,6 +21,9 @@ import type {
   OrderTransitionExpectation,
   ProductReservation,
   Purchase,
+  PurchaseCancellationInput,
+  PurchaseCancellationPreview,
+  PurchaseCancellationResult,
   PurchaseImpactItem,
   QuoteCartEtaResult,
   ReceivePurchaseItemInput,
@@ -44,6 +47,7 @@ export type OrderListFilter = 'all' | 'pending' | 'completed' | 'preparing' | 'r
 export type PurchasesPage = Page<Purchase> & {
   pendingTotal?: number;
   receivedTotal?: number;
+  cancelledTotal?: number;
   filteredTotal?: number;
 };
 
@@ -149,7 +153,9 @@ export interface BusinessApi {
   transitionOrder(orderId: string, action: OrderAction, expected?: OrderTransitionExpectation): Promise<Order>;
   saveOrderShippingFee(input: OrderShippingFeeInput): Promise<Order>;
   saveOrderPacking(orderId: string, items: Array<{ orderItemId: string; packedQuantity: number }>, expectedRevision: number): Promise<Order>;
-  listPurchases(page?: number, pageSize?: number, state?: 'ordered' | 'received' | 'all'): Promise<PurchasesPage>;
+  listPurchases(page?: number, pageSize?: number, state?: 'ordered' | 'received' | 'cancelled' | 'all'): Promise<PurchasesPage>;
+  getPurchaseCancellationPreview(purchaseId: string): Promise<PurchaseCancellationPreview>;
+  cancelPurchase(input: PurchaseCancellationInput): Promise<PurchaseCancellationResult>;
   listOpeningReservations(): Promise<OpeningReservation[]>;
   resolveOpeningReservation(purchaseItemId: string, quantity: number, action: 'deliver' | 'release', operationId: string): Promise<{ quantity: number; action: 'deliver' | 'release' }>;
   createPurchase(input: PurchaseCreateInput): Promise<Purchase>;

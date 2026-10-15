@@ -29,14 +29,15 @@ describe('demo: reservas y contabilidad de envíos',()=>{
     expect((await api.listPaidOrders(1,100)).items.some(o=>o.id===order.id)).toBe(false);
     const after=await api.getDashboard();expect(after.paidRevenueMonthCents).toBe(before.paidRevenueMonthCents!-order.totalCents);
   });
-  it('recibir la segunda compra no usa sus unidades para el cliente que reservó la primera',async()=>{
+  it('recibir otra compra atiende primero al cliente más antiguo y conserva los costos originales',async()=>{
     const a=await create(),b=await create(3,'normal');
     expect(a.costTotalCents).toBe(107000);expect(b.costTotalCents).toBe(413001);
     await api.receivePurchase(second.id,[{purchaseItemId:second.items[0]!.id,receivedQuantity:1}],crypto.randomUUID(),0);
-    expect((await current(a.id)).stockReadiness).toBe('waiting_incoming');
-    expect((await current(b.id)).stockReadiness).toBe('ready');
-    await api.receivePurchase(first.id,[{purchaseItemId:first.items[0]!.id,receivedQuantity:1}],crypto.randomUUID(),0);
     expect((await current(a.id)).stockReadiness).toBe('ready');
+    expect((await current(b.id)).stockReadiness).toBe('waiting_incoming');
+    expect((await current(a.id)).costTotalCents).toBe(107000);
+    await api.receivePurchase(first.id,[{purchaseItemId:first.items[0]!.id,receivedQuantity:1}],crypto.randomUUID(),0);
+    expect((await current(b.id)).stockReadiness).toBe('ready');
   });
   it('dos reintentos simultáneos de recepción conservan un único stock y gasto, igual que el balance',async()=>{
     const op=crypto.randomUUID(),items=[{purchaseItemId:first.items[0]!.id,receivedQuantity:1}];

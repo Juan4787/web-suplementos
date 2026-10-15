@@ -1,6 +1,7 @@
 import type { ReceivePurchaseResult } from '@/domain/types';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { OpeningReservations } from '@/features/inventory/OpeningReservations';
+import { CancelPurchaseModal } from '@/components/admin/CancelPurchaseModal';
 import { ClearSearchButton } from '@/components/ui/ClearSearchButton';
 import { Link, useSearch, useBlocker } from '@tanstack/react-router';
 import {
@@ -2056,10 +2057,11 @@ export default function InventoryPage() {
 
   // Purchases State
   const [purchasesPage, setPurchasesPage] = useState(1);
-  const [purchaseFilter, setPurchaseFilter] = useState<'pending' | 'received' | 'all'>('pending');
+  const [purchaseFilter, setPurchaseFilter] = useState<'pending' | 'received' | 'cancelled' | 'all'>('pending');
   const [expandedPurchases, setExpandedPurchases] = useState<Record<string, boolean>>({});
   const [editingPurchase, setEditingPurchase] = useState<Purchase | null>(null);
   const [receivingPurchase, setReceivingPurchase] = useState<Purchase | null>(null);
+  const [cancellingPurchase, setCancellingPurchase] = useState<Purchase | null>(null);
   const [unblockedNotice, setUnblockedNotice] = useState<Array<{ id: string; number: number }> | null>(null);
 
   // Movements Filter State
@@ -2096,7 +2098,7 @@ export default function InventoryPage() {
       api.listPurchases(
         purchasesPage,
         15,
-        purchaseFilter === 'all' ? 'all' : purchaseFilter === 'pending' ? 'ordered' : 'received'
+        purchaseFilter === 'pending' ? 'ordered' : purchaseFilter
       )
   });
 
@@ -2184,6 +2186,7 @@ export default function InventoryPage() {
   const allPurchases = useMemo(() => purchasesQuery.data?.items ?? [], [purchasesQuery.data?.items]);
   const pendingPurchasesCount = purchasesQuery.data?.pendingTotal ?? 0;
   const receivedPurchasesCount = purchasesQuery.data?.receivedTotal ?? 0;
+  const cancelledPurchasesCount = purchasesQuery.data?.cancelledTotal ?? 0;
   const totalPurchasesCount = purchasesQuery.data?.total ?? 0;
   const filteredPurchases = allPurchases;
 
@@ -2423,6 +2426,11 @@ export default function InventoryPage() {
                 >
                   Recibidos ({receivedPurchasesCount})
                 </button>
+                <button type="button" aria-pressed={purchaseFilter === 'cancelled'}
+                  className={cn('min-h-9 rounded-full px-3.5 text-xs font-black transition select-none', purchaseFilter === 'cancelled' ? 'bg-brand-600 text-white shadow-sm' : 'border border-ink-950/12 bg-white text-ink-700 hover:border-ink-950/25')}
+                  onClick={() => { setPurchaseFilter('cancelled'); setPurchasesPage(1); }}>
+                  Cancelados ({cancelledPurchasesCount})
+                </button>
                 <button
                   type="button"
                   className={cn(
@@ -2502,6 +2510,8 @@ export default function InventoryPage() {
                         // fallback to default
                       }
                     }
+                    if (purchase.state === 'cancelled') deliveryLabel = <span className="font-semibold text-ink-700">No se espera más mercadería</span>;
+                    else if (purchase.state === 'received') deliveryLabel = <span className="font-semibold text-ink-700">Recepción cerrada</span>;
 
                     return (
                       <article key={purchase.id} className="p-5 sm:p-6 transition hover:bg-cream-50/40">
@@ -2513,6 +2523,8 @@ export default function InventoryPage() {
                           <div>
                             {purchase.state === 'received' ? (
                               <StatusChip label="Recibido" tone="success" />
+                            ) : purchase.state === 'cancelled' ? (
+                              <StatusChip label={purchase.items.some(i => i.receivedQuantity > 0) ? 'Saldo cancelado' : 'Cancelado'} tone="neutral" />
                             ) : (
                               <StatusChip label="En camino" tone="warning" />
                             )}
@@ -2524,6 +2536,12 @@ export default function InventoryPage() {
                           {purchase.supplierName || 'Sin proveedor'}
                         </p>
                         {purchase.notes ? <p className="mt-2 whitespace-pre-line break-words text-sm text-ink-700">{purchase.notes}</p> : null}
+                        {purchase.cancellation ? <div className="mt-3 rounded-xl bg-cream-100 p-3 text-sm leading-6 text-ink-800">
+                          <p className="break-words"><strong>Cancelación:</strong> {purchase.cancellation.reason}</p>
+                          <p>{purchase.cancellation.pendingUnits} unidades pendientes canceladas · {format(new Date(purchase.cancellation.cancelledAt), 'd MMM yyyy, HH:mm', { locale: es })}{purchase.cancellation.cancelledByName ? ` · ${purchase.cancellation.cancelledByName}` : ''}</p>
+                          {purchase.cancellation.replacementPurchaseNumber ? <p className="font-bold">Reposición en compra #{purchase.cancellation.replacementPurchaseNumber}. Las reservas pendientes se trasladaron a esa compra.</p> : null}
+                          <p>Se conserva el valor original del pedido. Lo recibido y los gastos registrados siguen vigentes.</p>
+                        </div> : null}
 
                         {/* Fila 3: 15 unidades · $1.125.000 · Llega 8 sep | Marcar como recibido */}
                         <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-ink-950/6 pb-4">
@@ -2543,7 +2561,7 @@ export default function InventoryPage() {
                             {deliveryLabel}
                           </div>
 
-                          <div className="flex items-center gap-2 shrink-0">
+                          <div className="flex flex-wrap items-center gap-2">
                             {purchase.state === 'ordered' ? (
                               <>
                                 <Button
@@ -2563,8 +2581,11 @@ export default function InventoryPage() {
                                 >
                                   <CheckCircle2 className="size-4 text-emerald-600" /> Recibir mercadería
                                 </Button>
+                                <Button variant="ghost" size="sm" onClick={() => setCancellingPurchase(purchase)} aria-label={`Cancelar compra #${purchase.number}`} className="text-red-700 hover:bg-red-50 hover:text-red-800">
+                                  <X className="size-4" aria-hidden="true" />Cancelar compra
+                                </Button>
                               </>
-                            ) : (
+                            ) : purchase.state === 'cancelled' ? <span className="text-xs font-bold text-ink-700">Conservado en el historial</span> : (
                               <span className="inline-flex items-center gap-1.5 text-xs font-black text-emerald-700 bg-emerald-50 border border-emerald-200/60 px-3 py-1.5 rounded-xl">
                                 <Check className="size-3.5" /> Stock actualizado
                               </span>
@@ -2593,6 +2614,7 @@ export default function InventoryPage() {
                                       {item.quantity} {item.quantity === 1 ? 'unidad pedida' : 'unidades pedidas'}
                                       {item.receivedQuantity > 0 ? ` · ${item.receivedQuantity} recibidas` : ''}
                                       {item.shortageQuantity > 0 ? ` · ${item.shortageQuantity} faltante` : ''}
+                                      {purchase.state === 'cancelled' && item.quantity > item.receivedQuantity + item.shortageQuantity ? ` · ${item.quantity - item.receivedQuantity - item.shortageQuantity} canceladas` : ''}
                                     </p>
                                   </div>
                                   {can(user, 'view_financials') && (
@@ -2939,6 +2961,9 @@ export default function InventoryPage() {
           onUnblocked={(orders) => setUnblockedNotice(orders)}
         />
       ) : null}
+      {cancellingPurchase ? <CancelPurchaseModal purchase={cancellingPurchase} onClose={() => setCancellingPurchase(null)}
+        onResolve={purchase => { setCancellingPurchase(null); setReceivingPurchase(purchase); }}
+        onDone={() => { setCancellingPurchase(null); setPurchaseFilter('cancelled'); setPurchasesPage(1); }} /> : null}
     </div>
   );
 }

@@ -223,6 +223,43 @@ export type Purchase = {
   totalCostCents: number;
   notes: string | null;
   items: PurchaseItem[];
+  cancellation?: {
+    reason: string;
+    cancelledAt: string;
+    cancelledByName: string | null;
+    pendingUnits: number;
+    pendingCostCents: number;
+    replacementPurchaseId?: string | null;
+    replacementPurchaseNumber?: number | null;
+  } | null;
+};
+
+export type PurchaseCancellationPreview = {
+  purchase: Purchase;
+  pendingUnits: number;
+  pendingCostCents: number;
+  receivedUnits: number;
+  openingReservedQuantity: number;
+  canCancel: boolean;
+  canReplace: boolean;
+  replacementItems: Array<{ productId: string; productName: string; quantity: number; unitCostCents: number }>;
+  reviewToken: string;
+  orders: Array<{ id: string; number: number; customerName: string; quantity: number; products?: Array<{ name: string; quantity: number }> }>;
+};
+
+export type PurchaseCancellationInput = {
+  purchaseId: string;
+  reason: string;
+  operationId: string;
+  expectedToken: string;
+  replacement?: { supplierName: string; expectedAt: string | null } | null;
+};
+
+export type PurchaseCancellationResult = {
+  purchase: Purchase;
+  replacementPurchase: Purchase | null;
+  transferredReservations: number;
+  transferredUnits: number;
 };
 
 export type ReceivePurchaseItemInput = {
