@@ -25,13 +25,15 @@ const api = vi.hoisted(() => ({
   transitionOrder: vi.fn(),
   listProductReservations: vi.fn(),
   updateStockThresholds: vi.fn(),
-  getSettings: vi.fn()
+  getSettings: vi.fn(),
+  getPurchase: vi.fn()
 }));
-const auth = vi.hoisted(() => ({ staff: false, tab: '' }));
+const auth = vi.hoisted(() => ({ staff: false, tab: '', purchase: '' }));
+const navigate = vi.hoisted(() => vi.fn());
 vi.mock('@/services/business-api', () => ({ getBusinessApi: async () => api }));
 vi.mock('@/features/auth/AuthProvider', () => ({ useAuth: () => ({ user: { ...demoOwner, role: auth.staff ? 'staff' : 'owner' } }) }));
 vi.mock('@tanstack/react-router', () => ({
-  useSearch: () => ({ tab: auth.tab }), useBlocker: vi.fn(),
+  useSearch: () => ({ tab: auth.tab, purchase: auth.purchase || undefined }), useBlocker: vi.fn(), useNavigate: () => navigate,
   Link: ({ children, to, ...props }: PropsWithChildren<{ to: string } & Record<string, unknown>>) => (
     <a href={to} {...props}>{children}</a>
   )
@@ -47,11 +49,40 @@ describe('Carga de compras', () => {
     vi.resetAllMocks();
     auth.staff = false;
     auth.tab = '';
+    auth.purchase = '';
     api.listAdminProducts.mockResolvedValue(demoProducts);
     api.listOpeningReservations.mockResolvedValue([]);
     api.listProductReservations.mockResolvedValue([]);
   });
   afterEach(cleanup);
+
+  it('abre la compra vinculada fuera de la paginación y limpia el enlace al volver a la lista', async () => {
+    auth.purchase = '00000000-0000-4000-8000-000000162054';
+    api.listInventory.mockResolvedValue([]);
+    api.listMovements.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 25 });
+    api.listPurchases.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 15 });
+    api.getPurchase.mockResolvedValue({ id: auth.purchase, number: 2054, supplierName: 'Proveedor asignado', state: 'ordered', orderedAt: null, expectedAt: null, receivedAt: null,
+      totalCostCents: 100000, notes: null, items: [{ id: 'linked-line', productId: demoProducts[0]!.id, productName: 'Producto asignado', quantity: 1, receivedQuantity: 0, shortageQuantity: 0, unitCostCents: 100000 }] });
+    render(<InventoryPage />, { wrapper: Wrapper });
+    expect(await screen.findByRole('heading', { name: 'Pedido #2054' })).toBeInTheDocument();
+    expect(api.getPurchase).toHaveBeenCalledWith(auth.purchase);
+    expect(api.listPurchases).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Ver todas las compras' }));
+    expect(navigate).toHaveBeenCalledWith({ to: '.', search: { tab: 'compras' }, replace: true });
+    await waitFor(() => expect(api.listPurchases).toHaveBeenCalled());
+    expect(screen.queryByRole('heading', { name: 'Pedido #2054' })).not.toBeInTheDocument();
+  });
+
+  it('un enlace de compra inválido informa cómo volver sin mostrar una compra distinta', async () => {
+    auth.purchase = 'enlace-incompleto';
+    api.listInventory.mockResolvedValue([]);
+    api.listMovements.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 25 });
+    render(<InventoryPage />, { wrapper: Wrapper });
+    expect(await screen.findByText('El enlace a esta compra está incompleto.')).toBeInTheDocument();
+    expect(api.getPurchase).not.toHaveBeenCalled();
+    expect(api.listPurchases).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Ver todas las compras' })).toBeEnabled();
+  });
 
   it.each([
     { received: 0, shortage: 5, status: 'Cerrado con faltantes', detail: 'Sin mercadería recibida' },

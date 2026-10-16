@@ -7,7 +7,7 @@ import type { Order } from '@/domain/types';
 import { demoOrders } from '@/data/demo-data';
 import OrdersPage from './OrdersPage';
 
-const api = vi.hoisted(() => ({ listOrders: vi.fn(), transitionOrder: vi.fn(), saveOrderPacking: vi.fn(), saveOrderShippingFee: vi.fn() }));
+const api = vi.hoisted(() => ({ listOrders: vi.fn(), transitionOrder: vi.fn(), saveOrderPacking: vi.fn(), saveOrderShippingFee: vi.fn(), getOrderStockContext: vi.fn() }));
 const navigation = vi.hoisted(() => vi.fn<(options: { enableBeforeUnload: boolean;
   shouldBlockFn: (input: { current: { pathname: string; search?: {search?:string} }; next: { pathname: string; search?: {search?:string} } }) => boolean | Promise<boolean> }) => void>());
 vi.mock('@/services/business-api', () => ({ getBusinessApi: async () => api }));
@@ -241,7 +241,7 @@ it('pide la misma verificación al enviar un pedido histórico listo', async () 
   client.clear();
 });
 
-it('mantiene visible la tarjeta de bolsita con estado bloqueado e invitación a Inventario cuando toda la mercadería está en camino', async () => {
+it('mantiene visible la bolsita bloqueada y permite entender sus reservas cuando toda la mercadería está en camino', async () => {
   const order: Order = {
     ...demoOrders[0]!, orderState: 'confirmed', paymentState: 'gifted', paymentMethod: 'gift',
     preparationState: 'pending', fulfillmentState: 'pending', stockReadiness: 'waiting_incoming',
@@ -255,6 +255,12 @@ it('mantiene visible la tarjeta de bolsita con estado bloqueado e invitación a 
     items: [order], total: 1, page: 1, pageSize: 50,
     pendingTotal: 1, completedTotal: 0, preparingTotal: 0, readyPickupTotal: 0
   });
+  api.getOrderStockContext.mockResolvedValue({ orderId: order.id, orderState: order.orderState,
+    fulfillmentState: order.fulfillmentState, stockSource: order.stockSource ?? 'normal', actionRevision: order.actionRevision ?? 0,
+    packingRevision: order.packingRevision ?? 0, checkedAt: '2026-10-16T16:00:00Z',
+    items: [{ orderItemId: order.items[0]!.id, productId: order.items[0]!.productId, quantity: 1, onHand: 0,
+      reserved: 0, available: 0, physicalQuantity: 0, incomingQuantity: 1, uncoveredQuantity: 0,
+      otherReservedQuantity: 0, openingReservedQuantity: 0, reservations: [], purchases: [] }] });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
   render(<QueryClientProvider client={client}><AppConfirmationProvider><OrdersPage /></AppConfirmationProvider></QueryClientProvider>);
 
@@ -267,8 +273,9 @@ it('mantiene visible la tarjeta de bolsita con estado bloqueado e invitación a 
   expect(screen.getByText(/Llegada estimada:/)).toBeInTheDocument();
   expect(screen.queryByText(/Recibí la compra en Inventario\. Después completá el armado/)).not.toBeInTheDocument();
   expect(screen.getByRole('region', { name: `Armado del pedido ${order.number}` })).toBeInTheDocument();
-  expect(screen.getByText('0 en bolsita')).toBeInTheDocument();
-  expect(screen.getByRole('link', { name: /Ver compra en Inventario/i })).toBeInTheDocument();
+  expect(screen.getByText('Sin unidades físicas asignadas')).toBeInTheDocument();
+  expect(screen.queryByText('0 en bolsita')).not.toBeInTheDocument();
+  expect(await screen.findByRole('button', { name: /Ver stock, reservas y compra/ })).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Guardar armado' })).not.toBeInTheDocument();
   expect(screen.queryByText('Medio de pago')).not.toBeInTheDocument();
   expect(screen.queryByText(/Stock descontado/)).not.toBeInTheDocument();

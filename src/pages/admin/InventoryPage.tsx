@@ -4,7 +4,7 @@ import { OpeningReservations } from '@/features/inventory/OpeningReservations';
 import { CancelPurchaseModal } from '@/components/admin/CancelPurchaseModal';
 import { countCharacters } from '@/domain/text';
 import { ClearSearchButton } from '@/components/ui/ClearSearchButton';
-import { Link, useSearch, useBlocker } from '@tanstack/react-router';
+import { Link, useSearch, useBlocker, useNavigate } from '@tanstack/react-router';
 import {
   AlertTriangle,
   ArrowDown,
@@ -38,6 +38,7 @@ import { es } from 'date-fns/locale';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { queryKeys } from '@/app/query-keys';
 import { useBusinessQuery } from '@/app/use-business-query';
+import { stockMovementEffect } from '@/domain/stock-movement';
 import { PageHeader } from '@/components/layout/AdminShell';
 import { Button } from '@/components/ui/Button';
 import { ErrorState, LoadingState } from '@/components/ui/DataState';
@@ -55,7 +56,7 @@ import { formatProducts, formatUnits } from '@/domain/quantity';
 import type { InventoryItem, Purchase, PurchaseItem, PurchaseImpactItem, ReservedCustomerOrder } from '@/domain/types';
 import { useAuth } from '@/features/auth/AuthProvider';
 import { cn } from '@/lib/cn';
-import { getBusinessApi } from '@/services/business-api';
+import { getBusinessApi, type PurchasesPage } from '@/services/business-api';
 import { useAppConfirmation } from '@/components/ui/AppConfirmation';
 
 const statusLabels = {
@@ -441,11 +442,13 @@ type MissingItemConfig = {
 export function ReceivePurchaseModal({
   purchase: initialPurchase,
   onClose,
-  onUnblocked
+  onUnblocked,
+  onReassigned
 }: {
   purchase: Purchase;
   onClose: () => void;
   onUnblocked: (orders: Array<{ id: string; number: number }>) => void;
+  onReassigned?: (orders: NonNullable<ReceivePurchaseResult['reassignedOrders']>) => void;
 }) {
   const queryClient = useQueryClient();
   const [purchase, setPurchase] = useState(initialPurchase);
@@ -639,6 +642,7 @@ export function ReceivePurchaseModal({
       return receiveResult;
     },
     onSuccess: async (data) => {
+      if (data.reassignedOrders?.length) onReassigned?.(data.reassignedOrders);
       const partialArrival = step === 'missing_checklist';
       if (partialArrival) {
         setPurchase(data.purchase);
@@ -1986,12 +1990,11 @@ function StockDetailDrawer({
           ) : (
             <div className="space-y-2">
               {recentMovements.map((mov) => {
-                const totalUnits = mov.physicalDelta !== 0 ? mov.physicalDelta : mov.reservedDelta;
-                const sign = totalUnits > 0 ? '+' : '';
+                const effect = stockMovementEffect(mov);
                 return (
-                  <div key={mov.id} className="flex items-center justify-between rounded-xl bg-cream-50 p-2.5 text-xs">
+                  <div key={mov.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-cream-50 p-2.5 text-xs">
                     <div>
-                      <p className="font-bold text-ink-950">{movementKindLabels[mov.kind] ?? mov.kind}</p>
+                      <p className="font-bold text-ink-950">{effect.title ?? movementKindLabels[mov.kind] ?? 'Movimiento de stock'}</p>
                       <p className="text-[11px] text-ink-600">
                         {new Intl.DateTimeFormat('es-AR', {
                           day: 'numeric',
@@ -2004,10 +2007,10 @@ function StockDetailDrawer({
                     <span
                       className={cn(
                         'font-black',
-                        totalUnits < 0 ? 'text-red-700' : 'text-emerald-700'
+                        effect.tone === 'negative' ? 'text-red-700' : effect.tone === 'positive' ? 'text-emerald-700' : 'text-ink-800'
                       )}
                     >
-                      {`${sign}${totalUnits} ${Math.abs(totalUnits) === 1 ? 'unidad' : 'unidades'}`}
+                      {effect.label}<span className="mt-1 block text-[11px] font-semibold text-ink-600">{effect.detail}</span>
                     </span>
                   </div>
                 );
@@ -2040,9 +2043,10 @@ function StockDetailDrawer({
 
 export default function InventoryPage() {
   const askConfirmation = useAppConfirmation();
-  const searchParams = useSearch({ strict: false }) as { tab?: string };
+  const navigate = useNavigate();
+  const searchParams = useSearch({ strict: false }) as { tab?: string; purchase?: string };
   const { user } = useAuth();
-  const initialTab = searchParams.tab === 'compras' && can(user, 'manage_purchases') ? 'compras' : searchParams.tab === 'movimientos' ? 'movimientos' : 'stock';
+  const initialTab = (searchParams.tab === 'compras' || searchParams.purchase) && can(user, 'manage_purchases') ? 'compras' : searchParams.tab === 'movimientos' ? 'movimientos' : 'stock';
   const [activeTab, setActiveTab] = useState<'stock' | 'compras' | 'movimientos'>(initialTab);
 
   const queryClient = useQueryClient();
@@ -2059,11 +2063,32 @@ export default function InventoryPage() {
 
   // Purchases State
   const [purchasesPage, setPurchasesPage] = useState(1);
+  const [linkedPurchaseId, setLinkedPurchaseId] = useState<string | null>(typeof searchParams.purchase === 'string' ? searchParams.purchase : null);
+  const focusPurchase = (id: string | null) => {
+    setLinkedPurchaseId(id);
+    if (linkedPurchaseId || id) void navigate({ to: '.', search: { tab: 'compras', ...(id ? { purchase: id } : {}) }, replace: true });
+  };
+  const leavePurchaseFor = (tab: 'stock' | 'movimientos') => {
+    setActiveTab(tab);
+    if (linkedPurchaseId) {
+      setLinkedPurchaseId(null);
+      void navigate({ to: '.', search: { tab }, replace: true });
+    }
+  };
+  useEffect(() => {
+    const id = typeof searchParams.purchase === 'string' ? searchParams.purchase : null;
+    setLinkedPurchaseId(id);
+    if (id && can(user, 'manage_purchases')) {
+      setActiveTab('compras');
+      setExpandedPurchases(current => ({ ...current, [id]: true }));
+    }
+  }, [searchParams.purchase]);
   const [purchaseFilter, setPurchaseFilter] = useState<'pending' | 'received' | 'cancelled' | 'all'>('pending');
   const [expandedPurchases, setExpandedPurchases] = useState<Record<string, boolean>>({});
   const [editingPurchase, setEditingPurchase] = useState<Purchase | null>(null);
   const [receivingPurchase, setReceivingPurchase] = useState<Purchase | null>(null);
   const [cancellingPurchase, setCancellingPurchase] = useState<Purchase | null>(null);
+  const [reassignedNotice, setReassignedNotice] = useState<NonNullable<ReceivePurchaseResult['reassignedOrders']>>([]);
   const [unblockedNotice, setUnblockedNotice] = useState<Array<{ id: string; number: number }> | null>(null);
 
   // Movements Filter State
@@ -2092,10 +2117,10 @@ export default function InventoryPage() {
     queryFn: (api) => api.listMovements(movementPage, 25, debouncedMovementSearch, movementFilter)
   });
 
-  const purchasesQuery = useBusinessQuery({
+  const purchaseListQuery = useBusinessQuery({
     queryKey: queryKeys.purchases(purchasesPage, purchaseFilter),
     refetchOnWindowFocus: 'always',
-    enabled: can(user, 'manage_purchases'),
+    enabled: can(user, 'manage_purchases') && !linkedPurchaseId,
     queryFn: (api) =>
       api.listPurchases(
         purchasesPage,
@@ -2103,6 +2128,20 @@ export default function InventoryPage() {
         purchaseFilter === 'pending' ? 'ordered' : purchaseFilter
       )
   });
+  const linkedPurchaseQuery = useBusinessQuery<PurchasesPage>({
+    queryKey: [...queryKeys.purchasesRoot, 'linked', linkedPurchaseId],
+    enabled: can(user, 'manage_purchases') && Boolean(linkedPurchaseId),
+    refetchOnWindowFocus: 'always',
+    retry: (attempt, error) => error instanceof AppError && error.retryable && attempt < 1,
+    queryFn: async api => {
+      if (!linkedPurchaseId || !/^[a-f\d]{8}-([a-f\d]{4}-){3}[a-f\d]{12}$/i.test(linkedPurchaseId)) {
+        throw new AppError('validation', 'El enlace a esta compra está incompleto.', { nextAction: 'Volvé a la lista de compras y buscala por su número.' });
+      }
+      const purchase = await api.getPurchase(linkedPurchaseId);
+      return { items: [purchase], page: 1, pageSize: 1, total: 1 };
+    }
+  });
+  const purchasesQuery = linkedPurchaseId ? linkedPurchaseQuery : purchaseListQuery;
 
   const currentAdjustmentItem = adjustItem ? inventoryQuery.data?.find(item => item.id === adjustItem.id) : undefined;
   const adjustmentStockChanged = Boolean(adjustItem && currentAdjustmentItem && currentAdjustmentItem.onHand !== adjustItem.onHand);
@@ -2131,6 +2170,8 @@ export default function InventoryPage() {
         queryClient.invalidateQueries({ queryKey: ['movements'] }),
         queryClient.invalidateQueries({ queryKey: queryKeys.dashboard }),
         queryClient.invalidateQueries({ queryKey: queryKeys.products }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.ordersRoot }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.productReservationsRoot }),
         queryClient.invalidateQueries({ queryKey: queryKeys.storefrontProducts })
       ]);
     },
@@ -2186,9 +2227,9 @@ export default function InventoryPage() {
   }, [inventoryQuery.data, stockSearch, stockFilter]);
 
   const allPurchases = useMemo(() => purchasesQuery.data?.items ?? [], [purchasesQuery.data?.items]);
-  const pendingPurchasesCount = purchasesQuery.data?.pendingTotal ?? 0;
-  const receivedPurchasesCount = purchasesQuery.data?.receivedTotal ?? 0;
-  const cancelledPurchasesCount = purchasesQuery.data?.cancelledTotal ?? 0;
+  const pendingPurchasesCount = purchaseListQuery.data?.pendingTotal ?? 0;
+  const receivedPurchasesCount = purchaseListQuery.data?.receivedTotal ?? 0;
+  const cancelledPurchasesCount = purchaseListQuery.data?.cancelledTotal ?? 0;
   const totalPurchasesCount = purchasesQuery.data?.total ?? 0;
   const filteredPurchases = allPurchases;
 
@@ -2216,7 +2257,7 @@ export default function InventoryPage() {
         can(user, 'manage_purchases') ? 'grid-cols-3' : 'grid-cols-2')} aria-label="Secciones de Inventario">
         <button
           type="button"
-          onClick={() => setActiveTab('stock')}
+          onClick={() => leavePurchaseFor('stock')}
           aria-pressed={activeTab === 'stock'}
           className={cn(
             'flex min-h-14 min-w-0 flex-col items-center justify-center gap-1 rounded-xl px-1 py-2 transition sm:min-h-11 sm:flex-row sm:gap-2 sm:px-4',
@@ -2254,7 +2295,7 @@ export default function InventoryPage() {
 
         <button
           type="button"
-          onClick={() => setActiveTab('movimientos')}
+          onClick={() => leavePurchaseFor('movimientos')}
           aria-pressed={activeTab === 'movimientos'}
           className={cn(
             'flex min-h-14 min-w-0 flex-col items-center justify-center gap-1 rounded-xl px-1 py-2 transition sm:min-h-11 sm:flex-row sm:gap-2 sm:px-4',
@@ -2357,6 +2398,7 @@ export default function InventoryPage() {
 
                       {/* Quantity available */}
                       <div>
+                        <span className="block text-xs font-semibold text-ink-600 sm:hidden">Libre para vender</span>
                         <span
                           className={cn(
                             'text-[16px] font-black',
@@ -2397,7 +2439,7 @@ export default function InventoryPage() {
               <h2 id="purchases-section-title" className="font-display text-xl font-black text-ink-950">
                 Pedidos al proveedor
               </h2>
-              <div className="flex flex-wrap items-center gap-1.5">
+              {linkedPurchaseId ? <Button variant="secondary" size="sm" onClick={() => { focusPurchase(null); setPurchasesPage(1); }}>Ver todas las compras</Button> : <div className="flex flex-wrap items-center gap-1.5">
                 <button
                   type="button"
                   className={cn(
@@ -2448,13 +2490,25 @@ export default function InventoryPage() {
                 >
                   Todos ({totalPurchasesCount})
                 </button>
-              </div>
+              </div>}
             </div>
 
-            <Button onClick={() => setShowPurchaseForm(true)} size="sm">
+            {!linkedPurchaseId ? <Button onClick={() => setShowPurchaseForm(true)} size="sm">
               <Plus className="size-4" /> Nuevo pedido
-            </Button>
+            </Button> : null}
           </div>
+
+          {reassignedNotice.length > 0 ? <div role="status" className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm leading-relaxed text-amber-950">
+            <p className="font-bold">Revisá los pedidos que siguen pendientes</p>
+            <p className="mt-1">La llegada atendió los pedidos por antigüedad. Actualizamos la reposición de estos pedidos sin cambiar cobros ni bolsitas:</p>
+            <ul className="mt-2 space-y-2">
+              {reassignedNotice.map(order => <li key={order.id}>
+                <Link to="/app/pedidos" search={{ search: String(order.number) }} className="inline-flex min-h-11 items-center font-bold underline underline-offset-4">Pedido #{order.number}</Link>
+                <p>{order.incomingQuantity > 0 ? `${order.incomingQuantity} ${order.incomingQuantity === 1 ? 'unidad sigue' : 'unidades siguen'} en camino con otra compra. Consultá el pedido para revisar la compra y su fecha. ` : ''}{order.uncoveredQuantity > 0 ? `${order.uncoveredQuantity} ${order.uncoveredQuantity === 1 ? 'unidad quedó' : 'unidades quedaron'} sin reposición: necesitás acordar cómo completarlas y encargar la reposición en Compras.` : ''}</p>
+              </li>)}
+            </ul>
+            <Button variant="ghost" size="sm" className="mt-2" onClick={() => setReassignedNotice([])}>Cerrar aviso de pendientes</Button>
+          </div> : null}
 
           {unblockedNotice && (
             <div className="mb-4 flex items-center justify-between rounded-2xl bg-emerald-50 border border-emerald-200 p-4 text-emerald-950 shadow-sm">
@@ -2645,7 +2699,7 @@ export default function InventoryPage() {
               ) : null}
 
               {(() => {
-                const totalFiltered = purchasesQuery.data.filteredTotal ?? purchasesQuery.data.total;
+                const totalFiltered = ('filteredTotal' in purchasesQuery.data ? purchasesQuery.data.filteredTotal : undefined) ?? purchasesQuery.data.total;
                 const totalPages = Math.max(1, Math.ceil(totalFiltered / purchasesQuery.data.pageSize));
                 if (totalFiltered <= purchasesQuery.data.pageSize) return null;
                 return (
@@ -2756,12 +2810,8 @@ export default function InventoryPage() {
               <div className="overflow-hidden rounded-2xl border border-ink-950/8 bg-white shadow-sm">
                 <div className="divide-y divide-ink-950/6">
                   {filteredMovements.map((movement) => {
-                    const isNegative = movement.physicalDelta < 0 || (movement.physicalDelta === 0 && movement.reservedDelta < 0);
-                    const deltaCount = movement.physicalDelta !== 0 ? movement.physicalDelta : movement.reservedDelta;
-                    const absCount = Math.abs(deltaCount);
-                    const sign = deltaCount > 0 ? '+' : deltaCount < 0 ? '-' : '';
-                    const unitText = absCount === 1 ? 'unidad' : 'unidades';
-                    const formattedDelta = deltaCount !== 0 ? `${sign}${absCount} ${unitText}` : '0 unidades';
+                    const effect = stockMovementEffect(movement);
+                    const isNegative = effect.tone === 'negative';
 
                     let formattedDate = '';
                     try {
@@ -2770,7 +2820,7 @@ export default function InventoryPage() {
                       formattedDate = new Intl.DateTimeFormat('es-AR', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(movement.createdAt));
                     }
 
-                    const kindLabel = movementKindLabels[movement.kind] ?? 'Movimiento de stock';
+                    const kindLabel = effect.title ?? movementKindLabels[movement.kind] ?? 'Movimiento de stock';
                     const isGenericReason =
                       !movement.reason ||
                       movement.reason.toLowerCase() === movement.kind.toLowerCase() ||
@@ -2788,10 +2838,10 @@ export default function InventoryPage() {
                         <span
                           className={cn(
                             'grid size-10 place-items-center rounded-2xl shrink-0',
-                            isNegative ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700'
+                            isNegative ? 'bg-red-50 text-red-700' : effect.tone === 'positive' ? 'bg-emerald-50 text-emerald-700' : 'bg-cream-100 text-ink-700'
                           )}
                         >
-                          {isNegative ? <ArrowDown className="size-4.5" /> : <ArrowUp className="size-4.5" />}
+                          {effect.tone === 'neutral' ? <PackageCheck className="size-4.5" /> : isNegative ? <ArrowDown className="size-4.5" /> : <ArrowUp className="size-4.5" />}
                         </span>
                         <div className="min-w-0">
                           <h3 className="text-[15.5px] font-black text-ink-950 truncate">
@@ -2805,9 +2855,10 @@ export default function InventoryPage() {
                           </p>
                         </div>
                         <div className="text-right text-[15px] font-black shrink-0">
-                          <p className={isNegative ? 'text-red-700' : 'text-emerald-700'}>
-                            {formattedDelta}
+                          <p className={isNegative ? 'text-red-700' : effect.tone === 'positive' ? 'text-emerald-700' : 'text-ink-800'}>
+                            {effect.label}
                           </p>
+                          <p className="mt-1 text-xs font-semibold text-ink-600">{effect.detail}</p>
                         </div>
                       </article>
                     );
@@ -2964,12 +3015,13 @@ export default function InventoryPage() {
           purchase={receivingPurchase}
           onClose={() => setReceivingPurchase(null)}
           onUnblocked={(orders) => setUnblockedNotice(orders)}
+          onReassigned={setReassignedNotice}
         />
       ) : null}
       {cancellingPurchase ? <CancelPurchaseModal purchase={cancellingPurchase} onClose={() => setCancellingPurchase(null)}
         onResolve={purchase => { setCancellingPurchase(null); setReceivingPurchase(purchase); }}
-        onOpenReplacement={purchase => { setCancellingPurchase(null); setPurchaseFilter('pending'); setPurchasesPage(1); setEditingPurchase(purchase); }}
-        onDone={() => { setCancellingPurchase(null); setPurchaseFilter('cancelled'); setPurchasesPage(1); }} /> : null}
+        onOpenReplacement={purchase => { setCancellingPurchase(null); focusPurchase(linkedPurchaseId ? purchase.id : null); setExpandedPurchases(current => ({ ...current, [purchase.id]: true })); setPurchaseFilter('pending'); setPurchasesPage(1); setEditingPurchase(purchase); }}
+        onDone={() => { setCancellingPurchase(null); focusPurchase(null); setPurchaseFilter('cancelled'); setPurchasesPage(1); }} /> : null}
     </div>
   );
 }

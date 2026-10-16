@@ -10,6 +10,8 @@ import { OrderPackingEditor } from './OrderPackingEditor';
 
 const api = vi.hoisted(() => ({ saveOrderPacking: vi.fn() }));
 vi.mock('@/services/business-api', () => ({ getBusinessApi: async () => api }));
+// Reservation explanations and their network states have separate integration coverage.
+vi.mock('./StockAllocationExplanation', () => ({ StockAllocationExplanation: () => null }));
 vi.mock('@tanstack/react-router', () => ({
   Link: ({ children, to, ...props }: PropsWithChildren<{ to: string } & Record<string, unknown>>) => (
     <a href={to} {...props}>{children}</a>
@@ -125,7 +127,7 @@ it('keeps counts independent and requires explicit input for each product', asyn
   client.clear();
 });
 
-it('renders locked rows with 0 en bolsita and direct inventory link when all items are in transit', async () => {
+it('keeps unassigned rows visible without inventing a bag count or a zero-only save', async () => {
   const order: Order = {
     ...sampleOrder(),
     number: 2541,
@@ -154,9 +156,10 @@ it('renders locked rows with 0 en bolsita and direct inventory link when all ite
   // The card is visible (never hidden)
   expect(screen.getByText('Armado de la bolsita · Pedido #2541')).toBeInTheDocument();
 
-  // The item is locked with 0 en bolsita, not an active input
+  // Allocation is missing; the UI must not claim a verified zero bag count.
   expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
-  expect(screen.getByText('0 en bolsita')).toBeInTheDocument();
+  expect(screen.getByText('Sin unidades físicas asignadas')).toBeInTheDocument();
+  expect(screen.queryByText('0 en bolsita')).not.toBeInTheDocument();
   expect(screen.getByText('En camino')).toBeInTheDocument();
 
   // La fecha del pedido puede pertenecer a otra compra: no se atribuye a esta línea.
@@ -166,10 +169,6 @@ it('renders locked rows with 0 en bolsita and direct inventory link when all ite
   // No useless "Guardar armado" button trying to save zeroes
   expect(screen.queryByRole('button', { name: 'Guardar armado' })).not.toBeInTheDocument();
 
-  // Prominent action link to receive purchase in Inventory
-  const link = screen.getByRole('link', { name: /Ver compra en Inventario/i });
-  expect(link).toBeInTheDocument();
-  expect(link).toHaveAttribute('href', '/app/inventario');
   client.clear();
 });
 
@@ -400,19 +399,6 @@ it('conserva un campo borrado al refrescar o reabrir y permite escribir otro nú
   expect(screen.getByRole('alert')).toHaveTextContent('El pedido cambió');
   expect(screen.getByRole('button', { name: 'Guardar armado' })).toBeDisabled();
   expect(api.saveOrderPacking).not.toHaveBeenCalled();
-  client.clear();
-});
-
-it('opens inventory links in a new tab with target _blank and noopener noreferrer', async () => {
-  const order = sampleOrder();
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  render(<QueryClientProvider client={client}><AppConfirmationProvider><OrderPackingEditor order={order} /></AppConfirmationProvider></QueryClientProvider>);
-
-  const incomingLink = screen.getByRole('link', { name: /Hay productos en camino\. Ver compra en Inventario/ });
-  expect(incomingLink).toHaveAttribute('target', '_blank');
-  expect(incomingLink).toHaveAttribute('rel', 'noopener noreferrer');
-  expect(incomingLink).toHaveAttribute('href', '/app/inventario');
-
   client.clear();
 });
 

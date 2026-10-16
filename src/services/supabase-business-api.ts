@@ -10,6 +10,7 @@ import type {
   MiscExpense,
   MiscExpensePeriod,
   Order,
+  OrderStockContext,
   ProductReservation,
   Purchase,
   PurchaseImpactItem,
@@ -317,6 +318,8 @@ export const supabaseBusinessApi: BusinessApi = {
   },
   listProductReservations: async (productId) =>
     (await rpc<ProductReservation[]>('list_product_reservations', { p_product_id: productId })) ?? [],
+  getOrderStockContext: (orderId) => rpc<OrderStockContext>('get_order_stock_context', { p_order_id: orderId }),
+  getPurchase: (purchaseId) => rpc<Purchase>('get_purchase', { p_purchase_id: purchaseId }),
   adjustStock: async (productId, delta, reason, expectedOnHand) => {
     await rpc(expectedOnHand === undefined ? 'adjust_product_stock' : 'adjust_product_stock_checked', {
       p_product_id: productId,

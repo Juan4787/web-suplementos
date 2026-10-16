@@ -174,6 +174,40 @@ export type ProductReservation = {
   paymentState: PaymentState;
 };
 
+export type OrderStockContext = {
+  orderId: string;
+  orderState: OrderState;
+  fulfillmentState: FulfillmentState;
+  stockSource: StockSource;
+  actionRevision: number;
+  packingRevision: number;
+  checkedAt: string;
+  items: Array<{
+    orderItemId: string;
+    productId: string;
+    quantity: number;
+    onHand: number;
+    reserved: number;
+    available: number;
+    physicalQuantity: number;
+    incomingQuantity: number;
+    uncoveredQuantity: number;
+    otherReservedQuantity: number;
+    openingReservedQuantity: number;
+    reservations: ProductReservation[];
+    purchases: Array<{
+      id: string;
+      number: number;
+      expectedAt: string | null;
+      state: Purchase['state'];
+      reservedQuantity: number;
+      orderedQuantity: number;
+      receivedQuantity: number;
+      shortageQuantity: number;
+    }>;
+  }>;
+};
+
 export type OrderAction =
   | 'reverse_payment'
   | 'reverse_delivery'
@@ -271,6 +305,7 @@ export type ReceivePurchaseResult = {
   purchase: Purchase;
   unblockedOrders: Array<{ id: string; number: number }>;
   shippingExpense?: MiscExpense | null;
+  reassignedOrders?: Array<{ id: string; number: number; incomingQuantity: number; uncoveredQuantity: number }>;
 };
 
 export type ReservedCustomerOrder = {

@@ -506,9 +506,9 @@ export default function OrdersPage() {
                         </div>
                       ) : null}
 
-                      <div className="grid gap-6 lg:grid-cols-[1fr_20rem]">
+                      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
                         {/* Detalle de productos y entrega */}
-                        <div className="space-y-4">
+                        <div className="min-w-0 space-y-4">
                           <div>
                             <p className="text-[13.5px] font-black uppercase tracking-wider text-ink-700">
                               Productos pedidos
@@ -695,10 +695,10 @@ export default function OrdersPage() {
                           ) : order.fulfillmentState === 'pending' && order.stockReadiness === 'uncovered' ? (
                             <div className="rounded-xl bg-rose-50 border border-rose-200 p-3 text-xs font-semibold text-rose-950 space-y-1">
                               <p className="font-black flex items-center gap-1.5 text-rose-900">
-                                <span>🔴</span> Faltante de proveedor
+                                <span>🔴</span> Sin reposición confirmada
                               </p>
                               <p className="text-rose-800">
-                                La compra del proveedor cerró con faltante definitivo. Contactá al cliente para acordar un reemplazo o cancelar el pedido.
+                                Hay unidades pendientes sin una compra que las reponga. Revisá el detalle de stock del pedido y acordá una reposición, un reemplazo o la cancelación con el cliente.
                               </p>
                             </div>
                           ) : order.fulfillmentState === 'pending' && order.preparationState !== 'ready' && actions.includes('mark_ready') ? (

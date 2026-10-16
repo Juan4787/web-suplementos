@@ -30,8 +30,9 @@ describe('demo: reservas y contabilidad de envíos',()=>{
     const after=await api.getDashboard();expect(after.paidRevenueMonthCents).toBe(before.paidRevenueMonthCents!-order.totalCents);
   });
   it('recibir otra compra atiende primero al cliente más antiguo y conserva los costos originales',async()=>{
-    const a=await create(),b=await create(3,'normal');
-    expect(a.costTotalCents).toBe(107000);expect(b.costTotalCents).toBe(413001);
+    await api.adjustStock(product.id,-2,'Se agotó el stock físico',2);
+    const a=await create(1,'normal'),b=await create(1,'normal');
+    expect(a.costTotalCents).toBe(107000);expect(b.costTotalCents).toBe(213001);
     await api.receivePurchase(second.id,[{purchaseItemId:second.items[0]!.id,receivedQuantity:1}],crypto.randomUUID(),0);
     expect((await current(a.id)).stockReadiness).toBe('ready');
     expect((await current(b.id)).stockReadiness).toBe('waiting_incoming');

@@ -10,7 +10,7 @@ import InventoryPage from './InventoryPage';
 
 vi.mock('@/services/business-api', () => ({ getBusinessApi: async () => demoBusinessApi }));
 vi.mock('@/features/auth/AuthProvider', () => ({ useAuth: () => ({ user: demoOwner }) }));
-vi.mock('@tanstack/react-router', () => ({ useSearch: () => ({}), useBlocker: vi.fn() }));
+vi.mock('@tanstack/react-router', () => ({ useSearch: () => ({}), useBlocker: vi.fn(), useNavigate: () => vi.fn() }));
 
 const clients: QueryClient[] = [];
 afterEach(() => {

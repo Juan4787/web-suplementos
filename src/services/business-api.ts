@@ -16,6 +16,7 @@ import type {
   MiscExpensePeriod,
   OpeningReservation,
   Order,
+  OrderStockContext,
   OrderAction,
   OrderShippingFeeInput,
   OrderTransitionExpectation,
@@ -145,6 +146,7 @@ export interface BusinessApi {
   archiveProduct(productId: string, archived: boolean): Promise<AdminProduct>;
   listInventory(): Promise<InventoryItem[]>;
   listProductReservations(productId: string): Promise<ProductReservation[]>;
+  getOrderStockContext(orderId: string): Promise<OrderStockContext>;
   adjustStock(productId: string, delta: number, reason: string, expectedOnHand?: number): Promise<void>;
   updateStockThresholds(input: UpdateStockThresholdsInput): Promise<void>;
   listOrders(page?: number, pageSize?: number, search?: string, state?: OrderListFilter): Promise<OrdersPage>;
@@ -154,6 +156,7 @@ export interface BusinessApi {
   saveOrderShippingFee(input: OrderShippingFeeInput): Promise<Order>;
   saveOrderPacking(orderId: string, items: Array<{ orderItemId: string; packedQuantity: number }>, expectedRevision: number): Promise<Order>;
   listPurchases(page?: number, pageSize?: number, state?: 'ordered' | 'received' | 'cancelled' | 'all'): Promise<PurchasesPage>;
+  getPurchase(purchaseId: string): Promise<Purchase>;
   getPurchaseCancellationPreview(purchaseId: string): Promise<PurchaseCancellationPreview>;
   cancelPurchase(input: PurchaseCancellationInput): Promise<PurchaseCancellationResult>;
   listOpeningReservations(): Promise<OpeningReservation[]>;

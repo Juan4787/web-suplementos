@@ -350,22 +350,53 @@ const recordShortage = (purchase: Purchase, item: Purchase['items'][number], qua
   refreshProductAvailability(product);
 };
 
-function reconcileDemoProduct(product: AdminProduct): Array<{ id: string; number: number }> {
+function demoProductReservations(productId: string) {
+  return state.orders.flatMap(order => {
+      if (order.orderState !== 'confirmed' || order.fulfillmentState !== 'pending') return [];
+      const item = order.items.find(line => line.productId === productId);
+      if (!item) return [];
+      const physicalQuantity = item.physicalReservedQuantity ?? (order.stockReadiness === 'ready' ? item.quantity : 0);
+      return physicalQuantity > 0 ? [{
+        orderId: order.id,
+        orderNumber: order.number,
+        physicalQuantity,
+        packedQuantity: item.packedQuantity ?? null,
+        preparationState: order.preparationState,
+        paymentState: order.paymentState
+      }] : [];
+    }).sort((a, b) => a.orderNumber - b.orderNumber);
+}
+
+function reconcileDemoProduct(product: AdminProduct, receivedItemId?: string, receivedQuantity = 0): Array<{ id: string; number: number }> {
   let available = Math.max(0, product.onHand - product.reserved);
+  let arrivedRemaining = Math.min(available, receivedQuantity);
+  let previousFree = available - arrivedRemaining;
   const unblocked: Array<{ id: string; number: number }> = [];
   const waiting = state.orders.filter(o => o.orderState === 'confirmed' && o.fulfillmentState === 'pending')
     .sort((a, b) => (a.confirmedAt || a.createdAt).localeCompare(b.confirmedAt || b.createdAt) || a.number - b.number);
   for (const order of waiting) {
     for (const line of order.items) {
       if (available <= 0 || line.productId !== product.id) continue;
-      const take = Math.min(available, (line.incomingQuantity ?? 0) + (line.uncoveredQuantity ?? 0));
+      const incomingOnly = order.stockSource === 'incoming_only';
+      const matchingIncoming = (state.incomingAllocations.get(line.id) ?? [])
+        .filter(a => a.purchaseItemId === receivedItemId).reduce((sum, a) => sum + a.quantity, 0);
+      const take = incomingOnly
+        ? Math.min(available, arrivedRemaining, matchingIncoming + (line.uncoveredQuantity ?? 0))
+        : Math.min(available, (line.incomingQuantity ?? 0) + (line.uncoveredQuantity ?? 0));
       if (take === 0) continue;
-      let toRemove = take;
+      if (incomingOnly) arrivedRemaining -= take;
+      else {
+        const previousUsed = Math.min(previousFree, take);
+        previousFree -= previousUsed;
+        arrivedRemaining -= take - previousUsed;
+      }
+      const incoming = incomingOnly ? Math.min(take, matchingIncoming) : Math.min(take, line.incomingQuantity ?? 0);
+      let toRemove = incoming;
       for (const allocation of state.incomingAllocations.get(line.id) ?? []) {
+        if (incomingOnly && allocation.purchaseItemId !== receivedItemId) continue;
         const amount = Math.min(toRemove, allocation.quantity);
         allocation.quantity -= amount; toRemove -= amount;
       }
-      const incoming = Math.min(take, line.incomingQuantity ?? 0);
       line.incomingQuantity = (line.incomingQuantity ?? 0) - incoming;
       line.uncoveredQuantity = (line.uncoveredQuantity ?? 0) - (take - incoming);
       line.physicalReservedQuantity = (line.physicalReservedQuantity ?? 0) + take;
@@ -382,6 +413,39 @@ function reconcileDemoProduct(product: AdminProduct): Array<{ id: string; number
   }
   refreshProductAvailability(product);
   return unblocked;
+}
+
+function rebindDemoReceiptPending(item: Purchase['items'][number]): NonNullable<ReceivePurchaseResult['reassignedOrders']> {
+  const active = state.orders.filter(o => o.orderState === 'confirmed' && o.fulfillmentState === 'pending');
+  const used = (id: string) => active.reduce((sum, o) => sum + o.items.reduce((n, line) => n + (state.incomingAllocations.get(line.id) ?? []).filter(a => a.purchaseItemId === id).reduce((q, a) => q + a.quantity, 0), 0), 0);
+  let excess = Math.max(0, used(item.id) - Math.max(0, item.quantity - item.receivedQuantity - item.shortageQuantity));
+  const changed = new Set<string>();
+  const targets = state.purchases.filter(p => p.state === 'ordered').sort((a, b) => (a.expectedAt ?? '9999').localeCompare(b.expectedAt ?? '9999') || a.number - b.number)
+    .flatMap(p => p.items.filter(i => i.id !== item.id && i.productId === item.productId));
+  for (const order of [...active].sort((a, b) => (b.confirmedAt || b.createdAt).localeCompare(a.confirmedAt || a.createdAt) || b.number - a.number)) {
+    for (const line of order.items.filter(i => i.productId === item.productId)) {
+      const allocations = state.incomingAllocations.get(line.id) ?? [];
+      for (const source of [...allocations].filter(a => a.purchaseItemId === item.id && a.quantity > 0)) {
+        if (excess === 0) break;
+        let left = Math.min(source.quantity, excess);
+        source.quantity -= left; excess -= left; changed.add(order.id);
+        for (const target of targets) {
+          const take = Math.min(left, Math.max(0, target.quantity - target.receivedQuantity - target.shortageQuantity - used(target.id)));
+          if (take <= 0) continue;
+          allocations.push({ purchaseItemId: target.id, quantity: take, unitCostCents: source.unitCostCents }); left -= take;
+        }
+        if (left > 0) { line.incomingQuantity = (line.incomingQuantity ?? 0) - left; line.uncoveredQuantity = (line.uncoveredQuantity ?? 0) + left;
+          const product = state.products.find(p => p.id === item.productId)!; product.incomingReserved = Math.max(0, (product.incomingReserved ?? 0) - left); }
+      }
+    }
+    if (changed.has(order.id)) {
+      const dates = order.items.flatMap(line => (state.incomingAllocations.get(line.id) ?? []).filter(a => a.quantity > 0).flatMap(a => state.purchases.filter(p => p.items.some(i => i.id === a.purchaseItemId)).map(p => p.expectedAt).filter((date): date is string => Boolean(date))));
+      order.expectedArrivalAt = dates.sort().at(-1) ?? null;
+      if (order.items.some(i => (i.uncoveredQuantity ?? 0) > 0)) order.stockReadiness = 'uncovered';
+    }
+  }
+  return active.filter(o => changed.has(o.id)).map(o => ({ id: o.id, number: o.number,
+    incomingQuantity: o.items.reduce((n, i) => n + (i.incomingQuantity ?? 0), 0), uncoveredQuantity: o.items.reduce((n, i) => n + (i.uncoveredQuantity ?? 0), 0) }));
 }
 
 function purchaseCancellationPreview(purchaseId: string): PurchaseCancellationPreview {
@@ -875,21 +939,44 @@ export const demoBusinessApi: BusinessApi = {
     });
   },
 
+  async getOrderStockContext(orderId) {
+    const order = state.orders.find(o => o.id === orderId);
+    if (!order) throw new AppError('business', 'No encontramos ese pedido.');
+    return latency({
+      orderId: order.id, orderState: order.orderState, fulfillmentState: order.fulfillmentState,
+      stockSource: order.stockSource ?? 'normal', actionRevision: order.actionRevision ?? 0,
+      packingRevision: order.packingRevision ?? 0, checkedAt: new Date().toISOString(),
+      items: order.items.map(line => {
+        const product = state.products.find(p => p.id === line.productId)!;
+        const ownPhysical = order.items.filter(i => i.productId === product.id)
+          .reduce((sum, i) => sum + (i.physicalReservedQuantity ?? i.quantity), 0);
+        const allocations = state.incomingAllocations.get(line.id) ?? [];
+        return {
+          orderItemId: line.id, productId: line.productId, quantity: line.quantity,
+          onHand: product.onHand, reserved: product.reserved, available: Math.max(0, product.onHand - product.reserved),
+          physicalQuantity: line.physicalReservedQuantity ?? line.quantity,
+          incomingQuantity: line.incomingQuantity ?? 0, uncoveredQuantity: line.uncoveredQuantity ?? 0,
+          otherReservedQuantity: Math.max(0, product.reserved - ownPhysical), openingReservedQuantity: 0,
+          reservations: demoProductReservations(product.id),
+          purchases: state.purchases.flatMap(p => p.items.flatMap(item => {
+            const quantity = allocations.filter(a => a.purchaseItemId === item.id).reduce((sum, a) => sum + a.quantity, 0);
+            return quantity > 0 ? [{ id: p.id, number: p.number, expectedAt: p.expectedAt, state: p.state,
+              reservedQuantity: quantity, orderedQuantity: item.quantity, receivedQuantity: item.receivedQuantity,
+              shortageQuantity: item.shortageQuantity }] : [];
+          }))
+        };
+      })
+    });
+  },
+
+  async getPurchase(purchaseId) {
+    const purchase = state.purchases.find(p => p.id === purchaseId);
+    if (!purchase) throw new AppError('business', 'No encontramos la compra.');
+    return latency(purchase);
+  },
+
   async listProductReservations(productId) {
-    return latency(state.orders.flatMap(order => {
-      if (order.orderState !== 'confirmed' || order.fulfillmentState !== 'pending') return [];
-      const item = order.items.find(line => line.productId === productId);
-      if (!item) return [];
-      const physicalQuantity = item.physicalReservedQuantity ?? (order.stockReadiness === 'ready' ? item.quantity : 0);
-      return physicalQuantity > 0 ? [{
-        orderId: order.id,
-        orderNumber: order.number,
-        physicalQuantity,
-        packedQuantity: item.packedQuantity ?? null,
-        preparationState: order.preparationState,
-        paymentState: order.paymentState
-      }] : [];
-    }).sort((a, b) => a.orderNumber - b.orderNumber));
+    return latency(demoProductReservations(productId));
   },
 
   async listPaidOrders(page = 1, pageSize = 20, from, to) {
@@ -1704,6 +1791,7 @@ export const demoBusinessApi: BusinessApi = {
     if (itemsInput?.length === 0 && shippingCostCents === 0) throw new AppError('validation', 'Registrá unidades recibidas o un gasto de envío.');
     const now = new Date().toISOString();
     const unblockedOrders: Array<{ id: string; number: number }> = [];
+    const reassignedOrders: NonNullable<ReceivePurchaseResult['reassignedOrders']> = [];
 
     for (const item of purchase.items) {
       const qtyToReceive = itemsInput !== undefined
@@ -1715,8 +1803,12 @@ export const demoBusinessApi: BusinessApi = {
         const product = state.products.find((candidate) => candidate.id === item.productId)!;
         product.incoming = Math.max(0, product.incoming - qtyToReceive);
         product.onHand += qtyToReceive;
-        for (const unblocked of reconcileDemoProduct(product)) {
+        for (const unblocked of reconcileDemoProduct(product, item.id, qtyToReceive)) {
           if (!unblockedOrders.some(o => o.id === unblocked.id)) unblockedOrders.push(unblocked);
+        }
+        for (const affected of rebindDemoReceiptPending(item)) {
+          const index = reassignedOrders.findIndex(o => o.id === affected.id);
+          if (index < 0) reassignedOrders.push(affected); else reassignedOrders[index] = affected;
         }
         product.currentCostCents = item.unitCostCents;
         refreshProductAvailability(product);
@@ -1748,7 +1840,11 @@ export const demoBusinessApi: BusinessApi = {
     if (shippingCostCents > 0) shippingExpense = recordDemoExpense({title: `Envío de proveedor · Compra #${purchase.number}`,
       amountCents: shippingCostCents, frequency: 'once', startsOn: salesDateAt(now), endsOn: null}, nextUuid(),
       {purchaseReceiptOperationId: operationId, purchaseId, purchaseNumber: purchase.number});
-    const result = { purchase, unblockedOrders, shippingExpense };
+    const result = { purchase, unblockedOrders, shippingExpense, reassignedOrders: reassignedOrders.map(affected => {
+      const order = state.orders.find(o => o.id === affected.id)!;
+      return { ...affected, incomingQuantity: order.items.reduce((n, i) => n + (i.incomingQuantity ?? 0), 0),
+        uncoveredQuantity: order.items.reduce((n, i) => n + (i.uncoveredQuantity ?? 0), 0) };
+    }) };
     state.receiptHistory.push({operationId, purchaseId, items: itemsInput ?? purchase.items.map(item => ({purchaseItemId: item.id, receivedQuantity: item.receivedQuantity})), shippingCostCents, shippingExpenseId: shippingExpense?.id ?? null, createdAt: now});
     if (operationId) {
       state.purchaseReceipts.set(operationId, {

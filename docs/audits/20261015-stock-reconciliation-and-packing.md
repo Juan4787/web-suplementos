@@ -1,3 +1,5 @@
+> Nota del 16/10/2026: este informe describe una verificación histórica. Sus afirmaciones generales de ausencia de inconsistencias quedaron superadas por la [investigación y corrección posterior](20261016-stock-origin-and-packing-ux.md), que distingue compras normales de reservas elegidas en camino y documenta diferencias históricas y problemas de uso. No debe usarse como garantía del estado actual.
+
 # Auditoría Forense: Reconciliación Automática de Stock Libre y Desbloqueo de Bolsitas
 
 > Revisión posterior: [cancelación de compras y auditoría de regresiones](20261015-purchase-cancellation.md). El informe siguiente conserva el registro original; la revisión detectó limitaciones del FIFO, pérdida de costos al fusionar reservas y una regresión de recepción de reservas previas, entre otros hallazgos. Sus afirmaciones de corrección absoluta quedan reemplazadas por la evidencia de esa revisión.

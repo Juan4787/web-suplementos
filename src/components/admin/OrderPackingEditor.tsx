@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAppConfirmation } from '@/components/ui/AppConfirmation';
-import { Link } from '@tanstack/react-router';
-import { AlertTriangle, ArrowRight, Lock, Minus, Package, Plus } from 'lucide-react';
+import { AlertTriangle, Lock, Minus, Package, Plus } from 'lucide-react';
+import { StockAllocationExplanation } from './StockAllocationExplanation';
 import { queryKeys } from '@/app/query-keys';
 import { Button } from '@/components/ui/Button';
 import { ErrorState } from '@/components/ui/DataState';
@@ -138,9 +138,11 @@ export function OrderPackingEditor({ order: receivedOrder, draftStore, draftEpoc
   const hasIncomingItems = order.items.some(item => (item.incomingQuantity ?? 0) > 0);
   const hasUncoveredItems = order.items.some(item => (item.uncoveredQuantity ?? 0) > 0);
   const allPackedFull = order.items.every(item => Number(values[item.id]) === item.quantity);
+  const assignedUnits = order.items.reduce((sum, item) => sum + Math.min(item.quantity, item.physicalReservedQuantity ?? item.quantity), 0);
+  const pendingUnits = order.items.reduce((sum, item) => sum + item.quantity, 0) - assignedUnits;
 
   return (
-    <section className="rounded-2xl border border-brand-200 bg-brand-50/45 p-4 sm:p-5" aria-label={`Armado del pedido ${order.number}`}>
+    <section className="min-w-0 rounded-2xl border border-brand-200 bg-brand-50/45 p-4 [overflow-wrap:anywhere] sm:p-5" aria-label={`Armado del pedido ${order.number}`}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h3 className="text-[15px] font-black text-ink-950">Armado de la bolsita · Pedido #{order.number}</h3>
@@ -154,6 +156,11 @@ export function OrderPackingEditor({ order: receivedOrder, draftStore, draftEpoc
           </span>
         ) : null}
       </div>
+
+      {pendingUnits > 0 ? <p className="mt-3 text-sm font-semibold leading-relaxed text-ink-800">
+        {assignedUnits > 0 ? (assignedUnits === 1 ? 'Podés registrar la unidad que este pedido ya tiene asignada físicamente. ' : `Podés registrar las ${assignedUnits} unidades que este pedido ya tiene asignadas físicamente. `) : ''}
+        {pendingUnits === 1 ? 'Falta asignar 1 unidad física' : `Falta asignar ${pendingUnits} unidades físicas`} para completar la bolsita. Revisá el motivo debajo de cada producto pendiente.
+      </p> : null}
 
       {conflict ? (
         <div role="alert" className="mt-3 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
@@ -198,7 +205,7 @@ export function OrderPackingEditor({ order: receivedOrder, draftStore, draftEpoc
                       </span>
                     ) : isLocked && uncovered > 0 ? (
                       <span className="inline-flex items-center gap-1 rounded-md border border-rose-200 bg-rose-50 px-2 py-0.5 text-[11px] font-bold text-rose-900">
-                        <AlertTriangle className="size-3 text-rose-600 shrink-0" /> Faltante de proveedor
+                        <AlertTriangle className="size-3 text-rose-600 shrink-0" /> Sin reposición
                       </span>
                     ) : isPartial ? (
                       <span className="inline-flex items-center rounded-md border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-bold text-amber-900">
@@ -224,11 +231,11 @@ export function OrderPackingEditor({ order: receivedOrder, draftStore, draftEpoc
                 {isLocked ? (
                   <div className="inline-flex items-center gap-1.5 rounded-xl border border-ink-950/10 bg-cream-200/60 px-3 py-2 text-xs font-bold text-ink-700">
                     <Lock className="size-3.5 text-ink-500" />
-                    <span>0 en bolsita</span>
+                    <span>Sin unidades físicas asignadas</span>
                   </div>
                 ) : (
-                  <div className="flex flex-col items-end gap-1">
-                    <div className="flex items-center gap-1.5">
+                  <div className="flex max-w-full flex-col items-end gap-1">
+                    <div className="flex max-w-full flex-wrap items-center justify-end gap-1.5">
                       <button
                         type="button"
                         onClick={() => {
@@ -308,6 +315,7 @@ export function OrderPackingEditor({ order: receivedOrder, draftStore, draftEpoc
                       : `Ingresá entre 0 y ${maxPacked} unidades de este pedido reservadas físicamente.`}
                 </p>
               ) : null}
+              {incoming > 0 || uncovered > 0 ? <StockAllocationExplanation order={order} item={item} canReceivePurchases={canReceivePurchases} /> : null}
             </div>
           );
         })}
@@ -357,33 +365,10 @@ export function OrderPackingEditor({ order: receivedOrder, draftStore, draftEpoc
                     : 'No hay unidades físicas reservadas para este pedido. Revisá sus reservas en Inventario.'}
               </p>
             </div>
-            <Link
-              to="/app/inventario"
-              target="_blank"
-              rel="noopener noreferrer"
-              search={{ tab: hasIncomingItems && canReceivePurchases ? 'compras' : 'stock' }}
-              className="inline-flex min-h-10 items-center gap-1.5 rounded-xl bg-brand-600 px-3.5 py-1.5 text-xs font-black text-white shadow-xs hover:bg-brand-700 transition"
-            >
-              <span>{hasIncomingItems && canReceivePurchases ? 'Ver compra en Inventario' : 'Revisar Inventario'}</span>
-              <ArrowRight className="size-3.5" />
-            </Link>
           </div>
         ) : (
           <>
-            <div>
-              {hasIncomingItems ? (
-                <Link
-                  to="/app/inventario"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  search={{ tab: canReceivePurchases ? 'compras' : 'stock' }}
-                  className="inline-flex items-center gap-1.5 text-xs font-bold text-brand-800 hover:text-brand-950 hover:underline"
-                >
-                  <Package className="size-3.5 text-brand-600" />
-                  <span>{canReceivePurchases ? 'Hay productos en camino. Ver compra en Inventario →' : 'Hay productos en camino. La dueña puede recibir la compra en Inventario.'}</span>
-                </Link>
-              ) : null}
-            </div>
+            <p className="max-w-sm text-xs font-semibold leading-relaxed text-ink-700">{hasIncomingItems || hasUncoveredItems ? 'Podés guardar un armado parcial con las unidades físicas asignadas. Lo pendiente seguirá esperando mercadería.' : 'Registrar la bolsita no modifica el stock ni las reservas.'}</p>
 
             <div className="flex flex-wrap items-center gap-2">
               {packingDraftDirty(draft) && !conflict ? <Button type="button" variant="ghost" size="sm" disabled={busy}
