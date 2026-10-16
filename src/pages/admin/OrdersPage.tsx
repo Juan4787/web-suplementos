@@ -10,7 +10,6 @@ import {
   MapPin,
   MessageCircle,
   MoreHorizontal,
-  Package,
   PackageCheck,
   Plus,
   Search,
@@ -680,28 +679,8 @@ export default function OrdersPage() {
                             </div>
                           ) : (
                             <>
-                              {/* Una sola indicación para el bloqueo o la próxima preparación. */}
-                          {order.fulfillmentState === 'pending' && order.stockReadiness === 'waiting_incoming' ? (
-                            <div className="rounded-xl bg-brand-50 border border-brand-200 p-3 text-xs font-semibold text-brand-950 space-y-1">
-                              <p className="font-black flex items-center gap-1.5 text-brand-900">
-                                <Package className="size-4 shrink-0 text-brand-600" /> Mercadería en camino
-                              </p>
-                              <p className="text-brand-800">
-                                {order.expectedArrivalAt
-                                  ? `Llegada estimada: ${new Intl.DateTimeFormat('es-AR', { dateStyle: 'medium' }).format(new Date(order.expectedArrivalAt))}.`
-                                  : 'Stock asignado a compras en camino.'}
-                              </p>
-                            </div>
-                          ) : order.fulfillmentState === 'pending' && order.stockReadiness === 'uncovered' ? (
-                            <div className="rounded-xl bg-rose-50 border border-rose-200 p-3 text-xs font-semibold text-rose-950 space-y-1">
-                              <p className="font-black flex items-center gap-1.5 text-rose-900">
-                                <span>🔴</span> Sin reposición confirmada
-                              </p>
-                              <p className="text-rose-800">
-                                Hay unidades pendientes sin una compra que las reponga. Revisá el detalle de stock del pedido y acordá una reposición, un reemplazo o la cancelación con el cliente.
-                              </p>
-                            </div>
-                          ) : order.fulfillmentState === 'pending' && order.preparationState !== 'ready' && actions.includes('mark_ready') ? (
+                              {/* Las cantidades y la reposición se consultan junto al armado. */}
+                          {order.fulfillmentState === 'pending' && order.stockReadiness === 'ready' && order.preparationState !== 'ready' && actions.includes('mark_ready') ? (
                             <Button
                               variant="dark"
                               size="md"
@@ -717,16 +696,15 @@ export default function OrdersPage() {
                               <PackageCheck className="size-4 mr-1.5 shrink-0" />
                               Marcar listo para entregar
                             </Button>
-                          ) : order.fulfillmentState === 'pending' && order.preparationState !== 'ready' ? (
+                          ) : order.fulfillmentState === 'pending' && order.stockReadiness === 'ready' && order.preparationState !== 'ready' ? (
                             <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs font-semibold text-amber-950">
                               {hasPhysicalUnitsToPack
-                                ? 'Revisá la bolsita y registrá todas las unidades antes de marcar el pedido como listo.'
-                                : 'No hay unidades físicas reservadas para armar este pedido. Revisá sus reservas en Inventario.'}
+                                ? 'Registrá el armado completo para marcarlo listo.'
+                                : 'Revisá las reservas de este pedido antes de armar.'}
                             </p>
                           ) : null}
 
                           <OrderShippingFeeEditor order={order} canEdit={can(user, 'manage_pricing')} disabled={transition.isPending} onEditingChange={notifyShippingEditing} />
-                          {order.stockSource === 'incoming_only' && order.stockReadiness === 'waiting_incoming' ? <p className="text-xs text-ink-700">Este pedido reserva exclusivamente mercadería en camino.</p> : null}
                           {/* El cobro es independiente de la preparación. */}
                           {actions.includes('mark_paid') ? (
                             <div className="space-y-2">

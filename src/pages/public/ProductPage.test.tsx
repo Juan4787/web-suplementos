@@ -50,7 +50,7 @@ describe('Precio y disponibilidad de productos', () => {
     mocks.query.mockReturnValue({ data: product, isSuccess: true });
     render(view === 'tarjeta' ? <ProductCard product={product} /> : <ProductPage />);
     expect(screen.getByText('Últimas unidades')).toBeInTheDocument();
-    expect(screen.queryByText('En camino')).not.toBeInTheDocument();
+    expect(screen.queryByText('Pendiente de recibir')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Agregar.*al carrito/i })).toBeEnabled();
   });
 

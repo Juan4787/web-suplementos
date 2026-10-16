@@ -45,7 +45,7 @@ describe('Reservas previas a la entrega de la aplicación', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Confirmar entrega' }));
     expect(await screen.findByText('THYROID SUPPORT: 2 unidades entregadas. Stock actualizado.')).toBeVisible();
     expect(api.resolveOpeningReservation).toHaveBeenCalledWith('item', 2, 'deliver', expect.any(String));
-    await screen.findByText('Para entregar: 1 · En camino: 1');
+    await screen.findByText('Con stock asignado: 1 · Pendientes de recibir: 1');
   });
 
   it('reutiliza la misma confirmación al recuperar una respuesta perdida', async () => {

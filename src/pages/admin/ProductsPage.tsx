@@ -960,7 +960,7 @@ export default function ProductsPage() {
                   </div>
                   <div>
                     <dt className="text-[13px] font-black uppercase tracking-wider text-ink-700">
-                      Disponible ahora
+                      Libre para nuevas ventas
                     </dt>
                     <dd
                       className={cn(
@@ -974,14 +974,15 @@ export default function ProductsPage() {
                           : 'text-ink-950'
                       )}
                     >
-                      {available}{' '}
+                      {Math.max(0, available)}{' '}
                       <span className="font-sans text-sm font-semibold">{available === 1 ? 'unidad' : 'unidades'}</span>
                     </dd>
                   </div>
+                  {available < 0 ? <div role="alert" className="col-span-2 text-sm font-semibold text-rose-900">{available === -1 ? 'Falta 1 unidad' : `Faltan ${-available} unidades`} para cubrir las reservas del producto.</div> : null}
                   {hasIncoming ? (
                     <div className="col-span-2 grid grid-cols-[1fr_auto] items-baseline gap-x-3 gap-y-1 rounded-xl border border-brand-200 bg-brand-50 px-3 py-2.5 text-brand-900">
                       <dt className="flex items-center gap-2 text-sm font-bold">
-                        <Truck className="size-4 shrink-0 self-center" aria-hidden="true" /> En camino
+                        <Truck className="size-4 shrink-0 self-center" aria-hidden="true" /> Pendiente de recibir
                       </dt>
                       <dd className="font-display text-lg font-black">
                         {product.incoming} {product.incoming === 1 ? 'unidad' : 'unidades'}

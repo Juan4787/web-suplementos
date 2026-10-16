@@ -23,7 +23,7 @@ it('preserva lo elegido en camino y consume sólo la recepción propia sin tocar
   await api.receivePurchase(purchase.id, [{ purchaseItemId: purchase.items[0]!.id, receivedQuantity: 1 }], crypto.randomUUID());
   const context = await api.getOrderStockContext(future.id);
   expect(context.items[0]).toMatchObject({ physicalQuantity: 1, incomingQuantity: 2, available: 6 });
-  expect(context.items[0]!.purchases[0]).toMatchObject({ id: purchase.id, reservedQuantity: 2 });
+  expect(context.items[0]!.purchases[0]).toMatchObject({ id: purchase.id, reservedQuantity: 2, incomingQuantity: 2, uncoveredQuantity: 0 });
   const current = (await api.listOrders(1, 100)).items.find(o => o.id === future.id)!;
   expect(current.costTotalCents).toBe(300000);
   expect(current.items[0]!.packedQuantity).toBeNull();

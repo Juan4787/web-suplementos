@@ -241,7 +241,7 @@ export default function StorefrontPage() {
             <div>
               <p className="text-xs font-black uppercase tracking-[0.18em] text-brand-600">Compra simple</p>
               <h2 className="mt-3 font-display text-4xl font-black tracking-[-0.055em] sm:text-5xl">Tres pasos. Una conversación real.</h2>
-              <p className="mt-5 text-base leading-7 text-ink-600">Armás el carrito acá y una persona confirma por WhatsApp. Sin cuentas, sin contraseñas, sin sorpresas.</p>
+              <p className="mt-5 text-base leading-7 text-ink-600">Armás el carrito acá y continuás por WhatsApp. Te avisamos cuando el pedido quede confirmado y reservado.</p>
             </div>
             <ol className="grid gap-4 sm:grid-cols-3">
               {[

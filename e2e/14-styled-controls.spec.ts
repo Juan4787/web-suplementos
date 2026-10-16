@@ -33,8 +33,8 @@ async function styledDom(page:Page) {
 
 test('manual order choices and category list work with keyboard, search clearing and no stored changes',async({page},info)=>{
   const errors=watch(page);await local(page,'/app/pedidos/nuevo');
-  const normal=page.getByRole('radio',{name:'Compra normal',exact:true});
-  const incoming=page.getByRole('radio',{name:'Comprar productos en camino',exact:true});
+  const normal=page.getByRole('radio',{name:'Stock local primero',exact:true});
+  const incoming=page.getByRole('radio',{name:'Solo compras al proveedor',exact:true});
   await expect(normal).toBeChecked();
   await normal.focus();await page.keyboard.press('ArrowRight');await expect(incoming).toBeChecked();
   await page.keyboard.press('ArrowLeft');await expect(normal).toBeChecked();

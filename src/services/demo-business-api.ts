@@ -961,7 +961,8 @@ export const demoBusinessApi: BusinessApi = {
           purchases: state.purchases.flatMap(p => p.items.flatMap(item => {
             const quantity = allocations.filter(a => a.purchaseItemId === item.id).reduce((sum, a) => sum + a.quantity, 0);
             return quantity > 0 ? [{ id: p.id, number: p.number, expectedAt: p.expectedAt, state: p.state,
-              reservedQuantity: quantity, orderedQuantity: item.quantity, receivedQuantity: item.receivedQuantity,
+              reservedQuantity: quantity, incomingQuantity: quantity, uncoveredQuantity: 0,
+              orderedQuantity: item.quantity, receivedQuantity: item.receivedQuantity,
               shortageQuantity: item.shortageQuantity }] : [];
           }))
         };
@@ -1115,7 +1116,7 @@ export const demoBusinessApi: BusinessApi = {
           if (take > 0) { allocations.push({purchaseItemId: pi.id, quantity: take, unitCostCents: pi.unitCostCents}); itemCost += take*pi.unitCostCents; remaining -= take; }
         }
       }
-      if (remaining > 0) throw new AppError('business', 'No alcanzan las unidades libres de compras en camino.', {nextAction: 'Actualizá los productos y ajustá las cantidades.'});
+      if (remaining > 0) throw new AppError('business', 'No alcanzan las unidades libres de compras al proveedor.', {nextAction: 'Actualizá los productos y ajustá las cantidades.'});
       newAllocations.set(item.id, allocations);
       item.costTotalCents = itemCost;
       if (isCost && !isGift) { item.unitPriceCents = Math.round(itemCost / item.quantity); item.subtotalCents = itemCost; }
@@ -2301,7 +2302,7 @@ export const demoBusinessApi: BusinessApi = {
       .filter((item) => item.status !== 'ok')
       .sort((left, right) => left.available - right.available)[0];
     const answer = urgent
-      ? `En la demo priorizaría ${urgent.name}. Tiene ${urgent.available} unidades disponibles, ${urgent.incoming} en camino y una cobertura estimada de ${urgent.coverageDays ?? '—'} días. La cantidad sugerida de compra es ${urgent.suggestedPurchase}. Esta respuesta usa datos agregados de inventario; no modificó ningún registro.`
+      ? `En la demo priorizaría ${urgent.name}. Tiene ${urgent.available} unidades libres para nuevas ventas, ${urgent.incoming} pendientes de recibir y una cobertura estimada de ${urgent.coverageDays ?? '—'} días. La cantidad sugerida de compra es ${urgent.suggestedPurchase}. Esta respuesta usa datos agregados de inventario; no modificó ningún registro.`
       : `No veo productos por debajo del punto de pedido en los datos de demostración. Para la pregunta “${message.slice(0, 80)}”, revisé el estado agregado del inventario sin modificar datos.`;
     return latency(
       {

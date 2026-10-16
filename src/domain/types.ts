@@ -201,6 +201,8 @@ export type OrderStockContext = {
       expectedAt: string | null;
       state: Purchase['state'];
       reservedQuantity: number;
+      incomingQuantity: number;
+      uncoveredQuantity: number;
       orderedQuantity: number;
       receivedQuantity: number;
       shortageQuantity: number;

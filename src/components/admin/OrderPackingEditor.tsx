@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAppConfirmation } from '@/components/ui/AppConfirmation';
-import { Minus, Plus } from 'lucide-react';
+import { Check, Minus, Plus } from 'lucide-react';
 import { StockAllocationExplanation } from './StockAllocationExplanation';
 import { queryKeys } from '@/app/query-keys';
 import { Button } from '@/components/ui/Button';
@@ -140,27 +140,33 @@ export function OrderPackingEditor({ order: receivedOrder, draftStore, draftEpoc
   const allPackedFull = order.items.every(item => Number(values[item.id]) === item.quantity);
   const assignedUnits = order.items.reduce((sum, item) => sum + Math.min(item.quantity, item.physicalReservedQuantity ?? item.quantity), 0);
   const pendingUnits = order.items.reduce((sum, item) => sum + item.quantity, 0) - assignedUnits;
+  const anyPacked = order.items.some(item => Number(values[item.id]) > 0);
+  // Match save_order_packing: a complete count preserves ready, but does not mark it ready.
+  const preparationAfterSave = order.preparationState === 'ready' && allPackedFull ? 'ready'
+    : anyPacked ? 'preparing' : 'pending';
+  const stateAfterSave = preparationAfterSave === 'ready' ? 'Listo para entrega'
+    : preparationAfterSave === 'preparing' ? 'En preparación' : 'Falta preparar';
+  const saveHelp = conflict ? 'Revisá el conteo actualizado antes de guardar.'
+    : hasInvalid && !hasEmpty ? 'Revisá las cantidades marcadas.'
+    : !hasAnyPhysicalStock ? 'Todavía no hay unidades asignadas para guardar.'
+    : hasEmpty ? 'Completá los conteos; usá 0 si no guardaste unidades.'
+    : changed && preparationAfterSave !== order.preparationState ? `Al guardar: ${stateAfterSave}.`
+    : changed && !allPackedFull && (hasIncomingItems || hasUncoveredItems) ? 'Podés guardar el armado parcial.'
+    : '';
 
   return (
     <section className="min-w-0 rounded-2xl border border-brand-200 bg-brand-50/45 p-4 [overflow-wrap:anywhere] sm:p-5" aria-label={`Armado del pedido ${order.number}`}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h3 className="text-[15px] font-black text-ink-950">Armado de la bolsita · Pedido #{order.number}</h3>
-          <p className="mt-1 text-[13px] text-ink-700">
-            Identificála con #{order.number} y contá lo que ya guardaste.
-          </p>
+          {order.stockSource === 'incoming_only' && pendingUnits > 0 ? <p className="mt-1 text-xs text-ink-700">Reservado solo de compras al proveedor</p> : null}
         </div>
         {hasUnknown && hasAnyPhysicalStock ? (
           <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-bold text-amber-900">
-            Armado sin verificar
+            Conteo sin registrar
           </span>
         ) : null}
       </div>
-
-      <p className="mt-3 text-sm font-semibold text-ink-950">
-        Habilitadas: {assignedUnits} de {assignedUnits + pendingUnits} {assignedUnits + pendingUnits === 1 ? 'unidad' : 'unidades'}
-        {pendingUnits > 0 ? <span className="mt-0.5 block text-xs font-medium text-ink-700">{pendingUnits} {pendingUnits === 1 ? 'unidad pendiente' : 'unidades pendientes'} de stock</span> : null}
-      </p>
 
       {conflict ? (
         <div role="alert" className="mt-3 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
@@ -174,8 +180,6 @@ export function OrderPackingEditor({ order: receivedOrder, draftStore, draftEpoc
       <div className="mt-4 divide-y divide-ink-950/10">
         {order.items.map(item => {
           const physical = item.physicalReservedQuantity ?? item.quantity;
-          const incoming = item.incomingQuantity ?? 0;
-          const uncovered = item.uncoveredQuantity ?? 0;
           const maxPacked = Math.min(item.quantity, physical);
           const isLocked = maxPacked === 0 && (values[item.id] ?? '0') === '0';
           const isPartial = physical > 0 && physical < item.quantity;
@@ -188,17 +192,18 @@ export function OrderPackingEditor({ order: receivedOrder, draftStore, draftEpoc
               key={item.id}
               className="py-4 first:pt-0 last:pb-0"
             >
-              <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="grid grid-cols-1 items-center gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
                 <div className="min-w-0 pr-2">
                   <p className="text-[14.5px] font-bold text-ink-950">{item.productName}</p>
-                  <p className="mt-0.5 text-xs text-ink-700">Pedido: {item.quantity} {item.quantity === 1 ? 'unidad' : 'unidades'}{isPartial ? ` · ${physical} ${physical === 1 ? 'habilitada' : 'habilitadas'}` : ''}</p>
+                  <p className="mt-0.5 text-xs text-ink-700">Pedido: {item.quantity} {item.quantity === 1 ? 'unidad' : 'unidades'}</p>
                 </div>
 
-                {isLocked ? (
-                  <span className="text-xs font-semibold text-ink-700">Pendiente de stock</span>
+                {isLocked ? (item.incomingQuantity ?? 0) + (item.uncoveredQuantity ?? 0) > 0 ? null : (
+                  <span className="text-xs font-semibold text-ink-700 sm:text-right">Sin unidades asignadas para guardar</span>
                 ) : (
-                  <div className="flex max-w-full flex-col items-end gap-1">
-                    <div className="flex max-w-full flex-wrap items-center justify-end gap-1.5">
+                  <div className="flex min-w-0 max-w-full flex-col items-start gap-1 sm:items-end">
+                    <label htmlFor={`packing-count-${item.id}`} className="text-xs font-semibold text-ink-800">En bolsita</label>
+                    <div className="flex max-w-full flex-wrap items-center gap-1.5 sm:justify-end">
                       <button
                         type="button"
                         onClick={() => {
@@ -216,6 +221,7 @@ export function OrderPackingEditor({ order: receivedOrder, draftStore, draftEpoc
 
                       <input
                         {...wholeUnitInputProps}
+                        id={`packing-count-${item.id}`}
                         placeholder="—"
                         value={value}
                         onFocus={event => event.currentTarget.select()}
@@ -259,12 +265,15 @@ export function OrderPackingEditor({ order: receivedOrder, draftStore, draftEpoc
                         <Plus className="size-3.5" />
                       </button>
 
-                      <span id={`packing-limit-${item.id}`} className="text-xs font-semibold text-ink-500">/ {maxPacked} máximo</span>
+                      <span className="text-sm font-semibold tabular-nums text-ink-700">de {item.quantity}</span>
                     </div>
+                    <span id={`packing-limit-${item.id}`} className={isPartial || maxPacked === 0 ? 'text-xs font-semibold text-ink-700' : 'sr-only'}>
+                      Podés registrar hasta {maxPacked} {maxPacked === 1 ? 'unidad' : 'unidades'} con stock asignado.
+                    </span>
 
                     {isEmpty ? (
                       <span className="text-[11px] font-semibold text-amber-800">
-                        Falta ingresar (0 si ninguna)
+                        Ingresá el conteo; 0 si no guardaste unidades.
                       </span>
                     ) : null}
                   </div>
@@ -278,17 +287,11 @@ export function OrderPackingEditor({ order: receivedOrder, draftStore, draftEpoc
                       : `Ingresá entre 0 y ${maxPacked} unidades de este pedido reservadas físicamente.`}
                 </p>
               ) : null}
-              {incoming > 0 || uncovered > 0 ? <StockAllocationExplanation order={order} item={item} canReceivePurchases={canReceivePurchases} /> : null}
+              <StockAllocationExplanation order={order} item={item} canReceivePurchases={canReceivePurchases} />
             </div>
           );
         })}
       </div>
-
-      {order.preparationState === 'ready' ? (
-        <p className="mt-3 text-xs font-semibold text-amber-900">
-          Si registrás menos unidades que las pedidas, este pedido volverá a «En preparación».
-        </p>
-      ) : null}
 
       {save.error || draft.error ? (
         <div className="mt-3">
@@ -300,23 +303,14 @@ export function OrderPackingEditor({ order: receivedOrder, draftStore, draftEpoc
       ) : null}
 
       {saved ? (
-        <p role="status" className="mt-3 text-sm font-bold text-emerald-800">
-          {allPackedFull
-            ? `✓ Armado completo guardado para el pedido #${order.number}.`
-            : `✓ Armado parcial guardado para el pedido #${order.number}. Todavía faltan unidades por guardar en la bolsita.`}
+        <p role="status" className="mt-3 flex items-center gap-2 text-sm font-bold text-emerald-800">
+          <Check className="size-4 shrink-0" aria-hidden="true" />
+          {allPackedFull ? 'Armado completo guardado.' : anyPacked ? 'Armado parcial guardado.' : 'Conteo guardado: bolsita vacía.'}
         </p>
       ) : null}
 
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-ink-950/10 pt-3">
-        <p id={`packing-save-help-${order.id}`} className="max-w-sm text-xs leading-relaxed text-ink-700">
-          {!hasAnyPhysicalStock && !hasInvalid ? 'Todavía no hay unidades habilitadas para guardar.'
-            : conflict ? 'Revisá el conteo actualizado antes de guardar.'
-            : hasInvalid ? 'Revisá las cantidades que superan lo habilitado.'
-            : hasEmpty ? 'Completá el conteo de los productos habilitados. Escribí 0 si no guardaste ninguno.'
-            : !changed && !hasUnknown ? 'El conteo guardado está actualizado.'
-            : hasIncomingItems || hasUncoveredItems ? 'Podés guardar el armado parcial y completar lo pendiente después.'
-            : 'Guardar el conteo conserva el stock y las reservas.'}
-        </p>
+        <p id={`packing-save-help-${order.id}`} className="max-w-sm text-xs leading-relaxed text-ink-700">{saveHelp}</p>
         <div className="flex flex-wrap items-center gap-2">
           {packingDraftDirty(draft) && !conflict ? <Button type="button" variant="ghost" size="sm" disabled={busy}
             onClick={async () => { if (await askConfirmation({ title: '¿Descartar el conteo?', description: 'Se descartarán las cantidades que escribiste sin guardar. Podés seguir editando si querés conservarlas.' })) {

@@ -1,5 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
-import { writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
+
+test.beforeAll(() => { mkdirSync('/tmp/impulso-clarity-ui-20261016', { recursive: true }); });
 
 function watch(page: Page) {
   const errors: string[] = [];
@@ -46,25 +48,27 @@ test('explains committed physical stock, preserves partial packing and opens the
   });
   const card = await navigateToOrder(page, data.number);
   const packing = card.getByRole('region', { name: `Armado del pedido ${data.number}` });
-  await expect(packing.getByText('1 unidad en camino')).toBeVisible();
-  await expect(packing.getByLabel('Stock general del producto')).toHaveCount(0);
-  await expect(packing.getByText('Pendiente de stock', { exact: true })).toBeVisible();
+  const complexContext = packing.getByRole('group', { name: 'Disponibilidad de B COMPLEX ACTIVE' });
+  await expect(packing.getByText('1 unidad pendiente de recibir')).toBeVisible();
+  await expect(packing.getByLabel('Stock registrado y reservas del producto')).toHaveCount(0);
   await expect(packing.getByText('0 en bolsita')).toHaveCount(0);
   const count = packing.getByRole('textbox', { name: 'Unidades en bolsita de MAGNESIO DUAL ACTION' });
   await count.fill('1');
   await packing.getByRole('textbox', { name: 'Unidades en bolsita de THYROID SUPPORT' }).fill('1');
   await expect(packing.getByRole('link', { name: `Abrir compra #${data.purchaseNumber}` })).toBeVisible();
   const compactHeight = await packing.getByRole('group', { name: 'Disponibilidad de B COMPLEX ACTIVE' }).locator('..').evaluate(el => el.getBoundingClientRect().height);
-  const toggle = packing.getByRole('button', { name: /Ver stock y reservas/ });
+  const toggle = complexContext.getByRole('button', { name: /Ver stock y reservas/ });
   await toggle.focus(); await toggle.press('Enter');
-  await expect(packing.getByRole('button', { name: /Ocultar stock y reservas/ })).toHaveAttribute('aria-expanded', 'true');
+  await expect(complexContext.getByRole('button', { name: /Ocultar stock y reservas/ })).toHaveAttribute('aria-expanded', 'true');
   await expect(packing.getByRole('link', { name: new RegExp(`Pedido #${data.earlierNumber}`) })).toBeVisible();
   const purchaseLink = packing.getByRole('link', { name: `Abrir compra #${data.purchaseNumber}` });
   await expect(purchaseLink).toHaveAttribute('target', '_blank');
   await expect(purchaseLink).toHaveAttribute('rel', 'noopener noreferrer');
   expect(new URL((await purchaseLink.getAttribute('href'))!, page.url()).searchParams.get('purchase')).toBe(data.purchaseId);
   await expect(count).toHaveValue('1');
-  const reservations = packing.getByRole('list', { name: 'Pedidos con unidades físicas apartadas' });
+  const reservations = packing.getByRole('list', { name: 'Pedidos con unidades reservadas' });
+  const numberTops = await complexContext.getByLabel('Stock registrado y reservas del producto').locator('dd').evaluateAll(nodes => nodes.map(node => node.getBoundingClientRect().top));
+  expect(Math.max(...numberTops) - Math.min(...numberTops)).toBeLessThanOrEqual(1);
   await expect(reservations.getByRole('link')).toHaveCount(3);
   await packing.getByRole('button', { name: 'Ver otros 5 pedidos · 5 unidades' }).click();
   await expect(reservations.getByRole('link')).toHaveCount(8);
@@ -72,13 +76,13 @@ test('explains committed physical stock, preserves partial packing and opens the
   await packing.getByRole('button', { name: 'Mostrar menos pedidos' }).click();
   await expect(reservations.getByRole('link')).toHaveCount(3);
   await packing.getByRole('button', { name: 'Cómo se confirma la disponibilidad' }).click();
-  await expect(packing.getByText(/La disponibilidad de este pedido se confirma al registrar la recepción/)).toBeVisible();
+  await expect(packing.getByText(/Este pedido usa stock libre del local y nuevas recepciones/)).toBeVisible();
   await expect(count).toHaveValue('1');
   await packing.getByRole('button', { name: 'Cómo se confirma la disponibilidad' }).click();
   const layout = await packing.evaluate(element => ({
     viewport: innerWidth,
     panel: { x: element.getBoundingClientRect().x, width: element.getBoundingClientRect().width, client: element.clientWidth, scroll: element.scrollWidth },
-    clipped: Array.from(element.querySelectorAll('p,a,input,button,button > span,dt,dd')).filter(node => {
+    clipped: Array.from(element.querySelectorAll('p,a,input,button,label,button > span,dt,dd')).filter(node => {
       const box = node.getBoundingClientRect();
       // A rotating SVG can paint outside its own box during the transition.
       // Check the button bounds and its text span, rather than that paint area.
@@ -86,12 +90,12 @@ test('explains committed physical stock, preserves partial packing and opens the
     }).map(node => ({ tag: node.tagName, text: node.textContent?.slice(0, 80), width: node.getBoundingClientRect().width, x: node.getBoundingClientRect().x, client: node.clientWidth, scroll: node.scrollWidth }))
   }));
   const expandedHeight = await packing.getByRole('group', { name: 'Disponibilidad de B COMPLEX ACTIVE' }).locator('..').evaluate(el => el.getBoundingClientRect().height);
-  writeFileSync(`/tmp/impulso-packing-ux-20261016/layout-${info.project.name}.json`, JSON.stringify({ ...layout, compactHeight, expandedHeight }, null, 2));
-  await page.screenshot({ path: `/tmp/impulso-packing-ux-20261016/page-${info.project.name}.png`, fullPage: true });
+  writeFileSync(`/tmp/impulso-clarity-ui-20261016/layout-${info.project.name}.json`, JSON.stringify({ ...layout, compactHeight, expandedHeight }, null, 2));
+  await page.screenshot({ path: `/tmp/impulso-clarity-ui-20261016/page-${info.project.name}.png`, fullPage: true });
   expect(layout.clipped).toEqual([]);
   expect(layout.panel.x + layout.panel.width).toBeLessThanOrEqual(layout.viewport + 1);
   await packing.evaluate(element => element.scrollIntoView({ block: 'start' }));
-  await page.screenshot({ path: `/tmp/impulso-packing-ux-20261016/packing-${info.project.name}.png` });
+  await page.screenshot({ path: `/tmp/impulso-clarity-ui-20261016/packing-${info.project.name}.png` });
   await packing.getByRole('button', { name: 'Guardar armado' }).click();
   await expect(packing.getByText(/Armado parcial guardado/)).toBeVisible();
   await healthy(page, errors);
@@ -104,6 +108,66 @@ test('explains committed physical stock, preserves partial packing and opens the
   await page.getByRole('button', { name: 'Ver todas las compras' }).click();
   await expect.poll(() => new URL(page.url()).searchParams.has('purchase')).toBe(false);
   await expect(page.getByRole('button', { name: /Pendientes \(/ })).toBeVisible();
+  await healthy(page, errors);
+});
+
+test('a physical count deficit stays visible on a fully assigned order and saving zero keeps its exact consequences', async ({ page }, info) => {
+  if (info.project.name === 'mobile-chrome') await page.setViewportSize({ width: 320, height: 800 });
+  const errors = watch(page); await local(page);
+  const data = await page.evaluate(async () => {
+    const api = await (window as any).__getBusinessApi(), key = crypto.randomUUID();
+    const product = await api.saveProduct({ sku: key, slug: key, name: 'Producto con diferencia de conteo', presentation: '1 unidad', description: 'Prueba aislada', category: 'Pruebas', priceCents: 150000, currentCostCents: 100000, reorderPoint: 0, safetyStock: 0, leadTimeDays: 1, imageUrl: '/demo/creatina.svg', imageAlt: 'Prueba', published: true, active: true });
+    await api.adjustStock(product.id, 2, 'Conteo inicial');
+    const order = await api.confirmImportedOrder({ customerName: 'Cliente de comprobación', paymentMethod: 'cash', deliveryMethod: 'pickup', shippingFeeCents: 0, quotedSubtotalCents: 300000, quotedTotalCents: 300000, protocolOrderId: crypto.randomUUID(), protocolChecksum: '1234ABCD', lines: [{ productId: product.id, quantity: 2, unitPriceCents: 150000 }] });
+    await api.saveOrderPacking(order.id, [{ orderItemId: order.items[0].id, packedQuantity: 2 }], 0);
+    await api.transitionOrder(order.id, 'mark_ready');
+    await api.adjustStock(product.id, -1, 'Conteo con diferencia', 2);
+    return { number: order.number, orderId: order.id, productId: product.id };
+  });
+  const card = await navigateToOrder(page, data.number), packing = card.getByRole('region', { name: `Armado del pedido ${data.number}` });
+  await expect(packing.getByRole('alert')).toContainText('Falta 1 unidad para cubrir las reservas del producto.');
+  await expect(packing.getByLabel('Stock registrado y reservas del producto')).toHaveCount(0);
+  const count = packing.getByRole('textbox', { name: 'Unidades en bolsita de Producto con diferencia de conteo' });
+  await expect(count).toHaveValue('2');
+  await expect(packing.getByRole('link', { name: /Revisar stock en Inventario/ })).toHaveAttribute('target', '_blank');
+  await packing.screenshot({ path: `/tmp/impulso-clarity-ui-20261016/deficit-${info.project.name}.png` });
+  await count.fill('0');
+  await expect(packing.getByText('Al guardar: Falta preparar.')).toBeVisible();
+  await packing.getByRole('button', { name: 'Guardar armado' }).click();
+  await expect(packing.getByText('Conteo guardado: bolsita vacía.')).toBeVisible();
+  await expect(card.getByText('Falta preparar', { exact: true })).toBeVisible();
+  const result = await page.evaluate(async data => {
+    const api = await (window as any).__getBusinessApi();
+    return { order: (await api.listOrders(1, 100)).items.find((o: any) => o.id === data.orderId), stock: (await api.listInventory()).find((p: any) => p.id === data.productId) };
+  }, data);
+  expect(result.order).toMatchObject({ preparationState: 'pending', paymentState: 'pending', totalCents: 300000 });
+  expect(result.order.items[0]).toMatchObject({ packedQuantity: 0, physicalReservedQuantity: 2 });
+  expect(result.stock).toMatchObject({ onHand: 1, reserved: 2 });
+  await healthy(page, errors);
+});
+
+test('separate supplier dates remain separate when another purchase has no estimated arrival', async ({ page }, info) => {
+  if (info.project.name === 'mobile-chrome') await page.setViewportSize({ width: 390, height: 844 });
+  const errors = watch(page); await local(page);
+  const data = await page.evaluate(async () => {
+    const api = await (window as any).__getBusinessApi(), key = crypto.randomUUID();
+    const product = await api.saveProduct({ sku: key, slug: key, name: 'Producto con dos compras y fechas diferentes', presentation: '1 unidad', description: 'Prueba aislada', category: 'Pruebas', priceCents: 150000, currentCostCents: 100000, reorderPoint: 0, safetyStock: 0, leadTimeDays: 1, imageUrl: '/demo/creatina.svg', imageAlt: 'Prueba', published: true, active: true });
+    const first = await api.createPurchase({ supplierName: 'Con fecha', expectedAt: '2030-01-01T15:00:00Z', items: [{ productId: product.id, quantity: 1, unitCostCents: 100000 }] });
+    const second = await api.createPurchase({ supplierName: 'Sin fecha', items: [{ productId: product.id, quantity: 1, unitCostCents: 100000 }] });
+    const order = await api.confirmImportedOrder({ customerName: 'Cliente de comprobación', stockSource: 'incoming_only', paymentMethod: 'cash', deliveryMethod: 'pickup', shippingFeeCents: 0, quotedSubtotalCents: 300000, quotedTotalCents: 300000, protocolOrderId: crypto.randomUUID(), protocolChecksum: '1234ABCD', lines: [{ productId: product.id, quantity: 2, unitPriceCents: 150000 }] });
+    return { number: order.number, first: first.number, second: second.number };
+  });
+  const card = await navigateToOrder(page, data.number), packing = card.getByRole('region', { name: `Armado del pedido ${data.number}` });
+  await expect(packing.getByText('2 unidades pendientes de recibir')).toBeVisible();
+  await expect(packing.getByText('Reposición en 2 compras. Fechas en el detalle.')).toBeVisible();
+  await expect(card.getByText(/Llegada estimada/)).toHaveCount(0);
+  await packing.getByRole('button', { name: /Ver stock y reservas/ }).click();
+  const first = packing.getByRole('link', { name: `Abrir compra #${data.first}`, exact: true }).locator('..').locator('..');
+  const second = packing.getByRole('link', { name: `Abrir compra #${data.second}`, exact: true }).locator('..').locator('..');
+  await expect(first).toContainText('Llegada estimada al local');
+  await expect(second).toContainText('Sin fecha estimada');
+  await expect(second).not.toContainText('Llegada estimada al local');
+  await packing.screenshot({ path: `/tmp/impulso-clarity-ui-20261016/dates-${info.project.name}.png` });
   await healthy(page, errors);
 });
 
@@ -122,13 +186,13 @@ test('explicit future stock survives unrelated operations and only its partial r
     return { number: order.number, orderId: order.id, purchaseId: purchase.id, purchaseItemId: purchase.items[0].id, productId: product.id };
   });
   const card = await navigateToOrder(page, data.number), packing = card.getByRole('region', { name: `Armado del pedido ${data.number}` });
-  await expect(packing.getByText('3 unidades en camino')).toBeVisible();
+  await expect(packing.getByText('3 unidades pendientes de recibir')).toBeVisible();
   await expect(packing.getByRole('button', { name: 'Guardar armado' })).toBeDisabled();
-  await expect(packing.getByText('Todavía no hay unidades habilitadas para guardar.')).toBeVisible();
+  await expect(packing.getByText('Todavía no hay unidades asignadas para guardar.')).toBeVisible();
   await expect(packing.locator('input')).toHaveCount(0);
   await packing.getByRole('button', { name: /Ver stock y reservas/ }).click();
-  await expect(packing.getByText(/Este pedido reserva sólo mercadería en camino/)).toBeVisible();
-  await expect(packing.getByLabel('Stock general del producto').getByText('Libres').locator('..')).toContainText('6');
+  await expect(packing.getByText(/Reservado solo de compras al proveedor/)).toBeVisible();
+  await expect(packing.getByLabel('Stock registrado y reservas del producto').getByText('Libres para nuevas ventas').locator('..')).toContainText('6');
   await page.evaluate(async data => { const api = await (window as any).__getBusinessApi(); await api.receivePurchase(data.purchaseId, [{ purchaseItemId: data.purchaseItemId, receivedQuantity: 1 }], crypto.randomUUID()); }, data);
   await packing.getByRole('button', { name: 'Actualizar datos' }).click();
   const count = packing.getByRole('textbox', { name: 'Unidades en bolsita de Compra en camino de comprobación' });
@@ -140,7 +204,7 @@ test('explicit future stock survives unrelated operations and only its partial r
   expect(snapshot.items[0]).toMatchObject({ physicalQuantity: 1, incomingQuantity: 2, available: 6 });
   await healthy(page, errors);
   await packing.evaluate(element => element.scrollIntoView({ block: 'start' }));
-  await page.screenshot({ path: `/tmp/impulso-packing-ux-20261016/incoming-${info.project.name}.png` });
+  await page.screenshot({ path: `/tmp/impulso-clarity-ui-20261016/incoming-${info.project.name}.png` });
 });
 
 test('focused purchase replacement keeps its exact link, paid customer and packed units through receipt', async ({ page }, info) => {
@@ -201,7 +265,7 @@ test('receipt explains a pending supplier reassignment instead of linking a cust
   await dialog.getByRole('button', { name: /Confirmar/ }).click(); await expect(dialog).toHaveCount(0);
   const notice = page.getByRole('status').filter({ hasText: 'Revisá los pedidos que siguen pendientes' });
   await expect(notice.getByRole('link', { name: `Pedido #${data.futureNumber}`, exact: true })).toBeVisible();
-  await expect(notice).toContainText('1 unidad sigue en camino con otra compra');
+  await expect(notice).toContainText('1 unidad pendiente de recibir de otra compra');
   expect(await notice.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
   await notice.getByRole('link', { name: `Pedido #${data.futureNumber}`, exact: true }).click();
   const card = await navigateToOrder(page, data.futureNumber);

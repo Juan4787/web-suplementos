@@ -166,7 +166,7 @@ export const TOOL_REGISTRY: Record<string, ToolSpec<any, any>> = {
   get_inventory_status: {
     definition: {
       name: 'get_inventory_status',
-      description: 'Devuelve stock disponible, físico, reservado, en camino y compra sugerida. Si la persona pregunta por un producto específico (ej: creatina, omega, glutamina), pasá ese término en query para obtener su stock exacto. Para preguntas generales sobre qué comprar, qué falta o alertas, dejá query vacío.',
+      description: 'Devuelve stock libre, registrado, reservado, pendiente de recibir y compra sugerida. Las compras pendientes no confirman un despacho del proveedor. Si la persona pregunta por un producto específico (ej: creatina, omega, glutamina), pasá ese término en query para obtener su stock exacto. Para preguntas generales sobre qué comprar, qué falta o alertas, dejá query vacío.',
       parameters: {
         type: 'object',
         properties: {

@@ -101,7 +101,7 @@ it('muestra la falta real y no permite confirmar unidades que no están libres n
   const client = await renderPage([product]);
   expect(screen.getByText(/Producto oculto: faltan 1 u\./i)).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Confirmar pedido' })).toBeDisabled();
-  expect(screen.queryByText(/se reservarán de una compra en camino/i)).not.toBeInTheDocument();
+  expect(screen.queryByText(/se reservarán de compras pendientes de recibir/i)).not.toBeInTheDocument();
   expect(api.confirmImportedOrder).not.toHaveBeenCalled();
   client.clear();
 });

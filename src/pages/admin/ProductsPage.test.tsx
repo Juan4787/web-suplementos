@@ -36,7 +36,7 @@ describe('Compras reflejadas en Productos', () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
     clients.push(client);
     render(<QueryClientProvider client={client}><AppConfirmationProvider><ProductsPage /></AppConfirmationProvider></QueryClientProvider>);
-    expect((await screen.findByText('En camino')).nextElementSibling).toHaveTextContent('10 unidades');
+    expect((await screen.findByText('Pendiente de recibir')).nextElementSibling).toHaveTextContent('10 unidades');
     expect(screen.getByText(`Ya reservadas: ${reserved}. Libres para nuevos pedidos: ${10 - reserved}.`)).toBeVisible();
   });
 
@@ -57,18 +57,18 @@ describe('Compras reflejadas en Productos', () => {
       await waitFor(() => {
         const card = screen.getByRole('heading', { name: product.name }).closest('article')!;
         const details = within(card);
-        expect(details.getByText('Disponible ahora').nextElementSibling).toHaveTextContent(
+        expect(details.getByText('Libre para nuevas ventas').nextElementSibling).toHaveTextContent(
           new RegExp(`^${available} ${available === 1 ? 'unidad' : 'unidades'}$`)
         );
         if (incoming > 0) {
-          expect(details.getByText('En camino').nextElementSibling).toHaveTextContent(
+          expect(details.getByText('Pendiente de recibir').nextElementSibling).toHaveTextContent(
             new RegExp(`^${incoming} ${incoming === 1 ? 'unidad' : 'unidades'}$`)
           );
           expect(details.getByText('Se suman al stock al recibir la mercadería.')).toBeVisible();
         } else {
-          expect(details.queryByText('En camino')).toBeNull();
+          expect(details.queryByText('Pendiente de recibir')).toBeNull();
         }
-        expect(card).not.toHaveTextContent('0 · En camino');
+        expect(card).not.toHaveTextContent('0 · Pendiente de recibir');
       });
     };
     const purchases = async () => {

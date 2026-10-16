@@ -61,6 +61,7 @@ describe('Checkout con cambios o fallos de conexión', () => {
     render(<CheckoutPage />, { wrapper: Wrapper });
     const button = screen.getByRole('button', { name: /Continuar por WhatsApp/ });
     await waitFor(() => expect(button).toBeEnabled());
+    expect(screen.getByText('Las unidades se reservan cuando te confirmamos el pedido por WhatsApp.')).toBeVisible();
     fireEvent.change(screen.getByLabelText(/nombre \*/i), { target: { value: 'Cliente' } });
     fireEvent.change(screen.getByLabelText(/apellido \*/i), { target: { value: 'de prueba' } });
     api.listStorefrontProducts.mockResolvedValue(demoProducts.map(p => ({ ...p, priceCents: p.priceCents + 10000 })));

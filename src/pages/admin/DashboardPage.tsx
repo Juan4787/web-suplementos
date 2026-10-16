@@ -89,7 +89,7 @@ export default function DashboardPage() {
               accent="sun"
             />
             <MetricCard
-              label="Compras en camino"
+              label="Compras pendientes"
               value={String(summaryQuery.data.incomingPurchases)}
               detail="Esperando recepción"
               icon={ShoppingBasket}
@@ -209,7 +209,8 @@ export default function DashboardPage() {
                   </p>
                 ) : (
                   priorityInventory.map((item) => {
-                    const isIncoming = item.available <= 0 && item.incoming > 0;
+                    const hasStockDeficit = item.onHand < item.reserved;
+                    const isIncoming = !hasStockDeficit && item.available <= 0 && item.incoming > 0;
                     return (
                       <article
                         key={item.id}
@@ -224,13 +225,12 @@ export default function DashboardPage() {
                           <div>
                             <h3 className="text-sm font-black text-ink-950">{item.name}</h3>
                             <p className="mt-0.5 text-xs font-semibold text-ink-600">
-                              {formatUnits(item.available)}{' '}
-                              {item.available === 1 ? 'disponible' : 'disponibles'}
-                              {item.incoming > 0 ? ` · ${item.incoming} en camino` : ''}
+                              {formatUnits(Math.max(0, item.available))} libres para nuevas ventas
+                              {item.incoming > 0 ? ` · ${item.incoming} pendientes de recibir` : ''}
                             </p>
                           </div>
                           <StatusChip
-                            label={isIncoming ? 'En camino' : stockLabel[item.status]}
+                            label={isIncoming ? 'Pendiente de recibir' : stockLabel[item.status]}
                             tone={
                               isIncoming
                                 ? 'info'
@@ -240,9 +240,9 @@ export default function DashboardPage() {
                             }
                           />
                         </div>
-                        {isIncoming ? (
+                        {hasStockDeficit ? <p className="mt-2 text-xs font-bold text-rose-900">{item.reserved - item.onHand === 1 ? 'Falta 1 unidad' : `Faltan ${item.reserved - item.onHand} unidades`} para cubrir las reservas.</p> : isIncoming ? (
                           <p className="mt-2 flex items-center gap-1.5 text-xs font-black text-brand-800">
-                            <PackageCheck className="size-3.5 shrink-0 text-brand-600" /> {item.incoming} unidades en camino
+                            <PackageCheck className="size-3.5 shrink-0 text-brand-600" /> Esperando recepción del proveedor
                           </p>
                         ) : (
                           <p className="mt-2 flex items-center gap-1.5 text-xs font-black text-amber-800">

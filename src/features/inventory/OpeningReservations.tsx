@@ -56,7 +56,7 @@ export function OpeningReservations({ canReceive, onOpenPurchases }: { canReceiv
       {query.data?.map(row => <article key={row.purchaseItemId} className="rounded-xl border border-ink-950/10 p-4">
         <h3 className="font-bold text-ink-950">{row.productName}</h3>
         <p className="mt-1 text-sm text-ink-700">Compra #{row.purchaseNumber} · {row.totalQuantity} {row.totalQuantity === 1 ? 'unidad apartada' : 'unidades apartadas'}</p>
-        <p className="mt-2 text-sm font-semibold">Para entregar: {row.physicalQuantity} · En camino: {row.incomingQuantity}</p>
+        <p className="mt-2 text-sm font-semibold">Con stock asignado: {row.physicalQuantity} · Pendientes de recibir: {row.incomingQuantity}</p>
         {row.uncoveredQuantity > 0 ? <p className="mt-2 text-sm font-bold text-amber-900">Faltan {row.uncoveredQuantity} unidades que el proveedor no entregará. Acordá una alternativa; liberá la reserva si se cancela.</p> : null}
         {row.physicalQuantity === 0 && row.incomingQuantity > 0 ? <p className="mt-2 text-sm text-ink-700">{canReceive ? 'Primero registrá la recepción de la compra.' : 'Pedí que registren la recepción de la compra para poder anotar la entrega.'}</p> : null}
         <div className="mt-3 flex flex-wrap gap-2">

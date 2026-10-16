@@ -27,9 +27,9 @@ test.describe('Pilar 9: Stock y Exception-Driven UI', () => {
 
     // Verifica que el Drawer muestre la radiografía de stock
     const drawer = page.getByRole('dialog', { name: 'Creatina Monohidratada' });
-    await expect(drawer.getByRole('heading', { name: 'Stock hoy' })).toBeVisible();
-    await expect(drawer.getByText('Disponible', { exact: true }).locator('..')).toHaveText('Disponible4u.');
-    await expect(drawer.getByText('Reservado', { exact: true }).locator('..')).toHaveText('Reservado3u.');
-    await expect(drawer.getByText('Total', { exact: true }).locator('..')).toHaveText('Total7u.');
+    await expect(drawer.getByRole('heading', { name: 'Stock registrado y reservas' })).toBeVisible();
+    await expect(drawer.getByText('Libres', { exact: true }).locator('..')).toHaveText('Libres4u.');
+    await expect(drawer.getByText('Reservadas', { exact: true }).locator('..')).toHaveText('Reservadas3u.');
+    await expect(drawer.getByText('Stock registrado', { exact: true }).locator('..')).toHaveText('Stock registrado7u.');
   });
 });

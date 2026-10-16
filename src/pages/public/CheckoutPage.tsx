@@ -18,6 +18,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from '@/app/query-keys';
 import { useBusinessQuery } from '@/app/use-business-query';
 import { PublicShell } from '@/components/layout/PublicShell';
+import { IncomingStockNotice } from '@/components/store/IncomingStockNotice';
 import { Button, buttonStyles } from '@/components/ui/Button';
 import { EmptyState, ErrorState, LoadingState } from '@/components/ui/DataState';
 import { Field, Input } from '@/components/ui/Field';
@@ -268,21 +269,7 @@ export default function CheckoutPage() {
               </div>
             ) : null}
 
-            {cartEtaQuery.data?.requiresIncoming ? (
-              <div className="mt-5 flex items-start gap-3.5 rounded-2xl border border-amber-200 bg-amber-50/90 p-4 text-sm text-amber-950 shadow-sm">
-                <Truck className="mt-0.5 size-5 shrink-0 text-amber-600" />
-                <div>
-                  <strong className="block font-black text-amber-900">
-                    Tu pedido incluye productos en reposición
-                  </strong>
-                  <p className="mt-1 font-medium text-amber-800 leading-relaxed">
-                    {cartEtaQuery.data.quotedEta
-                      ? `Para optimizar tu envío y recibir todo junto, el pedido completo se despachará a partir del ${new Intl.DateTimeFormat('es-AR', { dateStyle: 'long' }).format(new Date(cartEtaQuery.data.quotedEta))}.`
-                      : 'Uno o más productos están ingresando desde el distribuidor y se entregarán apenas arriben al depósito.'}
-                  </p>
-                </div>
-              </div>
-            ) : null}
+            <IncomingStockNotice quote={cartEtaQuery.data} />
 
             <form className="mt-9 space-y-8" onSubmit={submit} noValidate>
               <section className="rounded-[2rem] bg-white p-5 shadow-card sm:p-7">
@@ -521,7 +508,7 @@ export default function CheckoutPage() {
                 <MessageCircle className="size-5" /> Continuar por WhatsApp
               </Button>
               <p className="text-xs leading-5 text-ink-600">
-                Antes de abrir WhatsApp volvemos a comprobar que las cantidades sigan disponibles. Esto todavía no reserva stock.
+                Las unidades se reservan cuando te confirmamos el pedido por WhatsApp.
               </p>
               <p className="text-[11.5px] leading-4 text-ink-500">
                 Tus datos personales están protegidos conforme a la Ley Nacional Nº 25.326.{' '}
@@ -573,17 +560,6 @@ export default function CheckoutPage() {
               </strong>
             </div>
 
-            {cartEtaQuery.data?.requiresIncoming ? (
-              <div className="mt-4 rounded-xl bg-amber-400/10 border border-amber-400/20 p-3 text-xs text-amber-200 flex items-center gap-2">
-                <Truck className="size-4 shrink-0 text-amber-300" />
-                <span>
-                  Entrega unificada:{' '}
-                  {cartEtaQuery.data.quotedEta
-                    ? `Desde el ${new Intl.DateTimeFormat('es-AR', { day: '2-digit', month: '2-digit' }).format(new Date(cartEtaQuery.data.quotedEta))}`
-                    : 'Sujeta a arribo'}
-                </span>
-              </div>
-            ) : null}
           </aside>
         </div>
       </div>

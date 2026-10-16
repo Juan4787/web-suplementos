@@ -44,6 +44,8 @@ select is((select value->'items'->0->>'onHand' from fixture where name='context'
 select is((select value->'items'->0->>'physicalQuantity' from fixture where name='context'),'2','Context gives this order allocation');
 select is((select value->'items'->0->>'available' from fixture where name='context'),'6','Context distinguishes free physical stock');
 select is((select value->'items'->0->'purchases'->0->>'reservedQuantity' from fixture where name='context'),'1','Context identifies only the remaining purchase commitment');
+select is((select value->'items'->0->'purchases'->0->>'incomingQuantity' from fixture where name='context'),'1','Context separates units attached to an open purchase');
+select is((select value->'items'->0->'purchases'->0->>'uncoveredQuantity' from fixture where name='context'),'0','Context does not count covered units as uncovered');
 select is((select value->'items'->0->'purchases'->0->>'id' from fixture where name='context'),pg_temp.id('purchase')::text,'Context identifies the exact assigned purchase');
 select ok((select value::text !~ '(Cost|Cents|customer|Phone)' from fixture where name='context'),'Context does not expose financial or customer identity data');
 select is(public.get_purchase(pg_temp.id('purchase'))->>'id',pg_temp.id('purchase')::text,'Direct purchase lookup does not depend on list pagination');
@@ -66,6 +68,32 @@ select is((public.get_order_stock_context(pg_temp.id('newer'))->'items'->0->>'ot
 select is((select sum(reserved_delta) from stock_movements where product_id=pg_temp.id('product')),(select reserved::bigint from stock_balances where product_id=pg_temp.id('product')),'Reservation movement history matches the balance');
 select is((select sum(physical_delta) from stock_movements where product_id=pg_temp.id('product')),(select on_hand::bigint from stock_balances where product_id=pg_temp.id('product')),'Physical movement history matches the balance');
 select is((select sum(quantity) from stock_reservations where product_id=pg_temp.id('product') and state='active' and source_type='physical'),(select reserved::bigint from stock_balances where product_id=pg_temp.id('product')),'Active physical reservations match balance');
+-- Compatibility fixture: an uncovered historical commitment and a genuinely
+-- pending unit can share the same purchase while that purchase is still open.
+insert into fixture values('mixed',public.confirm_imported_order(pg_temp.order_input('incoming_only',2)));
+insert into public.stock_reservations(order_id,order_item_id,product_id,quantity,state,source_type,purchase_item_id,cost_snapshot_cents,is_opening)
+  select order_id,order_item_id,product_id,1,state,'uncovered',purchase_item_id,cost_snapshot_cents,is_opening
+  from public.stock_reservations where order_id=pg_temp.id('mixed') and state='active' and source_type='incoming';
+update public.stock_reservations set quantity=1 where order_id=pg_temp.id('mixed') and state='active' and source_type='incoming';
+create temp table before_context as select jsonb_build_object(
+  'balances',(select jsonb_agg(to_jsonb(b) order by product_id) from stock_balances b),
+  'reservations',(select jsonb_agg(to_jsonb(r) order by id) from stock_reservations r),
+  'order',(select to_jsonb(o) from orders o where id=pg_temp.id('mixed')),
+  'items',(select jsonb_agg(to_jsonb(i) order by id) from order_items i where order_id=pg_temp.id('mixed'))
+) snapshot;
+insert into fixture values('mixed_context',public.get_order_stock_context(pg_temp.id('mixed')));
+select is((select value->'items'->0->>'incomingQuantity' from fixture where name='mixed_context'),'1','Mixed context preserves the actually covered unit');
+select is((select value->'items'->0->>'uncoveredQuantity' from fixture where name='mixed_context'),'1','Mixed context preserves the unit without a supplier');
+select is((select value->'items'->0->'purchases'->0->>'state' from fixture where name='mixed_context'),'ordered','A historical shortage can remain linked to an open purchase');
+select is((select value->'items'->0->'purchases'->0->>'incomingQuantity' from fixture where name='mixed_context'),'1','Purchase detail does not call an uncovered unit incoming');
+select is((select value->'items'->0->'purchases'->0->>'uncoveredQuantity' from fixture where name='mixed_context'),'1','Purchase detail identifies the historical shortage separately');
+select is((select value->'items'->0->'purchases'->0->>'reservedQuantity' from fixture where name='mixed_context'),'2','The additive response preserves the old aggregate for existing clients');
+select is(jsonb_build_object(
+  'balances',(select jsonb_agg(to_jsonb(b) order by product_id) from stock_balances b),
+  'reservations',(select jsonb_agg(to_jsonb(r) order by id) from stock_reservations r),
+  'order',(select to_jsonb(o) from orders o where id=pg_temp.id('mixed')),
+  'items',(select jsonb_agg(to_jsonb(i) order by id) from order_items i where order_id=pg_temp.id('mixed'))
+),(select snapshot from before_context),'Reading the detail leaves stock, reservations, packing, payments and order revisions unchanged');
 select throws_ok($$select public.get_order_stock_context(gen_random_uuid())$$,'P0001','ORDER_NOT_FOUND','Unknown order returns a defined error');
 select throws_ok($$select public.get_purchase(gen_random_uuid())$$,'P0001','PURCHASE_NOT_FOUND','Unknown purchase returns a defined error');
 select ok(not has_function_privilege('anon','public.get_order_stock_context(uuid)','EXECUTE'),'Anonymous context access denied');

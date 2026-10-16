@@ -360,7 +360,8 @@ describe('Carga de compras', () => {
       onHand: 7,
       reserved: 10,
       available: 0,
-      incoming: 0,
+      incoming: 5,
+      projected: 5,
       status: 'out'
     }]);
     api.listMovements.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 25 });
@@ -371,7 +372,9 @@ describe('Carga de compras', () => {
     expect(product).toHaveTextContent('RESERVAS SIN CUBRIR');
     fireEvent.click(product);
     expect(screen.getByText('Faltan 3 unidades reservadas')).toBeVisible();
-    expect(screen.getByText(/Hay 7 en depósito y 10 comprometidas con clientes/)).toBeVisible();
+    expect(screen.getByText(/Stock registrado: 7. Reservas: 10./)).toBeVisible();
+    expect(screen.getByText('Revisá la diferencia de stock antes de comprometer nuevas unidades.')).toBeVisible();
+    expect(screen.queryByText(/Disponibilidad prevista al recibir:/)).not.toBeInTheDocument();
   });
 
   it('explica el ajuste de 10 a 7 y el faltante sin alterar las reservas', async () => {
@@ -792,7 +795,7 @@ describe('Ordenamiento estricto de inventario (getStockPriority y lista renderiz
     expect(productButtons[1]).toHaveTextContent('TODO RESERVADO');
 
     expect(productButtons[2]).toHaveTextContent('Omega 3 Fish');
-    expect(productButtons[2]).toHaveTextContent('EN CAMINO');
+    expect(productButtons[2]).toHaveTextContent('PENDIENTE DE RECIBIR');
 
     expect(productButtons[3]).toHaveTextContent('Magnesio Total');
     expect(productButtons[3]).toHaveTextContent('URGENTE');

@@ -54,7 +54,8 @@ const sampleOrder = (): Order => ({
 
 it('requires an explicit count for available products and locks units in transit', async () => {
   const order = sampleOrder();
-  api.saveOrderPacking.mockResolvedValue({ ...order, packingRevision: 1 });
+  api.saveOrderPacking.mockResolvedValue({ ...order, packingRevision: 1,
+    items: order.items.map((item, index) => ({ ...item, packedQuantity: index === 0 ? 1 : 0 })) });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={client}><AppConfirmationProvider>
@@ -62,7 +63,7 @@ it('requires an explicit count for available products and locks units in transit
     </AppConfirmationProvider></QueryClientProvider>
   );
 
-  expect(screen.getByText('Armado sin verificar')).toBeInTheDocument();
+  expect(screen.getByText('Conteo sin registrar')).toBeInTheDocument();
   const saveButton = screen.getByRole('button', { name: 'Guardar armado' });
   expect(saveButton).toBeDisabled();
 
@@ -116,7 +117,7 @@ it('keeps counts independent and requires explicit input for each product', asyn
 
   const first = screen.getByRole('textbox', { name: 'Unidades en bolsita de B Complex' });
   const second = screen.getByRole('textbox', { name: 'Unidades en bolsita de Omapure' });
-  expect(screen.getByText('/ 2 máximo')).toBeInTheDocument();
+  expect(screen.getByText('Podés registrar hasta 2 unidades con stock asignado.')).toBeInTheDocument();
   fireEvent.change(first, { target: { value: '2' } });
   fireEvent.change(screen.getByRole('textbox', { name: 'Unidades en bolsita de Omapure' }), { target: { value: '0' } });
   expect(first).toHaveValue('2');
@@ -158,17 +159,14 @@ it('keeps unassigned rows visible without inventing a bag count or a zero-only s
 
   // Allocation is missing; the UI must not claim a verified zero bag count.
   expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
-  expect(screen.getByText('Pendiente de stock')).toBeInTheDocument();
   expect(screen.queryByText('0 en bolsita')).not.toBeInTheDocument();
-  expect(screen.getByText('Habilitadas: 0 de 1 unidad')).toBeInTheDocument();
 
   // La fecha del pedido puede pertenecer a otra compra: no se atribuye a esta línea.
-  expect(screen.getByText('1 unidad pendiente de stock')).toBeInTheDocument();
   expect(screen.queryByText(/Llega 29 de septiembre/i)).not.toBeInTheDocument();
 
   // Keep the action visible with the reason; never submit implicit zeroes.
   expect(screen.getByRole('button', { name: 'Guardar armado' })).toBeDisabled();
-  expect(screen.getByText('Todavía no hay unidades habilitadas para guardar.')).toBeInTheDocument();
+  expect(screen.getByText('Todavía no hay unidades asignadas para guardar.')).toBeInTheDocument();
 
   client.clear();
 });
@@ -226,7 +224,7 @@ it('offers one save action and allows touch steppers without implicitly filling 
   client.clear();
 });
 
-it('distingue una falta sin reposición de mercadería en camino cuando no hay reserva física', () => {
+it('mantiene bloqueado el conteo si las unidades pendientes incluyen un faltante sin reposición', () => {
   const order: Order = {
     ...sampleOrder(),
     stockReadiness: 'uncovered',
@@ -241,9 +239,8 @@ it('distingue una falta sin reposición de mercadería en camino cuando no hay r
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(<QueryClientProvider client={client}><AppConfirmationProvider><OrderPackingEditor order={order} /></AppConfirmationProvider></QueryClientProvider>);
 
-  expect(screen.getByText('Pendiente de stock')).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Guardar armado' })).toBeDisabled();
-  expect(screen.getByText('Todavía no hay unidades habilitadas para guardar.')).toBeInTheDocument();
+  expect(screen.getByText('Todavía no hay unidades asignadas para guardar.')).toBeInTheDocument();
   expect(screen.queryByText(/Las unidades de este pedido están en camino/i)).not.toBeInTheDocument();
   expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
   client.clear();
@@ -269,7 +266,7 @@ it('pide contar una línea al recibir mercadería sin borrar cantidades escritas
   rerender(<QueryClientProvider client={client}><AppConfirmationProvider><OrderPackingEditor order={received} /></AppConfirmationProvider></QueryClientProvider>);
 
   expect(screen.getByRole('textbox', { name: 'Unidades en bolsita de B Complex' })).toHaveValue('');
-  expect(screen.getByText('Falta ingresar (0 si ninguna)')).toBeInTheDocument();
+  expect(screen.getByText('Ingresá el conteo; 0 si no guardaste unidades.')).toBeInTheDocument();
   expect(omapure).toHaveValue('1');
   expect(screen.getByRole('button', { name: 'Guardar armado' })).toBeDisabled();
   client.clear();
@@ -498,5 +495,46 @@ it('shows an in-flight save failure after collapsing and reopening the editor wi
   expect(screen.getByRole('textbox', { name: 'Unidades en bolsita de B Complex' })).toHaveValue('1');
   expect(screen.getByRole('button', { name: 'Guardar armado' })).toBeEnabled();
   expect(api.saveOrderPacking).toHaveBeenCalledTimes(1);
+  client.clear();
+});
+
+it('anticipa el estado exacto al retirar parte o todo el armado de un pedido listo y distingue un cero guardado', async () => {
+  const order = sampleOrder();
+  order.preparationState = 'ready';
+  order.packingTracked = true;
+  order.stockReadiness = 'ready';
+  order.items = order.items.map(item => ({ ...item, physicalReservedQuantity: item.quantity, incomingQuantity: 0, packedQuantity: item.quantity }));
+  api.saveOrderPacking.mockResolvedValue({ ...order, preparationState: 'pending', packingRevision: 1,
+    items: order.items.map(item => ({ ...item, packedQuantity: 0 })) });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(<QueryClientProvider client={client}><AppConfirmationProvider><OrderPackingEditor order={order} /></AppConfirmationProvider></QueryClientProvider>);
+  fireEvent.change(screen.getByRole('textbox', { name: 'Unidades en bolsita de B Complex' }), { target: { value: '0' } });
+  expect(screen.getByText('Al guardar: En preparación.')).toBeVisible();
+  fireEvent.change(screen.getByRole('textbox', { name: 'Unidades en bolsita de Omapure' }), { target: { value: '0' } });
+  expect(screen.getByText('Al guardar: Falta preparar.')).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar armado' }));
+  expect(await screen.findByText('Conteo guardado: bolsita vacía.')).toBeVisible();
+  expect(screen.queryByText('Armado parcial guardado.')).not.toBeInTheDocument();
+  expect(api.saveOrderPacking).toHaveBeenCalledWith(order.id, [
+    { orderItemId: 'line-one', packedQuantity: 0 }, { orderItemId: 'line-two', packedQuantity: 0 }
+  ], 0);
+  client.clear();
+});
+
+it('guardar un armado completo desde pendiente anticipa preparación sin marcar listo automáticamente', async () => {
+  const order = sampleOrder();
+  order.stockReadiness = 'ready';
+  order.items = order.items.map(item => ({ ...item, physicalReservedQuantity: item.quantity, incomingQuantity: 0 }));
+  api.saveOrderPacking.mockResolvedValue({ ...order, preparationState: 'preparing', packingRevision: 1,
+    items: order.items.map(item => ({ ...item, packedQuantity: item.quantity })) });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(<QueryClientProvider client={client}><AppConfirmationProvider><OrderPackingEditor order={order} /></AppConfirmationProvider></QueryClientProvider>);
+  expect(screen.getByRole('textbox', { name: 'Unidades en bolsita de B Complex' })).toHaveValue('');
+  expect(screen.queryByText(/Al guardar:/)).not.toBeInTheDocument();
+  fireEvent.change(screen.getByRole('textbox', { name: 'Unidades en bolsita de B Complex' }), { target: { value: '2' } });
+  fireEvent.change(screen.getByRole('textbox', { name: 'Unidades en bolsita de Omapure' }), { target: { value: '1' } });
+  expect(screen.getByText('Al guardar: En preparación.')).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar armado' }));
+  expect(await screen.findByText('Armado completo guardado.')).toBeVisible();
   client.clear();
 });

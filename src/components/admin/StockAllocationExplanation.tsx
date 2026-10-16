@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from '@tanstack/react-router';
-import { ArrowUpRight, ChevronDown, CircleHelp, RefreshCw } from 'lucide-react';
+import { AlertTriangle, ArrowUpRight, ChevronDown, CircleHelp, RefreshCw } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useBusinessQuery } from '@/app/use-business-query';
 import { queryKeys } from '@/app/query-keys';
@@ -9,6 +9,7 @@ import type { Order } from '@/domain/types';
 import { AppError, unknownToAppError } from '@/domain/errors';
 
 const units = (quantity: number) => `${quantity} ${quantity === 1 ? 'unidad' : 'unidades'}`;
+const awaitingReceipt = (quantity: number) => `${units(quantity)} ${quantity === 1 ? 'pendiente' : 'pendientes'} de recibir`;
 const arrival = (value: string | null) => value
   ? `Llegada estimada al local: ${new Intl.DateTimeFormat('es-AR', { dateStyle: 'medium' }).format(new Date(value))}`
   : 'Sin fecha estimada';
@@ -41,8 +42,9 @@ export function StockAllocationExplanation({ order, item, canReceivePurchases }:
     stock.quantity !== item.quantity || stock.physicalQuantity !== (item.physicalReservedQuantity ?? item.quantity) ||
     stock.incomingQuantity !== (item.incomingQuantity ?? 0) || stock.uncoveredQuantity !== (item.uncoveredQuantity ?? 0)));
   const refresh = () => void client.invalidateQueries({ queryKey: queryKeys.ordersRoot });
-  const incomingPurchases = stock?.purchases.filter(purchase => purchase.state === 'ordered') ?? [];
+  const incomingPurchases = stock?.purchases.filter(purchase => purchase.state === 'ordered' && purchase.incomingQuantity > 0) ?? [];
   const singlePurchase = incomingPurchases.length === 1 ? incomingPurchases[0] : undefined;
+  const pendingStock = (stock?.incomingQuantity ?? 0) + (stock?.uncoveredQuantity ?? 0) > 0;
   const remainingReservations = stock?.reservations.slice(3) ?? [];
   const remainingUnits = remainingReservations.reduce((sum, reservation) => sum + reservation.physicalQuantity, 0);
   const newTabDescription = `stock-new-tab-${item.id}`;
@@ -55,10 +57,10 @@ export function StockAllocationExplanation({ order, item, canReceivePurchases }:
 
   return (
     <div className="mt-2 text-xs leading-relaxed text-ink-800" role="group" aria-label={`Disponibilidad de ${item.productName}`}>
-      {query.isPending ? <p role="status">Consultando la reposición…</p>
+      {query.isPending ? <p role="status" className="text-ink-700">Consultando stock…</p>
         : query.isError || !stock ? (
           <div role="alert">
-            <p>No pudimos comprobar la reposición. Tu conteo se conserva.</p>
+            <p>No pudimos comprobar el stock. Tu conteo se conserva.</p>
             {failure && !failure.retryable ? <p className="mt-1">{failure.message} {failure.nextAction}</p> :
               <Button variant="ghost" size="sm" onClick={() => void query.refetch()} disabled={query.isFetching}>Volver a consultar</Button>}
           </div>
@@ -69,45 +71,61 @@ export function StockAllocationExplanation({ order, item, canReceivePurchases }:
           </div>
         ) : (
           <>
-            {order.stockSource !== 'incoming_only' && stock.available > 0 ? <div role="alert" className="mb-2 font-semibold text-amber-950">
+            {stock.reserved > stock.onHand ? <div role="alert" className="mb-3 flex items-start gap-2 rounded-lg bg-rose-50 p-3 text-rose-950">
+              <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+              <div className="min-w-0">
+                <p className="font-bold">{stock.reserved - stock.onHand === 1 ? 'Falta' : 'Faltan'} {units(stock.reserved - stock.onHand)} para cubrir las reservas del producto.</p>
+                {canReceivePurchases ? <Link to="/app/inventario" target="_blank" rel="noopener noreferrer" aria-label="Revisar stock en Inventario" aria-describedby={newTabDescription} className={linkStyle}>Revisar en Inventario<ArrowUpRight className="size-3.5 shrink-0" aria-hidden="true" /></Link>
+                  : <p className="mt-1">Pedile a quien administra el stock que revise el conteo.</p>}
+              </div>
+            </div> : null}
+            {pendingStock && order.stockSource !== 'incoming_only' && stock.available > 0 ? <div role="alert" className="mb-2 font-semibold text-amber-950">
               <p>Hay {units(stock.available)} libres. Actualizá el pedido para revisar su asignación.</p>
               <Button variant="secondary" size="sm" className="mt-1" onClick={refresh} disabled={query.isFetching}>Actualizar pedido</Button>
             </div> : null}
             {stock.incomingQuantity > 0 ? <>
               <div className="flex flex-wrap items-center gap-x-3">
-                <p className="font-semibold">{units(stock.incomingQuantity)} en camino</p>
-                {singlePurchase ? purchaseLink(singlePurchase) : null}
-                <div className="inline-flex max-w-full items-center gap-1">
-                  {singlePurchase ? <span className="min-w-0">{arrival(singlePurchase.expectedAt)}</span> : null}
+                <div className="flex w-full items-center justify-between gap-1 sm:w-auto">
+                  <p className="min-w-0 font-semibold">{awaitingReceipt(stock.incomingQuantity)}</p>
                   <button type="button" aria-label="Cómo se confirma la disponibilidad" aria-expanded={showArrivalHelp} aria-controls={`arrival-help-${item.id}`}
                     onClick={() => setShowArrivalHelp(value => !value)}
                     className="inline-flex size-11 shrink-0 items-center justify-center rounded-lg text-ink-700 hover:bg-brand-100/60 focus-visible:outline-2 focus-visible:outline-brand-600">
                     <CircleHelp className="size-4" aria-hidden="true" />
                   </button>
                 </div>
+                {!expanded && singlePurchase ? purchaseLink(singlePurchase) : null}
               </div>
-              {incomingPurchases.length > 1 ? <p>Reposición prevista en {incomingPurchases.length} compras. Fechas en el detalle.</p> : !singlePurchase ? <p>Actualizá los datos para comprobar qué compra repone estas unidades.</p> : null}
+              {!expanded && singlePurchase ? <p className="text-ink-700">{arrival(singlePurchase.expectedAt)}</p> : null}
+              {!expanded && incomingPurchases.length > 1 ? <p className="text-ink-700">Reposición en {incomingPurchases.length} compras. Fechas en el detalle.</p> : null}
+              {incomingPurchases.length === 0 ? <div role="alert"><p>No pudimos identificar la compra pendiente. Actualizá los datos.</p><Button variant="secondary" size="sm" className="mt-1" onClick={() => void query.refetch()} disabled={query.isFetching}>Actualizar datos</Button></div> : null}
               {showArrivalHelp ? <div id={`arrival-help-${item.id}`} className="my-2 border-l border-ink-950/20 pl-3 text-ink-700">
-                <p>La fecha estima la llegada al local. La disponibilidad de este pedido se confirma al registrar la recepción y asignar las unidades según las reservas y su antigüedad. La compra y la fecha pueden cambiar.</p>
+                <p>{order.stockSource === 'incoming_only'
+                  ? 'Este pedido espera sus compras asignadas. El stock libre anterior queda para otras ventas; los pedidos anteriores y las reservas previas pueden tener prioridad al recibir.'
+                  : 'Este pedido usa stock libre del local y nuevas recepciones. Los pedidos anteriores y las reservas previas pueden tener prioridad.'} La compra y la fecha estimada pueden cambiar.</p>
                 {!canReceivePurchases ? <p className="mt-2">Si ya llegó, pedile a la persona responsable que registre la recepción. Después actualizá el pedido.</p> : null}
               </div> : null}
             </> : null}
-            {stock.uncoveredQuantity > 0 ? <p className="mt-1 font-semibold text-rose-900">{units(stock.uncoveredQuantity)} sin reposición. Acordá cómo completar el pedido.</p> : null}
+            {stock.uncoveredQuantity > 0 ? <div className="mt-1 text-rose-900">
+              <p className="font-semibold">{units(stock.uncoveredQuantity)} sin reposición.</p>
+              {canReceivePurchases ? <Link to="/app/inventario" search={{ tab: 'compras' }} target="_blank" rel="noopener noreferrer" aria-describedby={newTabDescription} className={linkStyle}>Revisar compras<ArrowUpRight className="size-3.5" aria-hidden="true" /></Link>
+                : <p>Solicitá la reposición a quien administra las compras.</p>}
+            </div> : null}
+            {pendingStock && order.stockSource === 'incoming_only' && stock.available > 0 ? <p className="mt-1 text-ink-700">Hay {units(stock.available)} {stock.available === 1 ? 'libre' : 'libres'} del local para otras ventas.</p> : null}
             <button type="button" className="flex min-h-11 w-full items-center justify-between gap-2 rounded-lg text-left font-semibold text-brand-900 underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
               aria-label={`${expanded ? 'Ocultar' : 'Ver'} stock y reservas de ${item.productName}`} aria-expanded={expanded} aria-controls={`stock-context-${item.id}`} onClick={() => setExpanded(value => !value)}>
               <span className="min-w-0 flex-1">{expanded ? 'Ocultar detalle' : 'Ver stock y reservas'}</span>
               <ChevronDown className={`size-4 shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`} aria-hidden="true" />
             </button>
             {expanded ? <div id={`stock-context-${item.id}`} className="space-y-3 border-t border-ink-950/10 pt-3">
-              <dl className="grid grid-cols-3 gap-x-2" aria-label="Stock general del producto">
-                {([['En local', stock.onHand], ['Apartadas', stock.reserved], ['Libres', stock.available]] as const).map(([label, quantity]) => <div key={label} className="min-w-0">
-                  <dt className="whitespace-nowrap text-[11px] font-semibold text-ink-700">{label}</dt><dd className={`mt-0.5 whitespace-nowrap font-bold leading-7 tabular-nums text-ink-950 ${quantity >= 10000000 ? 'text-[11px]' : quantity >= 100000 ? 'text-sm' : 'text-lg'}`}>{quantity}</dd>
+              <dl className="grid grid-cols-3 gap-x-2" aria-label="Stock registrado y reservas del producto">
+                {([['Stock registrado', stock.onHand], ['Reservadas', stock.reserved], ['Libres para nuevas ventas', stock.available]] as const).map(([label, quantity]) => <div key={label} className="flex min-w-0 flex-col">
+                  <dt className="break-words text-[11px] leading-4 font-semibold text-ink-700">{label}</dt><dd className={`mt-auto whitespace-nowrap pt-0.5 font-bold leading-7 tabular-nums text-ink-950 ${quantity >= 10000000 ? 'text-[11px]' : quantity >= 100000 ? 'text-sm' : 'text-lg'}`}>{quantity}</dd>
                 </div>)}
               </dl>
-              {order.stockSource === 'incoming_only' && stock.available > 0 ? <p>Este pedido reserva sólo mercadería en camino. El stock libre anterior queda para otras ventas.</p> : null}
+              <p className="text-ink-700">El stock registrado incluye las bolsitas pendientes de entregar.</p>
               <div>
-                <p className="font-semibold">Reservas físicas · {units(stock.reserved)}</p>
-                {stock.reservations.length > 0 ? <ul className="divide-y divide-ink-950/8" aria-label="Pedidos con unidades físicas apartadas">
+                <p className="font-semibold">Pedidos con unidades reservadas · {units(stock.reservations.reduce((sum, reservation) => sum + reservation.physicalQuantity, 0))}</p>
+                {stock.reservations.length > 0 ? <ul className="divide-y divide-ink-950/8" aria-label="Pedidos con unidades reservadas">
                   {(allReservations ? stock.reservations : stock.reservations.slice(0, 3)).map(reservation => <li key={reservation.orderId}>
                     {reservation.orderId === order.id ? <div className="flex min-h-11 flex-wrap items-center justify-between gap-2 py-2 font-semibold">
                       <span>Este pedido</span><span>{units(reservation.physicalQuantity)}</span>
@@ -122,11 +140,12 @@ export function StockAllocationExplanation({ order, item, canReceivePurchases }:
                 </button> : null}
                 {stock.openingReservedQuantity > 0 ? <p className="mt-1">Reservas previas al sistema: {units(stock.openingReservedQuantity)}.</p> : null}
               </div>
-              {stock.purchases.some(purchase => purchase.id !== singlePurchase?.id) ? <div className="border-t border-ink-950/10 pt-3">
-                <p className="font-semibold">Compras vinculadas</p>
-                {stock.purchases.filter(purchase => purchase.id !== singlePurchase?.id).map(purchase => <div key={purchase.id} className="mt-1">
-                  <div className="flex flex-wrap items-baseline gap-x-2">{purchaseLink(purchase)}<span>{units(purchase.reservedQuantity)}</span></div>
-                  <p>{purchase.state === 'ordered' ? arrival(purchase.expectedAt) : 'Compra cerrada. Estas unidades necesitan reposición.'}</p>
+              {stock.purchases.length > 0 ? <div className="border-t border-ink-950/10 pt-3">
+                <p className="font-semibold">Compras de este pedido</p>
+                {stock.purchases.map(purchase => <div key={purchase.id} className="mt-1">
+                  <div className="flex flex-wrap items-baseline gap-x-2">{purchaseLink(purchase)}</div>
+                  {purchase.incomingQuantity > 0 ? <p>{awaitingReceipt(purchase.incomingQuantity)} · {purchase.state === 'ordered' ? arrival(purchase.expectedAt) : 'Compra cerrada: actualizá los datos.'}</p> : null}
+                  {purchase.uncoveredQuantity > 0 ? <p className="text-rose-900">Origen de {units(purchase.uncoveredQuantity)} sin reposición.</p> : null}
                 </div>)}
               </div> : null}
               <Button variant="ghost" size="sm" className="px-0" onClick={refresh} disabled={query.isFetching}><RefreshCw className="size-3.5" aria-hidden="true" />{query.isFetching ? 'Actualizando…' : 'Actualizar datos'}</Button>

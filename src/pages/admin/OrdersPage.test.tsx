@@ -2,7 +2,7 @@ import { AppConfirmationProvider } from '@/components/ui/AppConfirmation';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { PropsWithChildren } from 'react';
-import { afterEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { Order } from '@/domain/types';
 import { demoOrders } from '@/data/demo-data';
 import OrdersPage from './OrdersPage';
@@ -15,6 +15,21 @@ vi.mock('@/components/layout/AdminShell', () => ({ PageHeader: () => <h1>Pedidos
 vi.mock('@tanstack/react-router', () => ({ useSearch: () => ({}), useBlocker: navigation, Link: ({ children, to }: PropsWithChildren<{ to: string }>) => <a href={to}>{children}</a> }));
 vi.mock('@/features/auth/AuthProvider', () => ({ useAuth: () => ({ user: { active: true, role: 'owner' } }) }));
 afterEach(cleanup);
+beforeEach(() => {
+  api.getOrderStockContext.mockImplementation(async id => {
+    const result = await api.listOrders.getMockImplementation()?.(1, 50, '', 'all');
+    const order = result?.items.find((item: Order) => item.id === id) as Order | undefined;
+    if (!order) throw new Error('Order fixture not found');
+    return { orderId: id, orderState: order.orderState, fulfillmentState: order.fulfillmentState,
+      stockSource: order.stockSource ?? 'normal', actionRevision: order.actionRevision ?? 0,
+      packingRevision: order.packingRevision ?? 0, checkedAt: '2026-10-16T18:00:00Z',
+      items: order.items.map(item => ({ orderItemId: item.id, productId: item.productId, quantity: item.quantity,
+        onHand: item.physicalReservedQuantity ?? item.quantity, reserved: item.physicalReservedQuantity ?? item.quantity,
+        available: 0, physicalQuantity: item.physicalReservedQuantity ?? item.quantity,
+        incomingQuantity: item.incomingQuantity ?? 0, uncoveredQuantity: item.uncoveredQuantity ?? 0,
+        otherReservedQuantity: 0, openingReservedQuantity: 0, reservations: [], purchases: [] })) };
+  });
+});
 
 it('protects same-route search changes and explicitly discards both shipping and packing even if the row stays visible', async () => {
   const order:Order={...demoOrders[0]!,orderState:'confirmed',paymentState:'pending',fulfillmentState:'pending',
@@ -62,7 +77,7 @@ it('blocks stale-row actions immediately while a search is debouncing and until 
   const shipping=screen.getByRole('button',{name:'Agregar'}),pay=screen.getByRole('button',{name:'Marcar como cobrado'});
   fireEvent.change(screen.getByRole('searchbox'),{target:{value:'other'}});
   expect(header).toBeDisabled();expect(shipping).toBeDisabled();expect(pay).toBeDisabled();
-  expect(screen.getByRole('status')).toHaveTextContent('Buscando pedidos');
+  expect(screen.getByText('Buscando pedidos…')).toBeInTheDocument();
   await waitFor(()=>expect(api.listOrders).toHaveBeenCalledWith(1,50,'other','all'));
   expect(screen.queryByRole('button',{name:'Agregar'})).not.toBeInTheDocument();
   await act(async()=>finish(result));
@@ -260,20 +275,23 @@ it('mantiene visible la bolsita bloqueada y permite entender sus reservas cuando
     packingRevision: order.packingRevision ?? 0, checkedAt: '2026-10-16T16:00:00Z',
     items: [{ orderItemId: order.items[0]!.id, productId: order.items[0]!.productId, quantity: 1, onHand: 0,
       reserved: 0, available: 0, physicalQuantity: 0, incomingQuantity: 1, uncoveredQuantity: 0,
-      otherReservedQuantity: 0, openingReservedQuantity: 0, reservations: [], purchases: [] }] });
+      otherReservedQuantity: 0, openingReservedQuantity: 0, reservations: [], purchases: [{
+        id: 'purchase-waiting', number: 2054, state: 'ordered', expectedAt: order.expectedArrivalAt,
+        reservedQuantity: 1, incomingQuantity: 1, uncoveredQuantity: 0, orderedQuantity: 1, receivedQuantity: 0, shortageQuantity: 0
+      }] }] });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
   render(<QueryClientProvider client={client}><AppConfirmationProvider><OrdersPage /></AppConfirmationProvider></QueryClientProvider>);
 
   fireEvent.click(await screen.findByRole('button', { name: /Ver pedido y acciones/ }));
   expect(screen.getByText('Qué sigue')).toBeInTheDocument();
   expect(screen.getAllByText('Regalo / Cortesía')).toHaveLength(1);
-  expect(screen.getByText('Esperando mercadería')).toBeInTheDocument();
+  expect(screen.getByText('Pendiente de recibir')).toBeInTheDocument();
   expect(screen.queryByText('Falta preparar')).not.toBeInTheDocument();
-  expect(screen.getAllByText('Mercadería en camino')).toHaveLength(1);
-  expect(screen.getByText(/Llegada estimada:/)).toBeInTheDocument();
+  expect(screen.getAllByText('Pendiente de recibir')).toHaveLength(1);
+  expect(await screen.findByText(/Llegada estimada al local:/)).toBeInTheDocument();
   expect(screen.queryByText(/Recibí la compra en Inventario\. Después completá el armado/)).not.toBeInTheDocument();
   expect(screen.getByRole('region', { name: `Armado del pedido ${order.number}` })).toBeInTheDocument();
-  expect(screen.getByText('Pendiente de stock')).toBeInTheDocument();
+  expect(await screen.findByText('1 unidad pendiente de recibir')).toBeInTheDocument();
   expect(screen.queryByText('0 en bolsita')).not.toBeInTheDocument();
   expect(await screen.findByRole('button', { name: /Ver stock y reservas/ })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Guardar armado' })).toBeDisabled();
@@ -300,7 +318,7 @@ it('mantiene el formulario cuando hay unidades físicas para un armado parcial',
 
   fireEvent.click(await screen.findByRole('button', { name: /Ver pedido y acciones/ }));
   expect(screen.getByRole('region', { name: `Armado del pedido ${order.number}` })).toBeInTheDocument();
-  expect(screen.getAllByText('Mercadería en camino')).toHaveLength(1);
+  expect(screen.getAllByText('Pendiente de recibir')).toHaveLength(1);
   client.clear();
 });
 

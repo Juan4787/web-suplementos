@@ -81,7 +81,7 @@ const stockStatus = (item: InventoryItem) => {
     return { label: 'TODO RESERVADO', tone: 'warning' } as const;
   }
   if (item.available <= 0 && item.incoming > 0) {
-    return { label: 'EN CAMINO', tone: 'info' } as const;
+    return { label: 'PENDIENTE DE RECIBIR', tone: 'info' } as const;
   }
   return { label: statusLabels[item.status], tone: statusTones[item.status] };
 };
@@ -94,7 +94,7 @@ export const getStockPriority = (item: InventoryItem): number => {
       return 0;
     case 'TODO RESERVADO':
       return 1;
-    case 'EN CAMINO':
+    case 'PENDIENTE DE RECIBIR':
       return 2;
     case 'URGENTE':
       return 3;
@@ -1591,7 +1591,7 @@ function StockDetailDrawer({
                 <div>
                   <p className="font-bold text-red-950">Faltan {item.reserved - item.onHand} {item.reserved - item.onHand === 1 ? 'unidad reservada' : 'unidades reservadas'}</p>
                   <p className="text-[12.5px] text-red-800 mt-0.5">
-                    Hay {item.onHand} en depósito y {item.reserved} comprometidas con clientes. Revisá los pedidos y reservas pendientes; registrá la mercadería cuando llegue.
+                    Stock registrado: {item.onHand}. Reservas: {item.reserved}. Revisá el conteo, los pedidos y la reposición.
                   </p>
                 </div>
               </div>
@@ -1601,7 +1601,7 @@ function StockDetailDrawer({
                 <Info className="size-5 shrink-0 text-red-700 mt-0.5" />
                 <div>
                   <p className="font-bold text-red-950">Todo el stock está reservado</p>
-                  <p className="text-[12.5px] text-red-800 mt-0.5">Hay {item.onHand} unidades en depósito, pero ninguna libre para una nueva venta.</p>
+                  <p className="text-[12.5px] text-red-800 mt-0.5">Las {item.onHand} unidades registradas están comprometidas con pedidos o reservas previas.</p>
                 </div>
               </div>
             )}
@@ -1609,9 +1609,9 @@ function StockDetailDrawer({
               <div className="flex items-start gap-2.5">
                 <PackageCheck className="size-5 shrink-0 text-brand-700 mt-0.5" />
                 <div>
-                  <p className="font-bold text-brand-950">En camino</p>
+                  <p className="font-bold text-brand-950">Pendiente de recibir</p>
                   <p className="text-[12.5px] text-brand-800 mt-0.5">
-                    Hay <strong>{item.incoming} {item.incoming === 1 ? 'unidad' : 'unidades'}</strong> en camino. Al recibirlas se sumarán al stock físico; las que ya están reservadas seguirán apartadas para esos pedidos.
+                    Hay <strong>{item.incoming} {item.incoming === 1 ? 'unidad pendiente' : 'unidades pendientes'} de recibir</strong>. Las reservas se asignan al registrar la recepción.
                   </p>
                 </div>
               </div>
@@ -1652,12 +1652,12 @@ function StockDetailDrawer({
 
         {/* 3. STOCK HOY (Tarjetas con alineación vertical geométrica perfecta de 3 filas) */}
         <div>
-          <h4 className="text-[12px] font-black uppercase tracking-wider text-ink-600 mb-2">Stock hoy</h4>
+          <h4 className="text-[12px] font-black uppercase tracking-wider text-ink-600 mb-2">Stock registrado y reservas</h4>
           <div className="grid grid-cols-3 gap-2 sm:gap-2.5">
             {/* DISPONIBLE */}
             <div className="rounded-2xl bg-cream-50 p-2.5 sm:p-3.5 border border-ink-950/6 flex flex-col justify-between items-center text-center">
               <div className="w-full flex flex-col items-center">
-                <span className="block text-[11px] sm:text-[12px] font-black uppercase tracking-wider text-ink-700 text-center w-full">Disponible</span>
+                <span className="block text-[11px] sm:text-[12px] font-black text-ink-700 text-center w-full">Libres</span>
                 <div className="my-1.5 flex items-baseline justify-center gap-1">
                   <span
                     className={cn(
@@ -1671,36 +1671,36 @@ function StockDetailDrawer({
                             : 'text-ink-950'
                     )}
                   >
-                    {item.available}
+                    {Math.max(0, item.available)}
                   </span>
                   <span className="text-xs font-bold text-ink-500">u.</span>
                 </div>
               </div>
-              <span className="text-[11px] font-semibold text-ink-500 min-h-[2rem] leading-tight flex items-start justify-center text-center">Para vender</span>
+              <span className="text-[11px] font-semibold text-ink-700 min-h-[2rem] leading-tight flex items-start justify-center text-center">Para nuevas ventas</span>
             </div>
 
             {/* RESERVADO */}
             <div className="rounded-2xl bg-cream-50 p-2.5 sm:p-3.5 border border-ink-950/6 flex flex-col justify-between items-center text-center">
               <div className="w-full flex flex-col items-center">
-                <span className="block text-[11px] sm:text-[12px] font-black uppercase tracking-wider text-ink-700 text-center w-full">Reservado</span>
+                <span className="block text-[11px] sm:text-[12px] font-black text-ink-700 text-center w-full">Reservadas</span>
                 <div className="my-1.5 flex items-baseline justify-center gap-1">
                   <span className="text-2xl sm:text-3xl font-black text-ink-950 tracking-tight leading-none">{item.reserved}</span>
                   <span className="text-xs font-bold text-ink-500">u.</span>
                 </div>
               </div>
-              <span className="text-[11px] font-semibold text-ink-500 min-h-[2rem] leading-tight flex items-start justify-center text-center">Reservado por clientes</span>
+              <span className="text-[11px] font-semibold text-ink-700 min-h-[2rem] leading-tight flex items-start justify-center text-center">Para pedidos y reservas previas</span>
             </div>
 
             {/* TOTAL */}
             <div className="rounded-2xl bg-cream-50 p-2.5 sm:p-3.5 border border-ink-950/6 flex flex-col justify-between items-center text-center">
               <div className="w-full flex flex-col items-center">
-                <span className="block text-[11px] sm:text-[12px] font-black uppercase tracking-wider text-ink-700 text-center w-full">Total</span>
+                <span className="block text-[11px] sm:text-[12px] font-black text-ink-700 text-center w-full">Stock registrado</span>
                 <div className="my-1.5 flex items-baseline justify-center gap-1">
                   <span className="text-2xl sm:text-3xl font-black text-ink-950 tracking-tight leading-none">{item.onHand}</span>
                   <span className="text-xs font-bold text-ink-500">u.</span>
                 </div>
               </div>
-              <span className="text-[11px] font-semibold text-ink-500 min-h-[2rem] leading-tight flex items-start justify-center text-center">En depósito</span>
+              <span className="text-[11px] font-semibold text-ink-700 min-h-[2rem] leading-tight flex items-start justify-center text-center">Incluye las bolsitas sin entregar</span>
             </div>
           </div>
         </div>
@@ -1890,10 +1890,10 @@ function StockDetailDrawer({
             <h4 className="text-[12px] font-black uppercase tracking-wider text-ink-600 mb-2">Lo que viene</h4>
             <div className="rounded-2xl bg-brand-50/70 p-4 border border-brand-200/70 space-y-1">
               <p className="text-[15px] font-black text-brand-950">
-                {item.incoming} {item.incoming === 1 ? 'unidad en camino' : 'unidades en camino'}
+                {item.incoming} {item.incoming === 1 ? 'unidad pendiente' : 'unidades pendientes'} de recibir
               </p>
               <p className="text-xs font-medium text-brand-800">
-                Cuando lleguen vas a tener <strong className="font-black text-brand-950">{item.projected} {item.projected === 1 ? 'unidad disponible' : 'unidades disponibles'}</strong> para nuevos pedidos.
+                {item.reserved > item.onHand ? 'Revisá la diferencia de stock antes de comprometer nuevas unidades.' : <>Disponibilidad prevista al recibir: <strong className="font-black text-brand-950">{item.projected} {item.projected === 1 ? 'unidad' : 'unidades'}</strong> para nuevas ventas.</>}
               </p>
               {(item.incomingReserved ?? 0) > 0 ? (
                 <p className="text-xs font-semibold text-brand-800">De lo que viene, {item.incomingReserved} {item.incomingReserved === 1 ? 'unidad ya está reservada' : 'unidades ya están reservadas'}.</p>
@@ -2504,7 +2504,7 @@ export default function InventoryPage() {
             <ul className="mt-2 space-y-2">
               {reassignedNotice.map(order => <li key={order.id}>
                 <Link to="/app/pedidos" search={{ search: String(order.number) }} className="inline-flex min-h-11 items-center font-bold underline underline-offset-4">Pedido #{order.number}</Link>
-                <p>{order.incomingQuantity > 0 ? `${order.incomingQuantity} ${order.incomingQuantity === 1 ? 'unidad sigue' : 'unidades siguen'} en camino con otra compra. Consultá el pedido para revisar la compra y su fecha. ` : ''}{order.uncoveredQuantity > 0 ? `${order.uncoveredQuantity} ${order.uncoveredQuantity === 1 ? 'unidad quedó' : 'unidades quedaron'} sin reposición: necesitás acordar cómo completarlas y encargar la reposición en Compras.` : ''}</p>
+                <p>{order.incomingQuantity > 0 ? `${order.incomingQuantity} ${order.incomingQuantity === 1 ? 'unidad pendiente' : 'unidades pendientes'} de recibir de otra compra. Revisá la compra y su fecha en el pedido. ` : ''}{order.uncoveredQuantity > 0 ? `${order.uncoveredQuantity} ${order.uncoveredQuantity === 1 ? 'unidad sin reposición' : 'unidades sin reposición'}: revisá cómo completarlas en Compras.` : ''}</p>
               </li>)}
             </ul>
             <Button variant="ghost" size="sm" className="mt-2" onClick={() => setReassignedNotice([])}>Cerrar aviso de pendientes</Button>
@@ -2584,7 +2584,7 @@ export default function InventoryPage() {
                             ) : purchase.state === 'cancelled' ? (
                               <StatusChip label={purchase.items.some(i => i.receivedQuantity > 0) ? 'Saldo cancelado' : 'Cancelado'} tone="neutral" />
                             ) : (
-                              <StatusChip label="En camino" tone="warning" />
+                              <StatusChip label="Pendiente de recibir" tone="warning" />
                             )}
                           </div>
                         </div>

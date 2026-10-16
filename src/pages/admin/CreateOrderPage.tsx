@@ -591,13 +591,13 @@ export default function CreateOrderPage() {
                 <label key={source} className={cn('relative flex min-h-14 cursor-pointer items-center gap-3 rounded-xl border px-4 py-3 text-sm font-bold transition-colors has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-brand-600 has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-60', stockSource === source ? 'border-ink-950 bg-ink-950 text-white' : 'border-ink-950/15 bg-white text-ink-700 hover:border-ink-950/40 hover:bg-cream-50')}>
                   <input type="radio" name="stock-source" value={source} checked={stockSource === source} onChange={() => handleStockSourceChange(source)} className="absolute inset-0 h-full w-full cursor-pointer opacity-0" />
                   <Package className="size-5 shrink-0" aria-hidden="true" />
-                  <span className="flex-1">{source === 'normal' ? 'Compra normal' : 'Comprar productos en camino'}</span>
+                  <span className="flex-1">{source === 'normal' ? 'Stock local primero' : 'Solo compras al proveedor'}</span>
                   {stockSource === source ? <Check className="size-4 shrink-0" aria-hidden="true" /> : null}
                 </label>
               ))}
             </div>
-            <p className="mt-3 text-sm text-ink-700">{stockSource === 'normal' ? 'Reserva primero lo disponible en stock y después lo que viene en camino.' : 'Reserva solo unidades libres de compras pendientes de llegar. El stock físico queda disponible para otros pedidos.'}</p>
-            {invalidItems.length ? <p role="alert" className="mt-3 text-sm font-bold text-rose-800">Revisá las cantidades de {invalidItems.map(item => item.name).join(', ')}. Los productos se conservaron; ajustalos o volvé a compra normal.</p> : null}
+            <p className="mt-3 text-sm text-ink-700">{stockSource === 'normal' ? 'Reserva unidades libres del local y, si faltan, de compras pendientes de recibir.' : 'Reserva solo unidades pendientes de recibir. El stock libre del local queda para otras ventas.'}</p>
+            {invalidItems.length ? <p role="alert" className="mt-3 text-sm font-bold text-rose-800">Revisá las cantidades de {invalidItems.map(item => item.name).join(', ')}. Ajustalas o elegí «Stock local primero».</p> : null}
           </fieldset>
         <div className="grid min-w-0 gap-6 lg:gap-8 lg:grid-cols-[1.1fr_0.9fr] xl:grid-cols-[1.2fr_0.8fr] items-start">
           {/* Columna Izquierda: Selección de Productos y Carrito */}
@@ -638,7 +638,7 @@ export default function CreateOrderPage() {
               <div className="mt-4 max-h-80 overflow-y-auto divide-y divide-ink-950/6 rounded-2xl border border-ink-950/8 bg-cream-50/50 p-2">
                 {filteredProducts.length === 0 ? (
                   <div className="p-8 text-center text-sm font-semibold text-ink-600">
-                    {stockSource === 'incoming_only' ? 'No hay unidades libres en camino para esta búsqueda. Revisá las compras al proveedor o elegí compra normal.' : 'No se encontraron productos disponibles con esa búsqueda.'}
+                    {stockSource === 'incoming_only' ? 'No hay unidades libres de compras al proveedor para esta búsqueda. Revisá las compras o elegí «Stock local primero».' : 'No se encontraron productos disponibles con esa búsqueda.'}
                   </div>
                 ) : (
                   filteredProducts.map((p) => {
@@ -671,13 +671,13 @@ export default function CreateOrderPage() {
                               {p.presentation} • <span className="font-mono text-ink-500">{p.sku}</span>
                             </p>
                             <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px]">
-                              {stockSource === 'incoming_only' ? (<span className="text-xs font-semibold text-brand-800">{incomingAvail} libres en camino</span>) : physAvail > 0 ? (
+                              {stockSource === 'incoming_only' ? (<span className="text-xs font-semibold text-brand-800">{incomingAvail} libres para reservar</span>) : physAvail > 0 ? (
                                 <span className="rounded-md bg-emerald-50 px-1.5 py-0.5 font-bold text-emerald-700 border border-emerald-200">
                                   {physAvail} en stock
                                 </span>
                               ) : incomingAvail > 0 ? (
                                 <span className="rounded-md bg-amber-50 px-1.5 py-0.5 font-bold text-amber-700 border border-amber-200">
-                                  {incomingAvail} en camino
+                                  {incomingAvail} libres de compras al proveedor
                                 </span>
                               ) : (
                                 <span className="rounded-md bg-rose-50 px-1.5 py-0.5 font-bold text-rose-700 border border-rose-200">
@@ -788,7 +788,7 @@ export default function CreateOrderPage() {
                             </p>
                             {willUseIncoming ? (
                               <p className="mt-1 text-[11px] font-bold text-amber-700">
-                                Reserva {stockSource === 'incoming_only' ? item.quantity : item.quantity - physicalAvailable} unidad(es) de compra en camino
+                                Reserva {stockSource === 'incoming_only' ? item.quantity : item.quantity - physicalAvailable} unidad(es) de compras pendientes de recibir
                               </p>
                             ) : null}
                           </div>
@@ -1231,7 +1231,7 @@ export default function CreateOrderPage() {
                 <div className="mb-4 rounded-xl bg-amber-50 p-3.5 border border-amber-200/80 text-xs font-semibold text-amber-950 flex items-start gap-2.5">
                   <Tag className="size-4 shrink-0 text-amber-700 mt-0.5" />
                   <span>
-                    Costo estimado: {formatMoney(totals.subtotal)}. Al reservar se confirma el costo exacto de las unidades asignadas, que puede variar entre stock y compras en camino. El pedido queda pendiente de cobro; podés agregar el envío antes de cobrar.
+                    Costo estimado: {formatMoney(totals.subtotal)}. Al reservar se confirma el costo exacto de las unidades asignadas, que puede variar entre stock y compras al proveedor. El pedido queda pendiente de cobro; podés agregar el envío antes de cobrar.
                   </span>
                 </div>
               ) : null}
@@ -1249,7 +1249,7 @@ export default function CreateOrderPage() {
                 <div className="mb-4 rounded-xl bg-amber-50 p-3 border border-amber-200/60 text-xs font-semibold text-amber-800 flex items-start gap-2">
                   <AlertCircle className="size-4 shrink-0 text-amber-600 mt-0.5" />
                   <span>
-                    El pedido contiene unidades que se cubrirán con stock de compra en camino.
+                    El pedido incluye unidades pendientes de recibir del proveedor.
                   </span>
                 </div>
               ) : null}

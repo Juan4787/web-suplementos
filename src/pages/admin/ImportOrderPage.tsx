@@ -489,7 +489,7 @@ export default function ImportOrderPage() {
                           if (incomingNeeded > 0) {
                             return (
                               <span className="mt-1 inline-flex items-center gap-1 text-[11px] font-bold text-amber-900 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md">
-                                {incomingNeeded} u. se reservarán de una compra en camino
+                                {incomingNeeded} u. se reservarán de compras pendientes de recibir
                               </span>
                             );
                           }

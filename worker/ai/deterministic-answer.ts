@@ -108,8 +108,8 @@ const buildInventoryTemplate = (result: SafeToolResult): string | null => {
     const coverageId = `${product.ref}.stock.coverage_days`;
     const coverage = productFactPlaceholder(product, 'stock.coverage_days');
     const details = [
-      ['disponible', productFactPlaceholder(product, 'stock.available_units')],
-      ['en camino', productFactPlaceholder(product, 'stock.incoming_units')],
+      ['libres para nuevas ventas', productFactPlaceholder(product, 'stock.available_units')],
+      ['pendientes de recibir', productFactPlaceholder(product, 'stock.incoming_units')],
       ['compra sugerida', productFactPlaceholder(product, 'stock.suggested_purchase_units')],
       [
         'cobertura',

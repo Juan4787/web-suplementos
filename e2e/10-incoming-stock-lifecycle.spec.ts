@@ -194,7 +194,7 @@ test.describe('E2E Real: Ciclo de Vida de Stock Entrante (Cliente a Entrega y Ve
     await expect(page.getByText(`Whey E2E Lifecycle ${testSku}`)).toBeVisible();
 
     // Verificamos el banner de reposición / en camino
-    const etaBanner = page.locator('aside').getByText(/incluye productos en reposición|reposición/i);
+    const etaBanner = page.locator('aside').getByText('Productos pendientes de recibir', { exact: true });
     await expect(etaBanner).toBeVisible();
 
     // -------------------------------------------------------------------------
@@ -295,7 +295,7 @@ test.describe('E2E Real: Ciclo de Vida de Stock Entrante (Cliente a Entrega y Ve
     }
 
     // Verificamos el badge / aviso de espera de reposición
-    await expect(orderCard.getByText(/en camino/i).first()).toBeVisible();
+    await expect(orderCard.getByText(/pendiente.*de recibir/i).first()).toBeVisible();
 
     // El botón de entrega DEBE estar bloqueado / ausente
     const deliverButton = orderCard.getByRole('button', { name: /marcar como entregado/i });
@@ -346,7 +346,7 @@ test.describe('E2E Real: Ciclo de Vida de Stock Entrante (Cliente a Entrega y Ve
     }
 
     // El pedido SIGUE en espera con badge en camino y sin botón de entrega
-    await expect(orderCardAfterPartial.getByText(/en camino/i).first()).toBeVisible();
+    await expect(orderCardAfterPartial.getByText(/pendiente.*de recibir/i).first()).toBeVisible();
     await expect(orderCardAfterPartial.getByRole('button', { name: /marcar como entregado/i })).toHaveCount(0);
 
     // -------------------------------------------------------------------------
@@ -379,7 +379,7 @@ test.describe('E2E Real: Ciclo de Vida de Stock Entrante (Cliente a Entrega y Ve
     }
 
     // El aviso de bloqueo ya NO debe estar
-    await expect(orderCardReady.getByText(/en camino/i)).toHaveCount(0);
+    await expect(orderCardReady.getByText(/pendiente.*de recibir/i)).toHaveCount(0);
 
     // El botón de entrega AHORA SÍ está habilitado
     const markDeliveredBtn = orderCardReady.getByRole('button', { name: /marcar como entregado/i });

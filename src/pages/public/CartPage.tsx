@@ -1,4 +1,5 @@
 import { ProductImage } from '@/components/store/ProductImage';
+import { IncomingStockNotice } from '@/components/store/IncomingStockNotice';
 import { Link } from '@tanstack/react-router';
 import {
   AlertCircle,
@@ -10,7 +11,6 @@ import {
   Plus,
   ShoppingBag,
   Trash2,
-  Truck,
   X
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
@@ -295,18 +295,7 @@ export default function CartPage() {
                 El costo de envío se coordina por WhatsApp según el destino de entrega en todo el país.
               </p>
 
-              {cartEtaQuery.data?.requiresIncoming ? (
-                <div className="mt-5 rounded-2xl bg-amber-400/10 border border-amber-400/20 p-3.5 text-xs text-amber-200 space-y-1">
-                  <p className="font-bold flex items-center gap-1.5 text-amber-300">
-                    <Truck className="size-4 shrink-0" /> Incluye productos en reposición
-                  </p>
-                  <p className="text-white/80 leading-relaxed">
-                    {cartEtaQuery.data.quotedEta
-                      ? `Tu pedido completo se entregará a partir del ${new Intl.DateTimeFormat('es-AR', { day: '2-digit', month: '2-digit' }).format(new Date(cartEtaQuery.data.quotedEta))}.`
-                      : 'Tu pedido completo se entregará apenas arribe la reposición.'}
-                  </p>
-                </div>
-              ) : null}
+              <IncomingStockNotice quote={cartEtaQuery.data} theme="dark" />
 
               {hasBlockingIssues ? (
                 <div className="mt-5 rounded-2xl bg-amber-500/20 border border-amber-400/30 p-3 text-xs text-amber-200">
@@ -334,4 +323,3 @@ export default function CartPage() {
     </PublicShell>
   );
 }
-

@@ -32,7 +32,7 @@ export function OrderStatus({ order, compact = false }: { order: Order; compact?
         ) : order.fulfillmentState === 'shipped' ? (
           <StatusChip key="shipped" label="Enviado" tone="info" />
         ) : waitingWithoutPhysical ? (
-          <StatusChip key="waiting" label="Esperando mercadería" tone="info" />
+          <StatusChip key="waiting" label="Pendiente de recibir" tone="info" />
         ) : uncoveredWithoutPhysical ? (
           <StatusChip key="uncovered" label="Sin reposición" tone="danger" />
         ) : (
@@ -82,7 +82,7 @@ export function OrderStatus({ order, compact = false }: { order: Order; compact?
   } else if (order.preparationState === 'ready') {
     chips.push(<StatusChip key="ready" label="Listo para entrega" tone="info" />);
   } else if (waitingWithoutPhysical) {
-    chips.push(<StatusChip key="waiting" label="Esperando mercadería" tone="info" />);
+    chips.push(<StatusChip key="waiting" label="Pendiente de recibir" tone="info" />);
   } else if (uncoveredWithoutPhysical) {
     chips.push(<StatusChip key="uncovered" label="Sin reposición" tone="danger" />);
   } else if (order.preparationState === 'preparing') {
@@ -102,10 +102,7 @@ export function OrderStatus({ order, compact = false }: { order: Order; compact?
 
   // 3. Estado de Stock / Reposición
   if (order.stockReadiness === 'waiting_incoming' && !waitingWithoutPhysical) {
-    const etaFormatted = order.expectedArrivalAt
-      ? ` · ${new Intl.DateTimeFormat('es-AR', { day: '2-digit', month: '2-digit' }).format(new Date(order.expectedArrivalAt))}`
-      : '';
-    chips.push(<StatusChip key="stock-incoming" label={`En camino${etaFormatted}`} tone="info" />);
+    chips.push(<StatusChip key="stock-incoming" label="Pendiente de recibir" tone="info" />);
   } else if (order.stockReadiness === 'uncovered' && !uncoveredWithoutPhysical) {
     chips.push(<StatusChip key="stock-uncovered" label="Sin reposición" tone="danger" />);
   }

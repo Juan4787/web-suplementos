@@ -79,7 +79,7 @@ export default function ProductPage() {
                   <StatusChip
                     label={
                       isIncoming
-                        ? 'En camino'
+                        ? 'Pendiente de recibir'
                         : productQuery.data.availability === 'low'
                         ? 'Últimas unidades'
                         : 'Sin stock'

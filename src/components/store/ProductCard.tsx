@@ -10,7 +10,7 @@ import { ProductImage } from './ProductImage';
 const availabilityLabel: Record<StorefrontProduct['availability'], string> = {
   available: 'Disponible',
   low: 'Últimas unidades',
-  incoming: 'En camino',
+  incoming: 'Pendiente de recibir',
   out_of_stock: 'Sin stock'
 };
 
@@ -64,11 +64,11 @@ export function ProductCard({ product }: { product: StorefrontProduct }) {
         </span>
       </Link>
       <div className="flex flex-1 flex-col p-5 sm:p-6">
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
           <span className="text-[13px] font-bold text-ink-600">{product.category}</span>
           {product.availability !== 'available' || isIncoming ? (
             <StatusChip
-              label={isIncoming ? 'En camino' : availabilityLabel[product.availability]}
+              label={isIncoming ? 'Pendiente de recibir' : availabilityLabel[product.availability]}
               tone={isIncoming ? 'info' : product.availability === 'low' ? 'warning' : 'danger'}
             />
           ) : null}
