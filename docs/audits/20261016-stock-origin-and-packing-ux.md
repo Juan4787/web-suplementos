@@ -95,4 +95,15 @@ Pasaron las 39 comprobaciones de los tres archivos afectados, con comprobaciones
 
 La inspección visual encontró una etiqueta partida en móvil; se corrigió y se midieron también los textos e indicadores internos. La compilación y la inspección de estilos pasaron. Esta segunda mejora cambia presentación e interacción de consulta; no modifica las reglas ni las funciones de base de datos ya verificadas.
 
-La comparación de altura se realizará con el mismo pedido real antes y después de esta publicación. Las mediciones anteriores a esta mejora están guardadas y no se presentan las de una demostración como si fueran producción.
+La comparación se hizo con el **mismo pedido real #2631**, antes y después de publicar, sin cambiar sus cantidades. Se midió el bloque completo del producto, incluyendo su encabezado y reposición. “Detalle abierto” corresponde a su primera vista, con los tres primeros pedidos; el resto sigue accesible bajo consulta.
+
+| Ancho | Vista inicial: antes → después | Reducción | Detalle abierto: antes → después | Reducción |
+| --- | --- | --- | --- | --- |
+| 1280 px | 254.75 → 195.75 px | 23 % | 846.25 → 522.12 px | 38 % |
+| 320 px | 393.00 → 243.25 px | 38 % | 1238.00 → 569.62 px | 54 % |
+
+La mejora quedó publicada con el código `b5e5a63`, versión `40a3b5c4-ca2d-479d-a163-01890c80dc05`, al 100 % del tráfico desde `2026-10-16T18:13:11.260751Z`. Coincidieron los 220 archivos publicados comprobados, incluidos 129 recursos anteriores conservados para pestañas abiertas.
+
+La comprobación publicada del `2026-10-16T18:14:41.200Z` pasó en escritorio y móvil: detalle y ayuda operables con teclado, reservas completas sin scroll interno, compra exacta #2054 en otra pestaña y conteo sin guardar conservado. No se encontraron recortes internos ni errores de aplicación en esos recorridos. Las solicitudes de negocio que escribieran datos estaban bloqueadas; no hubo ninguna. Las pruebas de guardado y recepción pertenecen al entorno local, no a pedidos reales.
+
+Evidencia privada de esta segunda mejora: `/tmp/impulso-packing-ux-20261016/`, con capturas, comparación de alturas, pruebas afectadas, archivos servidos y comprobación de la versión publicada. El cierre anterior documenta las pruebas de base de datos; no se repitieron para un cambio limitado a estas dos interfaces.
