@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAppConfirmation } from '@/components/ui/AppConfirmation';
-import { AlertTriangle, Lock, Minus, Package, Plus } from 'lucide-react';
+import { Minus, Plus } from 'lucide-react';
 import { StockAllocationExplanation } from './StockAllocationExplanation';
 import { queryKeys } from '@/app/query-keys';
 import { Button } from '@/components/ui/Button';
@@ -147,7 +147,7 @@ export function OrderPackingEditor({ order: receivedOrder, draftStore, draftEpoc
         <div>
           <h3 className="text-[15px] font-black text-ink-950">Armado de la bolsita · Pedido #{order.number}</h3>
           <p className="mt-1 text-[13px] text-ink-700">
-            Escribí #{order.number} en la bolsita y registrá solo las unidades que ya apartaste físicamente en el local.
+            Identificála con #{order.number} y contá lo que ya guardaste.
           </p>
         </div>
         {hasUnknown && hasAnyPhysicalStock ? (
@@ -157,10 +157,10 @@ export function OrderPackingEditor({ order: receivedOrder, draftStore, draftEpoc
         ) : null}
       </div>
 
-      {pendingUnits > 0 ? <p className="mt-3 text-sm font-semibold leading-relaxed text-ink-800">
-        {assignedUnits > 0 ? (assignedUnits === 1 ? 'Podés registrar la unidad que este pedido ya tiene asignada físicamente. ' : `Podés registrar las ${assignedUnits} unidades que este pedido ya tiene asignadas físicamente. `) : ''}
-        {pendingUnits === 1 ? 'Falta asignar 1 unidad física' : `Falta asignar ${pendingUnits} unidades físicas`} para completar la bolsita. Revisá el motivo debajo de cada producto pendiente.
-      </p> : null}
+      <p className="mt-3 text-sm font-semibold text-ink-950">
+        Habilitadas: {assignedUnits} de {assignedUnits + pendingUnits} {assignedUnits + pendingUnits === 1 ? 'unidad' : 'unidades'}
+        {pendingUnits > 0 ? <span className="mt-0.5 block text-xs font-medium text-ink-700">{pendingUnits} {pendingUnits === 1 ? 'unidad pendiente' : 'unidades pendientes'} de stock</span> : null}
+      </p>
 
       {conflict ? (
         <div role="alert" className="mt-3 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
@@ -171,7 +171,7 @@ export function OrderPackingEditor({ order: receivedOrder, draftStore, draftEpoc
             } }}>Cargar armado actualizado</Button>
         </div>
       ) : null}
-      <div className="mt-4 space-y-3">
+      <div className="mt-4 divide-y divide-ink-950/10">
         {order.items.map(item => {
           const physical = item.physicalReservedQuantity ?? item.quantity;
           const incoming = item.incomingQuantity ?? 0;
@@ -186,53 +186,16 @@ export function OrderPackingEditor({ order: receivedOrder, draftStore, draftEpoc
           return (
             <div
               key={item.id}
-              className={cn(
-                'rounded-xl border p-3.5 transition',
-                isLocked ? 'border-ink-950/8 bg-cream-100/50' : 'border-ink-950/8 bg-white'
-              )}
+              className="py-4 first:pt-0 last:pb-0"
             >
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="min-w-0 pr-2">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <p className="text-[14.5px] font-black text-ink-950">{item.productName}</p>
-                    {isLocked && incoming > 0 && uncovered > 0 ? (
-                      <span className="inline-flex items-center gap-1 rounded-md border border-rose-200 bg-rose-50 px-2 py-0.5 text-[11px] font-bold text-rose-900">
-                        <AlertTriangle className="size-3 text-rose-600 shrink-0" /> En camino y sin reposición
-                      </span>
-                    ) : isLocked && incoming > 0 ? (
-                      <span className="inline-flex items-center gap-1 rounded-md border border-brand-200 bg-brand-50 px-2 py-0.5 text-[11px] font-bold text-brand-900">
-                        <Lock className="size-3 text-brand-600 shrink-0" /> En camino
-                      </span>
-                    ) : isLocked && uncovered > 0 ? (
-                      <span className="inline-flex items-center gap-1 rounded-md border border-rose-200 bg-rose-50 px-2 py-0.5 text-[11px] font-bold text-rose-900">
-                        <AlertTriangle className="size-3 text-rose-600 shrink-0" /> Sin reposición
-                      </span>
-                    ) : isPartial ? (
-                      <span className="inline-flex items-center rounded-md border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-bold text-amber-900">
-                        Disponibilidad parcial
-                      </span>
-                    ) : null}
-                  </div>
-
-                  <p className="mt-0.5 text-[12.5px] font-semibold text-ink-600">
-                    Pedido: {item.quantity} u.
-                    {physical > 0 ? ` · Reservado físico: ${physical}` : ''}
-                    {incoming > 0 ? ` · En camino: ${incoming}` : ''}
-                    {uncovered > 0 ? ` · Sin reposición: ${uncovered}` : ''}
-                  </p>
-
-                  {isPartial ? (
-                    <p className="mt-1 text-[11.5px] font-semibold text-amber-800">
-                      Registrá solo lo que ya pusiste en la bolsita, hasta {physical} {physical === 1 ? 'unidad' : 'unidades'}.
-                    </p>
-                  ) : null}
+                  <p className="text-[14.5px] font-bold text-ink-950">{item.productName}</p>
+                  <p className="mt-0.5 text-xs text-ink-700">Pedido: {item.quantity} {item.quantity === 1 ? 'unidad' : 'unidades'}{isPartial ? ` · ${physical} ${physical === 1 ? 'habilitada' : 'habilitadas'}` : ''}</p>
                 </div>
 
                 {isLocked ? (
-                  <div className="inline-flex items-center gap-1.5 rounded-xl border border-ink-950/10 bg-cream-200/60 px-3 py-2 text-xs font-bold text-ink-700">
-                    <Lock className="size-3.5 text-ink-500" />
-                    <span>Sin unidades físicas asignadas</span>
-                  </div>
+                  <span className="text-xs font-semibold text-ink-700">Pendiente de stock</span>
                 ) : (
                   <div className="flex max-w-full flex-col items-end gap-1">
                     <div className="flex max-w-full flex-wrap items-center justify-end gap-1.5">
@@ -344,55 +307,32 @@ export function OrderPackingEditor({ order: receivedOrder, draftStore, draftEpoc
         </p>
       ) : null}
 
-      {/* Pie de acción inteligente */}
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-ink-950/6 pt-3">
-        {!hasAnyPhysicalStock && !hasInvalid ? (
-          <div className={cn(
-            'flex w-full flex-wrap items-center justify-between gap-3 rounded-xl border p-3.5',
-            hasUncoveredItems
-              ? 'border-rose-200 bg-rose-50'
-              : 'border-brand-200 bg-brand-50/70'
-          )}>
-            <div className="flex items-center gap-2.5">
-              {hasUncoveredItems
-                ? <AlertTriangle className="size-4.5 text-rose-700 shrink-0" />
-                : <Package className="size-4.5 text-brand-700 shrink-0" />}
-              <p className={cn('text-xs font-bold sm:text-sm', hasUncoveredItems ? 'text-rose-950' : 'text-brand-950')}>
-                {hasUncoveredItems
-                  ? 'Hay unidades sin reposición asignada. Revisá el faltante antes de completar el pedido.'
-                  : hasIncomingItems
-                    ? 'Las unidades de este pedido están en camino. Podrás registrar la bolsita cuando recibas la compra.'
-                    : 'No hay unidades físicas reservadas para este pedido. Revisá sus reservas en Inventario.'}
-              </p>
-            </div>
-          </div>
-        ) : (
-          <>
-            <p className="max-w-sm text-xs font-semibold leading-relaxed text-ink-700">{hasIncomingItems || hasUncoveredItems ? 'Podés guardar un armado parcial con las unidades físicas asignadas. Lo pendiente seguirá esperando mercadería.' : 'Registrar la bolsita no modifica el stock ni las reservas.'}</p>
-
-            <div className="flex flex-wrap items-center gap-2">
-              {packingDraftDirty(draft) && !conflict ? <Button type="button" variant="ghost" size="sm" disabled={busy}
-                onClick={async () => { if (await askConfirmation({ title: '¿Descartar el conteo?', description: 'Se descartarán las cantidades que escribiste sin guardar. Podés seguir editando si querés conservarlas.' })) {
-                  persist({ baseline: order, values: packingValues(order) }); setSaved(false); save.reset();
-                } }}>Descartar cambios</Button> : null}
-              <Button
-                type="button"
-                variant="dark"
-                size="sm"
-                onClick={() => {
-                  if (draftRef.current.saving || conflict || hasInvalid || hasEmpty || !changed) return;
-                  const request = { ...draftRef.current, error: undefined, baseline: order, saving: true };
-                  persist(request);
-                  save.mutate(request);
-                }}
-                disabled={conflict || hasInvalid || hasEmpty || !changed || busy}
-                loading={busy}
-              >
-                {busy ? 'Guardando...' : !changed && !hasUnknown ? 'Sin cambios' : 'Guardar armado'}
-              </Button>
-            </div>
-          </>
-        )}
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-ink-950/10 pt-3">
+        <p id={`packing-save-help-${order.id}`} className="max-w-sm text-xs leading-relaxed text-ink-700">
+          {!hasAnyPhysicalStock && !hasInvalid ? 'Todavía no hay unidades habilitadas para guardar.'
+            : conflict ? 'Revisá el conteo actualizado antes de guardar.'
+            : hasInvalid ? 'Revisá las cantidades que superan lo habilitado.'
+            : hasEmpty ? 'Completá el conteo de los productos habilitados. Escribí 0 si no guardaste ninguno.'
+            : !changed && !hasUnknown ? 'El conteo guardado está actualizado.'
+            : hasIncomingItems || hasUncoveredItems ? 'Podés guardar el armado parcial y completar lo pendiente después.'
+            : 'Guardar el conteo conserva el stock y las reservas.'}
+        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          {packingDraftDirty(draft) && !conflict ? <Button type="button" variant="ghost" size="sm" disabled={busy}
+            onClick={async () => { if (await askConfirmation({ title: '¿Descartar el conteo?', description: 'Se descartarán las cantidades que escribiste sin guardar. Podés seguir editando si querés conservarlas.' })) {
+              persist({ baseline: order, values: packingValues(order) }); setSaved(false); save.reset();
+            } }}>Descartar cambios</Button> : null}
+          <Button type="button" variant="dark" size="sm" aria-describedby={`packing-save-help-${order.id}`}
+            onClick={() => {
+              if (draftRef.current.saving || conflict || hasInvalid || hasEmpty || !changed || !hasAnyPhysicalStock) return;
+              const request = { ...draftRef.current, error: undefined, baseline: order, saving: true };
+              persist(request);
+              save.mutate(request);
+            }}
+            disabled={conflict || hasInvalid || hasEmpty || !changed || busy || !hasAnyPhysicalStock} loading={busy}>
+            {busy ? 'Guardando…' : !changed && !hasUnknown ? 'Sin cambios' : 'Guardar armado'}
+          </Button>
+        </div>
       </div>
     </section>
   );

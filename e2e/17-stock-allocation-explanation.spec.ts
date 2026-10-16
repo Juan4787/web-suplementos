@@ -34,45 +34,64 @@ test('explains committed physical stock, preserves partial packing and opens the
   const data = await page.evaluate(async () => {
     const api = await (window as any).__getBusinessApi();
     const make = async (name: string) => { const key = crypto.randomUUID(); return api.saveProduct({ sku: key, slug: key, name, presentation: '1 unidad', description: 'Prueba aislada', category: 'Pruebas', priceCents: 150000, currentCostCents: 100000, reorderPoint: 0, safetyStock: 0, leadTimeDays: 1, imageUrl: '/demo/creatina.svg', imageAlt: 'Prueba', published: true, active: true }); };
-    const complex = await make('Complejo B de comprobación'), magnesium = await make('Magnesio de comprobación');
-    await api.adjustStock(complex.id, 2, 'Conteo inicial'); await api.adjustStock(magnesium.id, 1, 'Conteo inicial');
+    const complex = await make('B COMPLEX ACTIVE'), magnesium = await make('MAGNESIO DUAL ACTION'), thyroid = await make('THYROID SUPPORT');
+    await api.adjustStock(complex.id, 8, 'Conteo inicial'); await api.adjustStock(magnesium.id, 1, 'Conteo inicial'); await api.adjustStock(thyroid.id, 1, 'Conteo inicial');
     const makeOrder = (lines: any[]) => api.confirmImportedOrder({ customerName: 'Cliente de comprobación', stockSource: 'normal', paymentMethod: 'cash', deliveryMethod: 'pickup', shippingFeeCents: 0, quotedSubtotalCents: lines.reduce((n, i) => n + i.quantity * 150000, 0), quotedTotalCents: lines.reduce((n, i) => n + i.quantity * 150000, 0), protocolOrderId: crypto.randomUUID(), protocolChecksum: '1234ABCD', lines: lines.map(i => ({ ...i, unitPriceCents: 150000 })) });
-    const earlier = await makeOrder([{ productId: complex.id, quantity: 2 }]);
+    const committed = []; for (let i = 0; i < 8; i++) committed.push(await makeOrder([{ productId: complex.id, quantity: 1 }]));
+    const earlier = committed[0];
     const purchase = await api.createPurchase({ supplierName: 'Proveedor asignado', expectedAt: '2030-01-01T15:00:00Z', items: [{ productId: complex.id, quantity: 5, unitCostCents: 100000 }] });
-    const order = await makeOrder([{ productId: complex.id, quantity: 1 }, { productId: magnesium.id, quantity: 1 }]);
+    const order = await makeOrder([{ productId: thyroid.id, quantity: 1 }, { productId: magnesium.id, quantity: 1 }, { productId: complex.id, quantity: 1 }]);
     for (let i = 0; i < 16; i++) await api.createPurchase({ supplierName: `Otro proveedor ${i + 1}`, expectedAt: '2031-01-01T15:00:00Z', items: [{ productId: magnesium.id, quantity: 1, unitCostCents: 100000 }] });
     return { orderId: order.id, number: order.number, earlierNumber: earlier.number, purchaseId: purchase.id, purchaseNumber: purchase.number };
   });
   const card = await navigateToOrder(page, data.number);
   const packing = card.getByRole('region', { name: `Armado del pedido ${data.number}` });
-  await expect(packing.getByText(/Hay 2 unidades registradas en el local y todas están apartadas/)).toBeVisible();
-  await expect(packing.getByText('Sin unidades físicas asignadas')).toBeVisible();
+  await expect(packing.getByText('1 unidad en camino')).toBeVisible();
+  await expect(packing.getByLabel('Stock general del producto')).toHaveCount(0);
+  await expect(packing.getByText('Pendiente de stock', { exact: true })).toBeVisible();
   await expect(packing.getByText('0 en bolsita')).toHaveCount(0);
-  const count = packing.getByRole('textbox', { name: 'Unidades en bolsita de Magnesio de comprobación' });
+  const count = packing.getByRole('textbox', { name: 'Unidades en bolsita de MAGNESIO DUAL ACTION' });
   await count.fill('1');
-  await packing.getByRole('button', { name: /Ver stock, reservas y compra/ }).click();
+  await packing.getByRole('textbox', { name: 'Unidades en bolsita de THYROID SUPPORT' }).fill('1');
+  await expect(packing.getByRole('link', { name: `Abrir compra #${data.purchaseNumber}` })).toBeVisible();
+  const compactHeight = await packing.getByRole('group', { name: 'Disponibilidad de B COMPLEX ACTIVE' }).locator('..').evaluate(el => el.getBoundingClientRect().height);
+  const toggle = packing.getByRole('button', { name: /Ver stock y reservas/ });
+  await toggle.focus(); await toggle.press('Enter');
+  await expect(packing.getByRole('button', { name: /Ocultar stock y reservas/ })).toHaveAttribute('aria-expanded', 'true');
   await expect(packing.getByRole('link', { name: new RegExp(`Pedido #${data.earlierNumber}`) })).toBeVisible();
   const purchaseLink = packing.getByRole('link', { name: `Abrir compra #${data.purchaseNumber}` });
   await expect(purchaseLink).toHaveAttribute('target', '_blank');
   await expect(purchaseLink).toHaveAttribute('rel', 'noopener noreferrer');
   expect(new URL((await purchaseLink.getAttribute('href'))!, page.url()).searchParams.get('purchase')).toBe(data.purchaseId);
   await expect(count).toHaveValue('1');
+  const reservations = packing.getByRole('list', { name: 'Pedidos con unidades físicas apartadas' });
+  await expect(reservations.getByRole('link')).toHaveCount(3);
+  await packing.getByRole('button', { name: 'Ver otros 5 pedidos · 5 unidades' }).click();
+  await expect(reservations.getByRole('link')).toHaveCount(8);
+  expect(await reservations.evaluate(el => el.scrollHeight <= el.clientHeight + 1)).toBe(true);
+  await packing.getByRole('button', { name: 'Mostrar menos pedidos' }).click();
+  await expect(reservations.getByRole('link')).toHaveCount(3);
+  await packing.getByRole('button', { name: 'Cómo se confirma la disponibilidad' }).click();
+  await expect(packing.getByText(/La disponibilidad de este pedido se confirma al registrar la recepción/)).toBeVisible();
+  await expect(count).toHaveValue('1');
+  await packing.getByRole('button', { name: 'Cómo se confirma la disponibilidad' }).click();
   const layout = await packing.evaluate(element => ({
     viewport: innerWidth,
     panel: { x: element.getBoundingClientRect().x, width: element.getBoundingClientRect().width, client: element.clientWidth, scroll: element.scrollWidth },
-    clipped: Array.from(element.querySelectorAll('p,a,input,button,button > span')).filter(node => {
+    clipped: Array.from(element.querySelectorAll('p,a,input,button,button > span,dt,dd')).filter(node => {
       const box = node.getBoundingClientRect();
       // A rotating SVG can paint outside its own box during the transition.
       // Check the button bounds and its text span, rather than that paint area.
       return box.width > 0 && (box.left < -1 || box.right > innerWidth + 1 || (node.tagName !== 'BUTTON' && node.scrollWidth > node.clientWidth + 1));
     }).map(node => ({ tag: node.tagName, text: node.textContent?.slice(0, 80), width: node.getBoundingClientRect().width, x: node.getBoundingClientRect().x, client: node.clientWidth, scroll: node.scrollWidth }))
   }));
-  writeFileSync(`/tmp/impulso-stock-fix-20261016/layout-${info.project.name}.json`, JSON.stringify(layout, null, 2));
-  await page.screenshot({ path: `/tmp/impulso-stock-fix-20261016/page-${info.project.name}.png`, fullPage: true });
+  const expandedHeight = await packing.getByRole('group', { name: 'Disponibilidad de B COMPLEX ACTIVE' }).locator('..').evaluate(el => el.getBoundingClientRect().height);
+  writeFileSync(`/tmp/impulso-packing-ux-20261016/layout-${info.project.name}.json`, JSON.stringify({ ...layout, compactHeight, expandedHeight }, null, 2));
+  await page.screenshot({ path: `/tmp/impulso-packing-ux-20261016/page-${info.project.name}.png`, fullPage: true });
   expect(layout.clipped).toEqual([]);
   expect(layout.panel.x + layout.panel.width).toBeLessThanOrEqual(layout.viewport + 1);
   await packing.evaluate(element => element.scrollIntoView({ block: 'start' }));
-  await page.screenshot({ path: `/tmp/impulso-stock-fix-20261016/packing-${info.project.name}.png` });
+  await page.screenshot({ path: `/tmp/impulso-packing-ux-20261016/packing-${info.project.name}.png` });
   await packing.getByRole('button', { name: 'Guardar armado' }).click();
   await expect(packing.getByText(/Armado parcial guardado/)).toBeVisible();
   await healthy(page, errors);
@@ -103,10 +122,13 @@ test('explicit future stock survives unrelated operations and only its partial r
     return { number: order.number, orderId: order.id, purchaseId: purchase.id, purchaseItemId: purchase.items[0].id, productId: product.id };
   });
   const card = await navigateToOrder(page, data.number), packing = card.getByRole('region', { name: `Armado del pedido ${data.number}` });
-  await expect(packing.getByText(/Este pedido se creó para reservar mercadería en camino/)).toBeVisible();
+  await expect(packing.getByText('3 unidades en camino')).toBeVisible();
+  await expect(packing.getByRole('button', { name: 'Guardar armado' })).toBeDisabled();
+  await expect(packing.getByText('Todavía no hay unidades habilitadas para guardar.')).toBeVisible();
   await expect(packing.locator('input')).toHaveCount(0);
-  await packing.getByRole('button', { name: /Ver stock, reservas y compra/ }).click();
-  await expect(packing.getByText(/Libres para vender:/)).toContainText('6');
+  await packing.getByRole('button', { name: /Ver stock y reservas/ }).click();
+  await expect(packing.getByText(/Este pedido reserva sólo mercadería en camino/)).toBeVisible();
+  await expect(packing.getByLabel('Stock general del producto').getByText('Libres').locator('..')).toContainText('6');
   await page.evaluate(async data => { const api = await (window as any).__getBusinessApi(); await api.receivePurchase(data.purchaseId, [{ purchaseItemId: data.purchaseItemId, receivedQuantity: 1 }], crypto.randomUUID()); }, data);
   await packing.getByRole('button', { name: 'Actualizar datos' }).click();
   const count = packing.getByRole('textbox', { name: 'Unidades en bolsita de Compra en camino de comprobación' });
@@ -118,7 +140,7 @@ test('explicit future stock survives unrelated operations and only its partial r
   expect(snapshot.items[0]).toMatchObject({ physicalQuantity: 1, incomingQuantity: 2, available: 6 });
   await healthy(page, errors);
   await packing.evaluate(element => element.scrollIntoView({ block: 'start' }));
-  await page.screenshot({ path: `/tmp/impulso-stock-fix-20261016/incoming-${info.project.name}.png` });
+  await page.screenshot({ path: `/tmp/impulso-packing-ux-20261016/incoming-${info.project.name}.png` });
 });
 
 test('focused purchase replacement keeps its exact link, paid customer and packed units through receipt', async ({ page }, info) => {
@@ -184,7 +206,7 @@ test('receipt explains a pending supplier reassignment instead of linking a cust
   await notice.getByRole('link', { name: `Pedido #${data.futureNumber}`, exact: true }).click();
   const card = await navigateToOrder(page, data.futureNumber);
   const packing = card.getByRole('region', { name: `Armado del pedido ${data.futureNumber}` });
-  await packing.getByRole('button', { name: /Ver stock, reservas y compra/ }).click();
+  await packing.getByRole('button', { name: /Ver stock y reservas/ }).click();
   const source = packing.getByRole('link', { name: `Abrir compra #${data.firstNumber}`, exact: true });
   await expect(source).toBeVisible(); expect(new URL((await source.getAttribute('href'))!, page.url()).searchParams.get('purchase')).toBe(data.firstId);
   await expect(packing.getByRole('link', { name: `Abrir compra #${data.secondNumber}`, exact: true })).toHaveCount(0);

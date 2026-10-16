@@ -158,16 +158,17 @@ it('keeps unassigned rows visible without inventing a bag count or a zero-only s
 
   // Allocation is missing; the UI must not claim a verified zero bag count.
   expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
-  expect(screen.getByText('Sin unidades físicas asignadas')).toBeInTheDocument();
+  expect(screen.getByText('Pendiente de stock')).toBeInTheDocument();
   expect(screen.queryByText('0 en bolsita')).not.toBeInTheDocument();
-  expect(screen.getByText('En camino')).toBeInTheDocument();
+  expect(screen.getByText('Habilitadas: 0 de 1 unidad')).toBeInTheDocument();
 
   // La fecha del pedido puede pertenecer a otra compra: no se atribuye a esta línea.
-  expect(screen.getByText(/En camino: 1/i)).toBeInTheDocument();
+  expect(screen.getByText('1 unidad pendiente de stock')).toBeInTheDocument();
   expect(screen.queryByText(/Llega 29 de septiembre/i)).not.toBeInTheDocument();
 
-  // No useless "Guardar armado" button trying to save zeroes
-  expect(screen.queryByRole('button', { name: 'Guardar armado' })).not.toBeInTheDocument();
+  // Keep the action visible with the reason; never submit implicit zeroes.
+  expect(screen.getByRole('button', { name: 'Guardar armado' })).toBeDisabled();
+  expect(screen.getByText('Todavía no hay unidades habilitadas para guardar.')).toBeInTheDocument();
 
   client.clear();
 });
@@ -240,9 +241,9 @@ it('distingue una falta sin reposición de mercadería en camino cuando no hay r
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(<QueryClientProvider client={client}><AppConfirmationProvider><OrderPackingEditor order={order} /></AppConfirmationProvider></QueryClientProvider>);
 
-  expect(screen.getByText('En camino y sin reposición')).toBeInTheDocument();
-  expect(screen.getByText(/Sin reposición: 1/i)).toBeInTheDocument();
-  expect(screen.getByText(/Hay unidades sin reposición asignada/i)).toBeInTheDocument();
+  expect(screen.getByText('Pendiente de stock')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Guardar armado' })).toBeDisabled();
+  expect(screen.getByText('Todavía no hay unidades habilitadas para guardar.')).toBeInTheDocument();
   expect(screen.queryByText(/Las unidades de este pedido están en camino/i)).not.toBeInTheDocument();
   expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
   client.clear();

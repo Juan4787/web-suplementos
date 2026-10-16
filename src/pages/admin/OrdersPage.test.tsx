@@ -273,10 +273,10 @@ it('mantiene visible la bolsita bloqueada y permite entender sus reservas cuando
   expect(screen.getByText(/Llegada estimada:/)).toBeInTheDocument();
   expect(screen.queryByText(/Recibí la compra en Inventario\. Después completá el armado/)).not.toBeInTheDocument();
   expect(screen.getByRole('region', { name: `Armado del pedido ${order.number}` })).toBeInTheDocument();
-  expect(screen.getByText('Sin unidades físicas asignadas')).toBeInTheDocument();
+  expect(screen.getByText('Pendiente de stock')).toBeInTheDocument();
   expect(screen.queryByText('0 en bolsita')).not.toBeInTheDocument();
-  expect(await screen.findByRole('button', { name: /Ver stock, reservas y compra/ })).toBeInTheDocument();
-  expect(screen.queryByRole('button', { name: 'Guardar armado' })).not.toBeInTheDocument();
+  expect(await screen.findByRole('button', { name: /Ver stock y reservas/ })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Guardar armado' })).toBeDisabled();
   expect(screen.queryByText('Medio de pago')).not.toBeInTheDocument();
   expect(screen.queryByText(/Stock descontado/)).not.toBeInTheDocument();
   client.clear();

@@ -58,7 +58,7 @@ Se conservan los recursos de la versión anterior para las pestañas abiertas. L
 Publicado y comprobado en `https://tienda.desuplementos.workers.dev`.
 
 - Código de la corrección: `3a29bdd`; ajuste final de rótulos: `b08dd02`, subidos a `codex/purchase-cancellation-20261015`.
-- Versión activa: `6012e66b-7e5f-42a6-a633-3aa82d203e7b`, con el 100 % del tráfico; publicación registrada el `2026-10-16T17:44:19.874843Z`.
+- Versión publicada en el primer cierre: `6012e66b-7e5f-42a6-a633-3aa82d203e7b`, con el 100 % del tráfico; publicación registrada el `2026-10-16T17:44:19.874843Z`.
 - Las dos migraciones del 16/10 se aplicaron correctamente. La comparación remota de las 23 tablas públicas confirmó únicamente ocho movimientos nuevos y el incremento esperado de versión. Se conservaron los movimientos originales y los registros de pedidos, reservas, balances, compras, costos y bolsitas.
 - Las diferencias entre historial y reservas pasaron de siete productos a cero. También dieron cero las diferencias entre saldo y reservas físicas, los saldos inválidos, los pedidos normales pendientes con stock libre, las reservas activas de pedidos cancelados y las promesas por encima de la capacidad pendiente de las compras.
 - Las ocho definiciones de funciones relevantes coincidieron con la base local verificada. El acceso directo desde cuentas de aplicación a los repartos, la reparación y su evidencia privada quedó denegado; la consulta de contexto no permite acceso anónimo.
@@ -77,3 +77,22 @@ Las pruebas de escrituras, fallos y concurrencia pertenecen a la base local o a 
 Las firmas anteriores siguen siendo compatibles. Una eventual recuperación de interfaz no requiere borrar las correcciones históricas ni restaurar balances sobre operaciones nuevas de clientes.
 
 Evidencia privada de esta intervención: `/tmp/impulso-stock-fix-20261016/`, con los resultados SQL, superposición real de transacciones, restauración, comparación antes/después, archivos servidos, capturas e informe de navegador. Los archivos con datos reales y el respaldo quedan fuera del repositorio.
+
+
+## Mejora posterior de jerarquía y armado
+
+La revisión del usuario mostró una deuda que la corrección funcional anterior no resolvía: demasiado texto administrativo alrededor de la tarea de armar. Se tomó la propuesta de simplificación y se priorizaron las unidades habilitadas para el pedido sobre el stock general. Cero unidades libres para vender no impide guardar las que ya tiene asignadas ese pedido.
+
+- Un solo contenedor, con separaciones entre productos. Se eliminaron las tarjetas interiores, el aspecto de botón bloqueado y los párrafos repetidos.
+- El encabezado resume unidades habilitadas y pendientes. Cada producto conserva su cantidad pedida y el conteo explícito de bolsita.
+- La reposición muestra cantidad, compra exacta y llegada **estimada al local**. Una ayuda opcional explica la asignación por reservas y antigüedad y la posibilidad de cambios. Varias compras conservan sus fechas propias; no se inventa una fecha única.
+- El detalle opcional reúne En local, Apartadas y Libres. Primero muestra tres pedidos con reservas; permite desplegar el resto sin scroll interno. Las reservas anteriores al sistema se identifican por separado y el pedido actual no abre una copia de sí mismo.
+- Los enlaces señalan la apertura en otra pestaña mediante un icono y una descripción accesible. Las instrucciones permanentes se retiraron.
+- Guardar armado se mantiene visible con una explicación cuando está deshabilitado. Sólo permite cantidades compatibles con las unidades físicas asignadas. Los pedidos mixtos pueden guardar su parte habilitada; no se guardan ceros implícitos de un pedido sin stock físico.
+- Se conservaron el conteo sin verificar, los borradores, el rechazo de datos cambiados, la recuperación de errores, los permisos y las confirmaciones propias de la aplicación.
+
+Pasaron las 39 comprobaciones de los tres archivos afectados, con comprobaciones específicas posteriores para el texto y la jerarquía final. Pasaron los ocho recorridos de navegador afectados entre escritorio y móvil: reservas extensas, apertura por teclado, ayuda opcional, guardado parcial, elección en camino, recepción parcial, cancelación, reposición y conservación de cobros y conteos. Los fallos de selectores durante la adaptación se distinguieron de fallos de aplicación; se corrigieron las consultas ambiguas y las que seguían buscando el nombre anterior de un botón ya desplegado. Se reutilizó la evidencia de los recorridos que no requerían repetirse.
+
+La inspección visual encontró una etiqueta partida en móvil; se corrigió y se midieron también los textos e indicadores internos. La compilación y la inspección de estilos pasaron. Esta segunda mejora cambia presentación e interacción de consulta; no modifica las reglas ni las funciones de base de datos ya verificadas.
+
+La comparación de altura se realizará con el mismo pedido real antes y después de esta publicación. Las mediciones anteriores a esta mejora están guardadas y no se presentan las de una demostración como si fueran producción.
