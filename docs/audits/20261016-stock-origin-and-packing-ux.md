@@ -55,4 +55,25 @@ La restauración descubrió archivos incompletos producidos al transferir un res
 
 Se conservan los recursos de la versión anterior para las pestañas abiertas. Las firmas de funciones, los permisos, las cantidades reales y los archivos servidos se comprueban por separado de la compilación local.
 
-Estado de publicación: pendiente de comprobación remota y publicación en este punto del informe. Se completará con el resultado efectivo, sin presentar pruebas locales como operaciones reales ejecutadas en producción.
+Publicado y comprobado en `https://tienda.desuplementos.workers.dev`.
+
+- Código de la corrección: `3a29bdd`; ajuste final de rótulos: `b08dd02`, subidos a `codex/purchase-cancellation-20261015`.
+- Versión activa: `6012e66b-7e5f-42a6-a633-3aa82d203e7b`, con el 100 % del tráfico; publicación registrada el `2026-10-16T17:44:19.874843Z`.
+- Las dos migraciones del 16/10 se aplicaron correctamente. La comparación remota de las 23 tablas públicas confirmó únicamente ocho movimientos nuevos y el incremento esperado de versión. Se conservaron los movimientos originales y los registros de pedidos, reservas, balances, compras, costos y bolsitas.
+- Las diferencias entre historial y reservas pasaron de siete productos a cero. También dieron cero las diferencias entre saldo y reservas físicas, los saldos inválidos, los pedidos normales pendientes con stock libre, las reservas activas de pedidos cancelados y las promesas por encima de la capacidad pendiente de las compras.
+- Las ocho definiciones de funciones relevantes coincidieron con la base local verificada. El acceso directo desde cuentas de aplicación a los repartos, la reparación y su evidencia privada quedó denegado; la consulta de contexto no permite acceso anónimo.
+- Coincidieron las huellas de los 196 archivos publicados comprobados, incluidos 105 recursos anteriores conservados para pestañas abiertas.
+- La comprobación real de interfaz pasó a 1280 y 320 píxeles: compra exacta #2054 abierta en otra pestaña, conteo sin guardar conservado, sin recortes internos, sin errores de aplicación y sin escrituras de negocio. Las consultas de compatibilidad existentes también habían pasado: 14 respuestas verificadas, sin modificar datos de negocio.
+- El respaldo final de 987.214 bytes se restauró por completo y se ensayaron las migraciones en la copia. Huella del archivo: `af66582f737d61ad27ccf39c609108ff58ee690c8266345daf342cb42ace73fe`.
+
+### Resultado del pedido real y alcance
+
+En la comprobación publicada del `2026-10-16T17:44:57.871Z`, el pedido #2631 seguía esperando una unidad de B COMPLEX ACTIVE, con 8 unidades registradas y 8 apartadas. La unidad pendiente seguía vinculada a la compra #2054, estimada para el 20/10. La aplicación ahora explica estos compromisos dentro del armado, permite consultar sus pedidos y la compra exacta y mantiene el conteo al abrirlos.
+
+La cifra inicial de 10 unidades corresponde al diagnóstico anterior; las comprobaciones de publicación usan el saldo vigente de 8. No se infiere de estas cifras el conteo físico real, que no fue confirmado. Tampoco se aumentó stock ni se quitaron reservas ajenas para habilitar artificialmente el pedido.
+
+Las pruebas de escrituras, fallos y concurrencia pertenecen a la base local o a la demostración. La comprobación real posterior a la publicación fue de consulta. Sus resultados respaldan los casos documentados; no constituyen una garantía universal sobre cualquier situación futura.
+
+Las firmas anteriores siguen siendo compatibles. Una eventual recuperación de interfaz no requiere borrar las correcciones históricas ni restaurar balances sobre operaciones nuevas de clientes.
+
+Evidencia privada de esta intervención: `/tmp/impulso-stock-fix-20261016/`, con los resultados SQL, superposición real de transacciones, restauración, comparación antes/después, archivos servidos, capturas e informe de navegador. Los archivos con datos reales y el respaldo quedan fuera del repositorio.
