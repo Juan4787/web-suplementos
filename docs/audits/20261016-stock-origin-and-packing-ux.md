@@ -17,7 +17,7 @@ El ajuste positivo de stock, la liberación de reservas y la cancelación de otr
 
 La revisión final encontró un cruce adicional: recibir una compra para atender un pedido normal más antiguo podía dejar otra reserva entrante apuntando a una compra ya cerrada. La recepción ahora mueve únicamente el exceso pendiente a capacidad libre real de otras compras, conserva los costos y mantiene juntas todas las escrituras. Si no hay otra reposición, registra la falta de cobertura y la informa; nunca presenta una compra recibida como mercadería aún en camino. La llegada posterior puede completar esas unidades sin consumir el stock libre anterior. Las reservas previas al sistema conservan su origen y su prioridad.
 
-La pantalla de recepción avisa qué pedidos siguen pendientes, permite abrirlos y distingue cantidades con otra compra de cantidades que necesitan encargar reposición. La explicación del pedido permite revisar la compra y fecha actuales. La falta de cobertura se presenta como “Sin reposición confirmada”, sin atribuir al proveedor un faltante que no está demostrado.
+La pantalla de recepción avisa qué pedidos siguen pendientes, permite abrirlos y distingue cantidades con otra compra de cantidades que necesitan encargar reposición. La explicación del pedido permite revisar la compra y fecha actuales. La falta de cobertura se presenta como “Sin reposición confirmada” y los indicadores compactos como “Sin reposición”, sin atribuir al proveedor un faltante que no está demostrado.
 
 ## Explicación y acciones dentro del pedido
 

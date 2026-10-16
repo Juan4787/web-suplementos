@@ -34,7 +34,7 @@ export function OrderStatus({ order, compact = false }: { order: Order; compact?
         ) : waitingWithoutPhysical ? (
           <StatusChip key="waiting" label="Esperando mercadería" tone="info" />
         ) : uncoveredWithoutPhysical ? (
-          <StatusChip key="uncovered" label="Faltante proveedor" tone="danger" />
+          <StatusChip key="uncovered" label="Sin reposición" tone="danger" />
         ) : (
           order.preparationState === 'ready' ? (
             <StatusChip key="ready" label="Listo para entrega" tone="info" />
@@ -84,7 +84,7 @@ export function OrderStatus({ order, compact = false }: { order: Order; compact?
   } else if (waitingWithoutPhysical) {
     chips.push(<StatusChip key="waiting" label="Esperando mercadería" tone="info" />);
   } else if (uncoveredWithoutPhysical) {
-    chips.push(<StatusChip key="uncovered" label="Faltante proveedor" tone="danger" />);
+    chips.push(<StatusChip key="uncovered" label="Sin reposición" tone="danger" />);
   } else if (order.preparationState === 'preparing') {
     chips.push(<StatusChip key="preparing" label="En preparación" tone="info" />);
   } else {
@@ -107,7 +107,7 @@ export function OrderStatus({ order, compact = false }: { order: Order; compact?
       : '';
     chips.push(<StatusChip key="stock-incoming" label={`En camino${etaFormatted}`} tone="info" />);
   } else if (order.stockReadiness === 'uncovered' && !uncoveredWithoutPhysical) {
-    chips.push(<StatusChip key="stock-uncovered" label="Faltante proveedor" tone="danger" />);
+    chips.push(<StatusChip key="stock-uncovered" label="Sin reposición" tone="danger" />);
   }
 
   return <div className="flex flex-wrap items-center gap-2">{chips}</div>;
