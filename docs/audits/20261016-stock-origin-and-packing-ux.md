@@ -132,3 +132,17 @@ El único cambio de base de datos de esta revisión es una consulta estable de c
 - **Compilación y compatibilidad:** pasó la compilación final de producción, incluida la comprobación de tipos. Las 14 consultas de contratos reales pasaron en modo de consulta. El ensayo remoto previo identificó únicamente la nueva migración de contexto; el destino de aplicación y base quedó verificado.
 
 La evidencia privada de esta revisión queda en `/tmp/impulso-clarity-ui-20261016/`. Los resultados con datos reales y la definición anterior de la consulta permanecen fuera del repositorio.
+
+### Publicación y comprobación real de esta revisión
+
+El código `73274a0` quedó subido en la rama de trabajo existente `codex/purchase-cancellation-20261015`. La versión `fec2e9e1-80b4-4f2f-9f09-989e65b40062` quedó publicada al 100 % del tráfico desde `2026-10-16T22:36:48.780Z`. Coincidieron los 249 archivos servidos comprobados, incluidos 158 recursos anteriores conservados para las pestañas abiertas.
+
+Se aplicó únicamente `20261016030000_stock_context_reservation_sources.sql`. La comparación real verificó que, de las 98 funciones observadas, cambió sólo `get_order_stock_context`, con el mismo cuerpo que pasó las pruebas aisladas. Los permisos se conservaron y las 23 tablas públicas comparadas mantuvieron sus datos. Dos contextos reales, incluido uno con reserva exclusiva al proveedor, conservaron la suma entre cantidades cubiertas y sin reposición.
+
+La revisión adicional de los datos actuales abarcó 16 pedidos activos, 32 productos y 32 reservas activas, dentro de una transacción de consulta. Dio cero diferencias entre reservas físicas y balances, cero diferencias entre cantidades pedidas y reservas activas, cero conteos superiores a las unidades asignadas, cero reservas activas en pedidos cerrados, cero reservas entrantes sin compra abierta y cero compras sobreasignadas. En esa instantánea tampoco había productos con reservas superiores al stock registrado; ese caso se comprobó con escenarios aislados, sin generarlo en la base real.
+
+La comprobación de navegador publicada terminó a `2026-10-16T22:37:58.370Z`: 1280 y 320 px, cantidades coincidentes con la consulta, reservas completas sin scroll interno, compra exacta en otra pestaña y borrador de conteo conservado. No aparecieron errores de aplicación, recortes internos ni diálogos nativos en el recorrido. Las escrituras de negocio estaban bloqueadas y no hubo intentos de realizarlas.
+
+En esa comprobación, B COMPLEX ACTIVE del pedido #2631 tenía 4 unidades registradas, 4 reservadas y ninguna libre para nuevas ventas. El pedido seguía esperando 1 unidad de la compra #2054, con llegada estimada al local el 20/10/2026. Es una instantánea posterior a las cifras de 8 y 10 documentadas antes. No confirma un conteo físico real ni se utiliza para inventar qué operaciones produjeron esa diferencia.
+
+Las pruebas de guardado, cobro, recepción y cancelación corresponden a la demostración o a la base aislada. Las comprobaciones publicadas de esta revisión fueron de consulta. La versión anterior de la interfaz sigue siendo compatible con los campos adicionales; una recuperación de interfaz no necesita restaurar datos de negocio.
