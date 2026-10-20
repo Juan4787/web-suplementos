@@ -31,7 +31,8 @@ import type {
   ReceivePurchaseResult,
   StockMovement,
   StorefrontProduct,
-  StoreSettings
+  StoreSettings,
+  UpdateOrderItemsInput
 } from '@/domain/types';
 
 export type Page<T> = {
@@ -150,8 +151,10 @@ export interface BusinessApi {
   adjustStock(productId: string, delta: number, reason: string, expectedOnHand?: number): Promise<void>;
   updateStockThresholds(input: UpdateStockThresholdsInput): Promise<void>;
   listOrders(page?: number, pageSize?: number, search?: string, state?: OrderListFilter): Promise<OrdersPage>;
+  getOrder(orderId: string): Promise<Order>;
   listPaidOrders(page?: number, pageSize?: number, from?: string, to?: string): Promise<Page<Order>>;
   confirmImportedOrder(input: ImportOrderInput): Promise<Order>;
+  updateOrderItems(input: UpdateOrderItemsInput): Promise<Order>;
   transitionOrder(orderId: string, action: OrderAction, expected?: OrderTransitionExpectation): Promise<Order>;
   saveOrderShippingFee(input: OrderShippingFeeInput): Promise<Order>;
   saveOrderPacking(orderId: string, items: Array<{ orderItemId: string; packedQuantity: number }>, expectedRevision: number): Promise<Order>;

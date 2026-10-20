@@ -76,6 +76,7 @@ const state: {
   }>;
   reversalHistory: NonNullable<ExportDataset['orderActionHistory']>;
   reversalOperations: Map<string, { orderId: string; action: string; revision: number }>;
+  orderEditOperations: Map<string, { orderId: string; revision: number; fingerprint: string; result: Order }>;
   shippingFeeOperations: Map<string, { input: string; orderId: string }>;
   shippingFeeHistory: OrderShippingFeeEvent[];
   receiptHistory: PurchaseReceipt[];
@@ -109,6 +110,7 @@ const state: {
   purchaseReceipts: new Map(),
   reversalHistory: [],
   reversalOperations: new Map(),
+  orderEditOperations: new Map(),
   shippingFeeOperations: new Map(),
   shippingFeeHistory: [],
   receiptHistory: [],
@@ -939,6 +941,12 @@ export const demoBusinessApi: BusinessApi = {
     });
   },
 
+  async getOrder(orderId) {
+    const order = state.orders.find(o => o.id === orderId);
+    if (!order) throw new AppError('business', 'No encontramos ese pedido.', { nextAction: 'Actualizá la lista de Pedidos y volvé a buscarlo.' });
+    return latency(order);
+  },
+
   async getOrderStockContext(orderId) {
     const order = state.orders.find(o => o.id === orderId);
     if (!order) throw new AppError('business', 'No encontramos ese pedido.');
@@ -1214,6 +1222,477 @@ export const demoBusinessApi: BusinessApi = {
         totalPaidCents: 0
       });
     }
+    state.revision += 1;
+    return latency(order);
+  },
+
+  async updateOrderItems(input) {
+    if (
+      !input ||
+      !input.orderId ||
+      !input.operationId ||
+      !Number.isInteger(input.expectedActionRevision) ||
+      input.expectedActionRevision < 0 ||
+      !Array.isArray(input.items) ||
+      input.items.length === 0
+    ) {
+      throw new AppError('validation', 'El pedido tiene datos incompletos.', {
+        nextAction: 'Revisá los productos y cantidades del pedido.'
+      });
+    }
+    if (
+      new Set(input.items.map(i => i.productId)).size !== input.items.length ||
+      input.items.some(i => !i.productId || !Number.isInteger(i.quantity) || i.quantity <= 0)
+    ) {
+      throw new AppError('validation', 'La cantidad del producto no es válida.', {
+        nextAction: 'Ingresá una cantidad entera mayor que cero.'
+      });
+    }
+
+    const editFingerprint = JSON.stringify({
+      orderId: input.orderId,
+      expectedActionRevision: input.expectedActionRevision,
+      items: [...input.items]
+        .map(item => ({ productId: item.productId, quantity: item.quantity }))
+        .sort((a, b) => a.productId.localeCompare(b.productId))
+    });
+
+    const previousOp = state.orderEditOperations.get(input.operationId);
+    if (previousOp) {
+      if (
+        previousOp.orderId !== input.orderId ||
+        previousOp.revision !== input.expectedActionRevision ||
+        previousOp.fingerprint !== editFingerprint
+      ) {
+        throw new AppError('business', 'Los datos cambiaron respecto del intento anterior.', {
+          nextAction: 'Revisá si la operación ya aparece en Pedidos o Compras antes de iniciar otra.'
+        });
+      }
+      const existingOrder = state.orders.find(o => o.id === input.orderId);
+      return latency(existingOrder ?? previousOp.result);
+    }
+
+    const order = state.orders.find(o => o.id === input.orderId);
+    if (!order) {
+      throw new AppError('business', 'No encontramos ese pedido.', {
+        nextAction: 'Actualizá la lista de Pedidos y volvé a buscarlo.'
+      });
+    }
+    if (order.orderState !== 'confirmed') {
+      throw new AppError('business', 'Ese paso ya no está disponible.', {
+        nextAction: 'Actualizá la vista para ver el estado actual.'
+      });
+    }
+    if (order.fulfillmentState !== 'pending') {
+      throw new AppError('business', 'La mercadería ya salió del local.', {
+        nextAction: 'En Pedidos, deshacé la entrega o el envío antes de modificar los productos.'
+      });
+    }
+    if (order.paymentState !== 'pending') {
+      throw new AppError('business', 'El pedido figura cobrado y no se pueden modificar sus productos.', {
+        nextAction: 'En Pedidos, usá Deshacer cobro primero si necesitás editarlo.'
+      });
+    }
+
+    const isNoop =
+      order.items.length === input.items.length &&
+      input.items.every(req =>
+        order.items.some(existing => existing.productId === req.productId && existing.quantity === req.quantity)
+      );
+
+    if ((order.actionRevision ?? 0) !== input.expectedActionRevision) {
+      if (isNoop) return latency(order);
+      throw new AppError('business', 'El pedido cambió desde que abriste la confirmación.', {
+        nextAction: 'Cerrá la confirmación y revisá el estado actualizado antes de continuar.'
+      });
+    }
+    if (isNoop) return latency(order);
+
+    // 1. Validate all products exist, packing constraints, and stock availability before mutating
+    for (const existingItem of order.items) {
+      const reqQty = input.items.find(i => i.productId === existingItem.productId)?.quantity ?? 0;
+      if (reqQty < (existingItem.packedQuantity ?? 0)) {
+        throw new AppError('business', 'Hay más unidades guardadas en la bolsita que la cantidad elegida.', {
+          nextAction: 'Desarmá primero esas unidades en la bolsita del pedido o mantené al menos esa cantidad.'
+        });
+      }
+    }
+
+    const freePurchaseCapacity = (productId: string) => {
+      let totalFree = 0;
+      for (const purchase of state.purchases.filter(p => p.state === 'ordered')) {
+        for (const pi of purchase.items.filter(i => i.productId === productId)) {
+          const reserved = [...state.incomingAllocations.values()]
+            .flat()
+            .filter(a => a.purchaseItemId === pi.id)
+            .reduce((sum, a) => sum + a.quantity, 0);
+          totalFree += Math.max(0, pi.quantity - (pi.receivedQuantity ?? 0) - (pi.shortageQuantity ?? 0) - reserved);
+        }
+      }
+      return totalFree;
+    };
+
+    for (const reqItem of input.items) {
+      const product = state.products.find(p => p.id === reqItem.productId);
+      if (!product) {
+        throw new AppError('business', 'Uno de los productos ya no está disponible.', {
+          nextAction: 'Actualizá la pantalla y revisá la selección.'
+        });
+      }
+      const oldQty = order.items.find(i => i.productId === reqItem.productId)?.quantity ?? 0;
+      if (reqItem.quantity > oldQty) {
+        if (!product.active) {
+          throw new AppError('business', 'Uno de los productos ya no está disponible.', {
+            nextAction: 'Actualizá la pantalla y revisá la selección.'
+          });
+        }
+        const deltaAdd = reqItem.quantity - oldQty;
+        const physAvail = order.stockSource === 'incoming_only' ? 0 : Math.max(0, product.onHand - product.reserved);
+        const takePhys = Math.min(deltaAdd, physAvail);
+        const needIncoming = deltaAdd - takePhys;
+        if (needIncoming > 0) {
+          const explicitFree = freePurchaseCapacity(product.id);
+          const fallbackFree = Math.max(0, product.incoming - (product.incomingReserved ?? 0));
+          const availableIncoming = state.purchases.some(p => p.state === 'ordered' && p.items.some(i => i.productId === product.id))
+            ? explicitFree
+            : fallbackFree;
+          if (availableIncoming < needIncoming) {
+            if (order.stockSource === 'incoming_only') {
+              throw new AppError('business', 'No alcanzan las unidades libres de compras al proveedor.', {
+                nextAction: 'Actualizá los productos y ajustá las cantidades; esta modalidad no usa el stock libre del local.'
+              });
+            }
+            throw new AppError('business', 'El stock cambió y ya no alcanza para ese pedido.', {
+              nextAction: 'Revisá las cantidades disponibles antes de confirmarlo.'
+            });
+          }
+        }
+      }
+    }
+
+    const beforeSnapshot = structuredClone(order);
+    const now = new Date().toISOString();
+    const wasPackingTracked = Boolean(
+      order.packingTracked || order.items.some(i => i.packedQuantity !== null && i.packedQuantity !== undefined)
+    );
+    const productsToReconcile = new Set<string>();
+
+    // Phase 1: Process decreases and removals
+    for (const existingItem of [...order.items]) {
+      const reqQty = input.items.find(i => i.productId === existingItem.productId)?.quantity ?? 0;
+      if (reqQty < existingItem.quantity) {
+        let toRelease = existingItem.quantity - reqQty;
+        const product = state.products.find(p => p.id === existingItem.productId)!;
+
+        // 1a) Release uncovered first
+        const relUncovered = Math.min(toRelease, existingItem.uncoveredQuantity ?? 0);
+        existingItem.uncoveredQuantity = (existingItem.uncoveredQuantity ?? 0) - relUncovered;
+        toRelease -= relUncovered;
+
+        // 1b) Release incoming next (LIFO: latest expected purchase first)
+        const relIncoming = Math.min(toRelease, existingItem.incomingQuantity ?? 0);
+        if (relIncoming > 0) {
+          let remInc = relIncoming;
+          const allocations = state.incomingAllocations.get(existingItem.id) ?? [];
+          const sortedAllocations = [...allocations].sort((a, b) => {
+            const pA = state.purchases.find(p => p.items.some(i => i.id === a.purchaseItemId));
+            const pB = state.purchases.find(p => p.items.some(i => i.id === b.purchaseItemId));
+            const expA = pA?.expectedAt ?? '9999-99-99';
+            const expB = pB?.expectedAt ?? '9999-99-99';
+            return expB.localeCompare(expA) || (pB?.orderedAt ?? '').localeCompare(pA?.orderedAt ?? '');
+          });
+          for (const alloc of sortedAllocations) {
+            if (remInc <= 0) break;
+            const take = Math.min(remInc, alloc.quantity);
+            alloc.quantity -= take;
+            remInc -= take;
+          }
+          existingItem.incomingQuantity = (existingItem.incomingQuantity ?? 0) - relIncoming;
+          product.incomingReserved = Math.max(0, (product.incomingReserved ?? 0) - relIncoming);
+          toRelease -= relIncoming;
+        }
+
+        // 1c) Release physical last
+        const relPhysical = toRelease;
+        if (relPhysical > 0) {
+          existingItem.physicalReservedQuantity = Math.max(
+            0,
+            (existingItem.physicalReservedQuantity ?? existingItem.quantity) - relPhysical
+          );
+          product.reserved = Math.max(0, product.reserved - relPhysical);
+          productsToReconcile.add(product.id);
+          state.movements.unshift({
+            id: nextUuid(),
+            productId: product.id,
+            productName: product.name,
+            kind: 'reservation_release',
+            physicalDelta: 0,
+            reservedDelta: -relPhysical,
+            reason: `Edición de pedido #${order.number}: reducción de cantidad`,
+            orderId: order.id,
+            purchaseId: null,
+            createdAt: now,
+            createdByName: demoOwner.displayName
+          });
+        }
+
+        refreshProductAvailability(product);
+
+        if (reqQty === 0) {
+          state.incomingAllocations.delete(existingItem.id);
+          order.items = order.items.filter(i => i.id !== existingItem.id);
+        } else {
+          existingItem.quantity = reqQty;
+          const remAllocs = (state.incomingAllocations.get(existingItem.id) ?? []).filter(a => a.quantity > 0);
+          const allocCost = remAllocs.reduce((sum, a) => sum + a.quantity * a.unitCostCents, 0);
+          const allocUnits = remAllocs.reduce((sum, a) => sum + a.quantity, 0);
+          const unlinkedInc = Math.max(0, (existingItem.incomingQuantity ?? 0) - allocUnits);
+          const unitCostFallback = existingItem.unitCostCents ?? product.currentCostCents ?? 0;
+          const newCostTotal =
+            allocCost +
+            unlinkedInc * unitCostFallback +
+            (existingItem.physicalReservedQuantity ?? 0) * unitCostFallback +
+            (existingItem.uncoveredQuantity ?? 0) * unitCostFallback;
+          existingItem.costTotalCents = newCostTotal;
+          existingItem.unitCostCents =
+            newCostTotal > 0 ? Math.round(newCostTotal / reqQty) : existingItem.unitCostCents ?? product.currentCostCents;
+          if (order.saleType === 'cost') {
+            existingItem.unitPriceCents = existingItem.unitCostCents ?? 0;
+            existingItem.subtotalCents = existingItem.unitPriceCents * reqQty;
+          } else if (order.saleType === 'gift') {
+            existingItem.unitPriceCents = 0;
+            existingItem.subtotalCents = 0;
+          } else {
+            existingItem.subtotalCents = existingItem.unitPriceCents * reqQty;
+          }
+        }
+      }
+    }
+
+    // Phase 2: Process additions and increases
+    let anyAddedOrIncreased = false;
+    let addedItemWithPackingTracked = false;
+
+    for (const reqItem of input.items) {
+      const product = state.products.find(p => p.id === reqItem.productId)!;
+      const existingLine = order.items.find(i => i.productId === reqItem.productId);
+      const oldQty = existingLine ? existingLine.quantity : 0;
+
+      if (reqItem.quantity > oldQty) {
+        anyAddedOrIncreased = true;
+        const deltaAdd = reqItem.quantity - oldQty;
+        const physAvail = order.stockSource === 'incoming_only' ? 0 : Math.max(0, product.onHand - product.reserved);
+        const takePhys = Math.min(deltaAdd, physAvail);
+        const needIncoming = deltaAdd - takePhys;
+
+        let remInc = needIncoming;
+        let addedIncomingCost = 0;
+        const addedAllocations: Array<{ purchaseItemId: string; quantity: number; unitCostCents: number }> = [];
+
+        if (needIncoming > 0) {
+          const orderedPurchases = state.purchases
+            .filter(p => p.state === 'ordered')
+            .sort(
+              (a, b) =>
+                (a.expectedAt ?? '9999').localeCompare(b.expectedAt ?? '9999') ||
+                (a.orderedAt ?? '').localeCompare(b.orderedAt ?? '') ||
+                a.id.localeCompare(b.id)
+            );
+          for (const purchase of orderedPurchases) {
+            for (const pi of purchase.items.filter(i => i.productId === product.id)) {
+              if (remInc <= 0) break;
+              const reserved = [...state.incomingAllocations.values()]
+                .flat()
+                .filter(a => a.purchaseItemId === pi.id)
+                .reduce((sum, a) => sum + a.quantity, 0);
+              const free = Math.max(0, pi.quantity - (pi.receivedQuantity ?? 0) - (pi.shortageQuantity ?? 0) - reserved);
+              const take = Math.min(remInc, free);
+              if (take > 0) {
+                addedAllocations.push({ purchaseItemId: pi.id, quantity: take, unitCostCents: pi.unitCostCents });
+                addedIncomingCost += take * pi.unitCostCents;
+                remInc -= take;
+              }
+            }
+          }
+          if (remInc > 0) {
+            addedIncomingCost += remInc * (product.currentCostCents ?? 0);
+          }
+        }
+
+        const addedPhysCost = takePhys * (product.currentCostCents ?? 0);
+
+        if (!existingLine) {
+          const initPacked = wasPackingTracked ? 0 : null;
+          if (wasPackingTracked) addedItemWithPackingTracked = true;
+          const newCostTotal = addedPhysCost + addedIncomingCost;
+          const newUnitCost =
+            product.currentCostCents !== null || addedIncomingCost > 0
+              ? Math.round(newCostTotal / reqItem.quantity)
+              : null;
+          const newUnitPrice =
+            order.saleType === 'gift'
+              ? 0
+              : order.saleType === 'cost'
+                ? (newUnitCost ?? 0)
+                : product.priceCents;
+          const newLine: OrderItem = {
+            id: nextUuid(),
+            productId: product.id,
+            sku: product.sku,
+            productName: product.name,
+            presentation: product.presentation,
+            quantity: reqItem.quantity,
+            packedQuantity: initPacked,
+            physicalReservedQuantity: takePhys,
+            incomingQuantity: needIncoming,
+            uncoveredQuantity: 0,
+            unitPriceCents: newUnitPrice,
+            unitCostCents: newUnitCost,
+            costTotalCents: newCostTotal,
+            subtotalCents: newUnitPrice * reqItem.quantity
+          };
+          order.items.push(newLine);
+          state.incomingAllocations.set(newLine.id, addedAllocations);
+        } else {
+          existingLine.quantity = reqItem.quantity;
+          existingLine.physicalReservedQuantity = (existingLine.physicalReservedQuantity ?? 0) + takePhys;
+          existingLine.incomingQuantity = (existingLine.incomingQuantity ?? 0) + needIncoming;
+          const currentAllocs = state.incomingAllocations.get(existingLine.id) ?? [];
+          for (const addAlloc of addedAllocations) {
+            const match = currentAllocs.find(a => a.purchaseItemId === addAlloc.purchaseItemId && a.unitCostCents === addAlloc.unitCostCents);
+            if (match) match.quantity += addAlloc.quantity;
+            else currentAllocs.push(addAlloc);
+          }
+          state.incomingAllocations.set(existingLine.id, currentAllocs);
+
+          const prevCostTotal = existingLine.costTotalCents ?? (existingLine.unitCostCents ?? 0) * oldQty;
+          const newCostTotal = prevCostTotal + addedPhysCost + addedIncomingCost;
+          existingLine.costTotalCents = newCostTotal;
+          existingLine.unitCostCents =
+            existingLine.unitCostCents !== null || product.currentCostCents !== null || addedIncomingCost > 0
+              ? Math.round(newCostTotal / reqItem.quantity)
+              : null;
+          if (order.saleType === 'cost') {
+            existingLine.unitPriceCents = existingLine.unitCostCents ?? 0;
+            existingLine.subtotalCents = existingLine.unitPriceCents * reqItem.quantity;
+          } else if (order.saleType === 'gift') {
+            existingLine.unitPriceCents = 0;
+            existingLine.subtotalCents = 0;
+          } else {
+            existingLine.subtotalCents = existingLine.unitPriceCents * reqItem.quantity;
+          }
+        }
+
+        product.reserved += takePhys;
+        product.incomingReserved = (product.incomingReserved ?? 0) + needIncoming;
+        refreshProductAvailability(product);
+
+        if (takePhys > 0) {
+          state.movements.unshift({
+            id: nextUuid(),
+            productId: product.id,
+            productName: product.name,
+            kind: 'reservation',
+            physicalDelta: 0,
+            reservedDelta: takePhys,
+            reason: `Edición de pedido #${order.number}: reserva física`,
+            orderId: order.id,
+            purchaseId: null,
+            createdAt: now,
+            createdByName: demoOwner.displayName
+          });
+        }
+      }
+    }
+
+    // Phase 3: Recalculate order header totals, readiness, preparation state, and revisions
+    const costTotalCents = order.items.reduce(
+      (sum, item) => sum + (item.costTotalCents ?? (item.unitCostCents ?? 0) * item.quantity),
+      0
+    );
+    order.costTotalCents = costTotalCents;
+    order.shippingFeeNeedsReview = shippingFeeNeedsReview({ ...order, shippingFeeNeedsReview: false });
+
+    if (order.saleType === 'gift') {
+      order.subtotalCents = 0;
+      order.shippingFeeCents = 0;
+      order.totalCents = 0;
+      order.taxAmountCents = 0;
+    } else if (order.saleType === 'cost') {
+      order.subtotalCents = costTotalCents;
+      order.totalCents = costTotalCents + order.shippingFeeCents;
+      order.taxAmountCents = 0;
+    } else {
+      const subtotalCents = order.items.reduce((sum, item) => sum + item.subtotalCents, 0);
+      order.subtotalCents = subtotalCents;
+      order.totalCents = subtotalCents + order.shippingFeeCents;
+      order.taxAmountCents = calculateBasisPoints(order.totalCents, order.taxRateBasisPoints ?? 0);
+    }
+
+    const hasUncovered = order.items.some(i => (i.uncoveredQuantity ?? 0) > 0);
+    const hasIncoming = order.items.some(i => (i.incomingQuantity ?? 0) > 0);
+    order.stockReadiness = hasUncovered ? 'uncovered' : hasIncoming ? 'waiting_incoming' : 'ready';
+
+    if (hasIncoming) {
+      const arrivalDates = order.items.flatMap(line =>
+        (state.incomingAllocations.get(line.id) ?? [])
+          .filter(a => a.quantity > 0)
+          .flatMap(a =>
+            state.purchases
+              .filter(p => p.state === 'ordered' && p.items.some(i => i.id === a.purchaseItemId))
+              .map(p => p.expectedAt)
+              .filter((d): d is string => Boolean(d))
+          )
+      );
+      order.expectedArrivalAt = arrivalDates.sort().at(-1) ?? null;
+    } else {
+      order.expectedArrivalAt = null;
+    }
+
+    const hasNonPhysical = hasUncovered || hasIncoming;
+    const allPacked = wasPackingTracked && order.items.every(i => (i.packedQuantity ?? 0) === i.quantity);
+    const anyPacked = order.items.some(i => (i.packedQuantity ?? 0) > 0);
+
+    if (hasNonPhysical) {
+      order.preparationState = anyPacked ? 'preparing' : 'pending';
+    } else if (wasPackingTracked) {
+      order.preparationState =
+        order.preparationState === 'ready' && allPacked
+          ? 'ready'
+          : anyPacked
+            ? 'preparing'
+            : 'pending';
+    } else if (order.preparationState === 'ready' && anyAddedOrIncreased) {
+      order.preparationState = 'pending';
+    }
+
+    order.packingTracked = wasPackingTracked;
+    if (addedItemWithPackingTracked) {
+      order.packingRevision = (order.packingRevision ?? 0) + 1;
+    }
+    order.actionRevision = (order.actionRevision ?? 0) + 1;
+
+    for (const prodId of productsToReconcile) {
+      const prod = state.products.find(p => p.id === prodId);
+      if (prod) reconcileDemoProduct(prod);
+    }
+
+    const updatedSnapshot = structuredClone(order);
+    state.reversalHistory.push({
+      operationId: input.operationId,
+      orderId: order.id,
+      action: 'edit_items',
+      previous: beforeSnapshot,
+      current: updatedSnapshot,
+      createdAt: now,
+      createdByName: demoOwner.displayName
+    });
+    state.orderEditOperations.set(input.operationId, {
+      orderId: order.id,
+      revision: input.expectedActionRevision,
+      fingerprint: editFingerprint,
+      result: updatedSnapshot
+    });
     state.revision += 1;
     return latency(order);
   },

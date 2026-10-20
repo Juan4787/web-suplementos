@@ -82,6 +82,12 @@ const createOrderRoute = createRoute({
   component: lazyRouteComponent(() => import('@/pages/admin/CreateOrderPage'))
 });
 
+const editOrderRoute = createRoute({
+  getParentRoute: () => adminRoute,
+  path: '/pedidos/$orderId/editar',
+  component: lazyRouteComponent(() => import('@/pages/admin/EditOrderPage'))
+});
+
 const importOrderRoute = createRoute({
   getParentRoute: () => adminRoute,
   path: '/pedidos/importar',
@@ -164,6 +170,7 @@ const adminTree = adminRoute.addChildren([
   dashboardRoute,
   ordersRoute,
   createOrderRoute,
+  editOrderRoute,
   importOrderRoute,
   productsRoute,
   inventoryRoute,

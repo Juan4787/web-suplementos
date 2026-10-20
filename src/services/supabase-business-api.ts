@@ -81,7 +81,10 @@ export const translateDatabaseError = (error: { message?: string; code?: string 
     PACKING_EXCEEDS_PHYSICAL_RESERVATION: ['Hay más unidades indicadas en la bolsita que unidades físicas reservadas.', 'Revisá el pedido y la mercadería recibida antes de guardar.'],
     PACKED_RESERVATION_CHANGED: ['Una reserva física está guardada en una bolsita y no se puede liberar todavía.', 'Revisá el pedido y devolvé primero esas unidades al estante si corresponde.'],
     INVALID_ORDER_PACKING_STATE: ['El armado de este pedido ya no se puede modificar.', 'Actualizá la lista y revisá si el pedido fue entregado o cancelado.'],
-    INVALID_ORDER_PACKING: ['El detalle de la bolsita está incompleto o tiene cantidades inválidas.', 'Ingresá una cantidad entera para cada producto del pedido.']
+    INVALID_ORDER_PACKING: ['El detalle de la bolsita está incompleto o tiene cantidades inválidas.', 'Ingresá una cantidad entera para cada producto del pedido.'],
+    CANNOT_EDIT_PAID_ORDER: ['El pedido figura cobrado y no se pueden modificar sus productos.', 'En Pedidos, usá Deshacer cobro primero si necesitás editarlo.'],
+    CANNOT_EDIT_FULFILLED_ORDER: ['La mercadería ya salió del local.', 'En Pedidos, deshacé la entrega o el envío antes de modificar los productos.'],
+    CANNOT_REDUCE_BELOW_PACKED_QUANTITY: ['Hay más unidades guardadas en la bolsita que la cantidad elegida.', 'Desarmá primero esas unidades en la bolsita del pedido o mantené al menos esa cantidad.']
   };
   const specific = businessMessages[error.message ?? ''];
   if (specific) return new AppError('business', specific[0], { nextAction: specific[1] });
@@ -348,6 +351,10 @@ export const supabaseBusinessApi: BusinessApi = {
       items: (res?.items ?? []).map((o) => ({ ...o, items: o.items ?? [] }))
     };
   },
+  getOrder: async (orderId) => {
+    const order = await rpc<Order>('get_order', { p_order_id: orderId });
+    return { ...order, items: order?.items ?? [] };
+  },
   listPaidOrders: async (page = 1, pageSize = 20, from, to) => {
     const res = await rpc<Page<Order>>('search_paid_orders', { p_page: page, p_page_size: pageSize, p_from: from || null, p_to: to || null });
     return {
@@ -359,6 +366,10 @@ export const supabaseBusinessApi: BusinessApi = {
   },
   confirmImportedOrder: async (input) => {
     const order = await rpc<Order>('confirm_imported_order', { p_order: input });
+    return { ...order, items: order?.items ?? [] };
+  },
+  updateOrderItems: async (input) => {
+    const order = await rpc<Order>('update_order_items', { p_input: input });
     return { ...order, items: order?.items ?? [] };
   },
   saveOrderShippingFee: (input) => rpc<Order>('save_order_shipping_fee', { p_fee: input }),

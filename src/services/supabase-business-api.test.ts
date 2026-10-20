@@ -82,9 +82,25 @@ it('sends cancellation and replacement as one reviewed operation, never as separ
   expect(mockRpc).toHaveBeenLastCalledWith('get_purchase_cancellation_preview', { p_purchase_id: 'original' });
 });
 
-it.each(['PURCHASE_CANCELLATION_CHANGED', 'INVALID_PURCHASE_CANCELLATION', 'INVALID_PURCHASE_STATE', 'CANNOT_CANCEL_PURCHASE_WITH_ACTIVE_RESERVATIONS'])(
+it.each(['PURCHASE_CANCELLATION_CHANGED', 'INVALID_PURCHASE_CANCELLATION', 'INVALID_PURCHASE_STATE', 'CANNOT_CANCEL_PURCHASE_WITH_ACTIVE_RESERVATIONS', 'CANNOT_EDIT_PAID_ORDER', 'CANNOT_EDIT_FULFILLED_ORDER', 'CANNOT_REDUCE_BELOW_PACKED_QUANTITY'])(
   'explains %s with a recovery action and no database identifiers', code => {
     const error = translateDatabaseError({ message: code, code: 'P0001' });
     expect(error.message).not.toContain(code); expect(error.nextAction).toBeTruthy();
   }
 );
+
+it('sends getOrder and updateOrderItems RPC payloads cleanly', async () => {
+  mockRpc.mockResolvedValue({ data: { id: 'order-1', items: [] }, error: null });
+  await supabaseBusinessApi.getOrder('order-1');
+  expect(mockRpc).toHaveBeenLastCalledWith('get_order', { p_order_id: 'order-1' });
+
+  const input = {
+    orderId: 'order-1',
+    operationId: 'op-1',
+    expectedActionRevision: 2,
+    items: [{ productId: 'prod-1', quantity: 3 }]
+  };
+  await supabaseBusinessApi.updateOrderItems(input);
+  expect(mockRpc).toHaveBeenLastCalledWith('update_order_items', { p_input: input });
+});
+

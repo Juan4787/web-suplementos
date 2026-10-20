@@ -11,6 +11,7 @@ import {
   MessageCircle,
   MoreHorizontal,
   PackageCheck,
+  Pencil,
   Plus,
   Search,
   ShoppingBasket,
@@ -38,6 +39,7 @@ import {
   availableOrderActions,
   isOrderReversal,
   orderCancellationBlock,
+  orderEditBlock,
   ORDER_ACTION_LABELS
 } from '@/domain/order-actions';
 import type { Order, OrderAction, OrderTransitionExpectation } from '@/domain/types';
@@ -413,6 +415,9 @@ export default function OrdersPage() {
               const cancellationBlock = orderCancellationBlock(order);
               const packingDraft = draftStore.get(order.id);
               const actionEditsPending = shippingEditing[order.id]?.editing || Boolean(packingDraft && (packingDraft.saving || packingDraftDirty(packingDraft)));
+              const editBlock = actionEditsPending
+                ? 'Guardá o descartá la edición del envío o el conteo de la bolsita antes de editar productos.'
+                : orderEditBlock(order, can(user, 'manage_pricing'));
               const hasPhysicalUnitsToPack = order.items.some(item =>
                 (item.physicalReservedQuantity ?? item.quantity) > 0 || (item.packedQuantity ?? 0) > 0
               );
@@ -509,9 +514,42 @@ export default function OrdersPage() {
                         {/* Detalle de productos y entrega */}
                         <div className="min-w-0 space-y-4">
                           <div>
-                            <p className="text-[13.5px] font-black uppercase tracking-wider text-ink-700">
-                              Productos pedidos
-                            </p>
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <p className="text-[13.5px] font-black uppercase tracking-wider text-ink-700">
+                                Productos pedidos
+                              </p>
+                              {can(user, 'operate_orders') && order.orderState !== 'cancelled' ? (
+                                !editBlock ? (
+                                  <Link
+                                    to="/app/pedidos/$orderId/editar"
+                                    params={{ orderId: order.id }}
+                                    className={buttonStyles({ variant: 'secondary', size: 'sm' })}
+                                  >
+                                    <Pencil className="size-3.5" />
+                                    Editar pedido
+                                  </Link>
+                                ) : (
+                                  <Button
+                                    type="button"
+                                    variant="secondary"
+                                    size="sm"
+                                    disabled
+                                    aria-describedby={`edit-order-help-${order.id}`}
+                                  >
+                                    <Pencil className="size-3.5" />
+                                    Editar pedido
+                                  </Button>
+                                )
+                              ) : null}
+                            </div>
+                            {can(user, 'operate_orders') && order.orderState !== 'cancelled' && editBlock ? (
+                              <p
+                                id={`edit-order-help-${order.id}`}
+                                className="mt-1.5 text-xs font-medium text-ink-600"
+                              >
+                                {editBlock}
+                              </p>
+                            ) : null}
                             <div className="mt-2 space-y-2">
                               {(order.items ?? []).map((item) => (
                                 <div

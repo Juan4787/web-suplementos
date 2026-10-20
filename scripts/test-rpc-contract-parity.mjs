@@ -296,8 +296,38 @@ async function main() {
     }
   }
 
+  process.stdout.write('• Probando RPC [get_order]... ');
+  try {
+    const { data: ordersPage, error: searchErr } = await client.rpc('search_orders', {
+      p_page: 1,
+      p_page_size: 1,
+      p_search: '',
+      p_state: 'all'
+    });
+    if (searchErr) throw new Error(searchErr.message);
+    if (ordersPage?.items?.length > 0) {
+      const sampleOrderId = ordersPage.items[0].id;
+      const { data: orderData, error: getOrderErr } = await client.rpc('get_order', { p_order_id: sampleOrderId });
+      if (getOrderErr) throw new Error(getOrderErr.message);
+      const required = ['id', 'number', 'customerName', 'orderState', 'paymentState', 'fulfillmentState', 'actionRevision', 'totalCents', 'items'];
+      for (const k of required) {
+        if (orderData[k] === undefined) throw new Error(`get_order missing key: ${k}`);
+      }
+    } else {
+      const { error: notFoundErr } = await client.rpc('get_order', { p_order_id: '00000000-0000-4000-8000-000000000000' });
+      if (!notFoundErr || !notFoundErr.message.includes('ORDER_NOT_FOUND')) {
+        throw new Error(`Se esperaba ORDER_NOT_FOUND y se recibió: ${notFoundErr?.message ?? 'OK'}`);
+      }
+    }
+    console.log('✅ OK (contrato verificado)');
+    totalPassed++;
+  } catch (err) {
+    console.log(`❌ FALLÓ: ${err.message}`);
+    totalFailed++;
+  }
+
   console.log('\n===========================================');
-  console.log(`Resumen: ${totalPassed} pasados, ${totalFailed} fallidos de ${CONTRACT_SPECS.length} contratos probados.`);
+  console.log(`Resumen: ${totalPassed} pasados, ${totalFailed} fallidos de ${CONTRACT_SPECS.length + 1} contratos probados.`);
   console.log('===========================================');
 
   if (totalFailed > 0) {

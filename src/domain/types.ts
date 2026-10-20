@@ -524,6 +524,17 @@ export type OrderShippingFeeInput = {
   expectedCostCents?: number;
 };
 
+export type UpdateOrderItemsInput = {
+  orderId: string;
+  operationId: string;
+  expectedActionRevision: number;
+  items: Array<{
+    productId: string;
+    quantity: number;
+    unitPriceCents?: number;
+  }>;
+};
+
 export type OrderShippingFeeEvent = {
   /** All saved and gift-cleared charges remain traceable. */
   id: string;

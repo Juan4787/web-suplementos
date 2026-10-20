@@ -11,6 +11,7 @@ export const queryKeys = {
   productReservations: (productId: string) => ['product-reservations', productId] as const,
   openingReservations: ['opening-reservations'] as const,
   ordersRoot: ['orders'] as const,
+  order: (orderId: string) => ['orders', 'detail', orderId] as const,
   orderStockContext: (orderId: string, revision: string) => ['orders', 'stock-context', orderId, revision] as const,
   orders: (page = 1) => ['orders', page] as const,
   paidOrders: (page = 1) => ['paid-orders', page] as const,

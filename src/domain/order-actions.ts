@@ -74,6 +74,31 @@ export const orderCancellationBlock = (order: Order): string | null => {
   return null;
 };
 
+export const orderEditBlock = (order: Order, canManagePricing = true): string | null => {
+  if (order.orderState === 'cancelled') {
+    return 'Este pedido está cancelado. Cargá un pedido nuevo si el cliente vuelve a comprar.';
+  }
+  if (order.fulfillmentState === 'delivered') {
+    return 'Ya figura entregado. Usá «Deshacer entrega» en Más opciones para modificar los productos.';
+  }
+  if (order.fulfillmentState === 'shipped') {
+    return 'Ya figura enviado. Usá «Deshacer envío» en Más opciones si el paquete sigue en el local.';
+  }
+  if (order.paymentState === 'paid') {
+    return 'Ya figura cobrado. Usá «Deshacer cobro» en Más opciones para editar los productos y cobrar el nuevo total.';
+  }
+  if (order.paymentState === 'refunded') {
+    return 'Tiene un reintegro registrado. Cancelalo y cargá un pedido nuevo.';
+  }
+  if ((order.saleType === 'cost' || order.saleType === 'gift' || order.isCostSale || order.paymentState === 'gifted') && !canManagePricing) {
+    return 'Solo la dueña puede editar pedidos al costo o de cortesía.';
+  }
+  return null;
+};
+
+export const canEditOrderItems = (order: Order, canManagePricing = true): boolean =>
+  orderEditBlock(order, canManagePricing) === null;
+
 export const ORDER_ACTION_LABELS: Record<OrderAction, string> = {
   reverse_payment: 'Deshacer cobro',
   reverse_delivery: 'Deshacer entrega',
