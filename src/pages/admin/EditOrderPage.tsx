@@ -207,7 +207,7 @@ export default function EditOrderPage() {
       return { subtotalCents: 0, shippingFeeCents: 0, totalCents: 0, units: 0, deltaCents: 0 };
     }
     const isGift = order.saleType === 'gift' || order.paymentState === 'gifted';
-    const isCost = order.saleType === 'cost';
+    const isCost = order.saleType === 'cost' || order.isCostSale === true;
     const rawSubtotal = draftItems.reduce((sum, item) => {
       const unit = isGift ? 0 : isCost ? item.unitCostCents : item.unitPriceCents;
       return sum + unit * item.quantity;
@@ -249,7 +249,7 @@ export default function EditOrderPage() {
       const unitPrice =
         order.saleType === 'gift' || order.paymentState === 'gifted'
           ? 0
-          : order.saleType === 'cost'
+          : order.saleType === 'cost' || order.isCostSale === true
             ? unitCost
             : initialItem?.unitPriceCents ?? product.priceCents;
       return [
@@ -617,7 +617,7 @@ export default function EditOrderPage() {
                   const displayPrice =
                     order.saleType === 'gift' || order.paymentState === 'gifted'
                       ? 0
-                      : order.saleType === 'cost'
+                      : order.saleType === 'cost' || order.isCostSale === true
                         ? (product.currentCostCents ?? product.costCents ?? product.priceCents)
                         : product.priceCents;
                   const canAddMore = selected
@@ -817,7 +817,7 @@ export default function EditOrderPage() {
                   const linePrice =
                     order.saleType === 'gift' || order.paymentState === 'gifted'
                       ? 0
-                      : order.saleType === 'cost'
+                      : order.saleType === 'cost' || order.isCostSale === true
                         ? item.unitCostCents
                         : item.unitPriceCents;
 

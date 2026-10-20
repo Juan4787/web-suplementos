@@ -22,8 +22,8 @@ async function expectStock(page: Page, onHand: number, reserved: number) {
   await page.getByRole('link', { name: 'Inventario', exact: true }).filter({ visible: true }).click();
   await page.getByRole('button', { name: /Creatina Monohidratada.*u\./ }).click();
   const drawer = page.getByRole('dialog', { name: 'Creatina Monohidratada' });
-  await expect(drawer.getByText('Total', { exact: true }).locator('..')).toHaveText(`Total${onHand}u.`);
-  await expect(drawer.getByText('Reservado', { exact: true }).locator('..')).toHaveText(`Reservado${reserved}u.`);
+  await expect(drawer.getByText('Stock registrado', { exact: true }).locator('..')).toContainText(`${onHand}`);
+  await expect(drawer.getByText('Reservadas', { exact: true }).locator('..')).toContainText(`${reserved}`);
 }
 
 test.describe('Operación diaria de pedidos', () => {

@@ -159,3 +159,60 @@ it('shows a clear block card with instructions when the order is already paid', 
   expect(blockedCard).toHaveTextContent(/Deshacer cobro/i);
   client.clear();
 });
+
+it('prices new items at unit cost and reflects cost subtotal for isCostSale orders', async () => {
+  const prodA = { ...demoProducts[0]!, id: 'prod-a', sku: 'SKU-A', name: 'Whey Protein Isolate', onHand: 10, reserved: 1, incoming: 0, incomingAvailable: 0, priceCents: 2500000, currentCostCents: 1500000, active: true };
+  const prodB = { ...demoProducts[1]!, id: 'prod-b', sku: 'SKU-B', name: 'Creatina Monohidrato', onHand: 8, reserved: 0, incoming: 0, incomingAvailable: 0, priceCents: 1800000, currentCostCents: 1100000, active: true };
+
+  const costOrder: Order = {
+    ...demoOrders[0]!,
+    id: 'order-cost-edit-test',
+    number: 1055,
+    customerName: 'Cliente Costo',
+    orderState: 'confirmed',
+    paymentState: 'pending',
+    preparationState: 'pending',
+    fulfillmentState: 'pending',
+    isCostSale: true,
+    actionRevision: 1,
+    shippingFeeCents: 0,
+    subtotalCents: 1500000,
+    totalCents: 1500000,
+    items: [
+      {
+        id: 'item-a',
+        productId: prodA.id,
+        sku: prodA.sku,
+        productName: prodA.name,
+        presentation: prodA.presentation,
+        quantity: 1,
+        packedQuantity: 0,
+        unitPriceCents: 1500000,
+        unitCostCents: 1500000,
+        subtotalCents: 1500000
+      }
+    ]
+  };
+
+  api.getOrder.mockResolvedValue(costOrder);
+  api.listAdminProducts.mockResolvedValue([prodA, prodB]);
+
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={client}>
+      <AppConfirmationProvider>
+        <EditOrderPage />
+      </AppConfirmationProvider>
+    </QueryClientProvider>
+  );
+
+  expect(await screen.findByText(/Editar productos del Pedido #1055/i)).toBeInTheDocument();
+
+  // Add prodB from catalog
+  const addButtons = screen.getAllByRole('button', { name: /Agregar/i });
+  fireEvent.click(addButtons[0]!);
+
+  // New total should be prodA cost (1500000) + prodB cost (1100000) = 2600000 -> $ 26.000
+  expect(screen.getByTestId('edit-order-new-total')).toHaveTextContent(/26\.000/);
+  client.clear();
+});
